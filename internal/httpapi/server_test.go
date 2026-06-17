@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"testing"
 
-	"tadmor/internal/db"
 	"tadmor/internal/dbtest"
 	"tadmor/internal/httpapi"
 )
@@ -21,12 +20,7 @@ func TestPostSalesInvoiceEndpoint(t *testing.T) {
 	defer cleanup()
 
 	// Start from a clean ledger (safe: the advisory lock serializes DB tests).
-	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`); err != nil {
-		t.Fatalf("reset schema: %v", err)
-	}
-	if _, err := db.Apply(ctx, pool, dbtest.MigrationsDir(t)); err != nil {
-		t.Fatalf("apply migrations: %v", err)
-	}
+	dbtest.Reset(ctx, t, pool)
 
 	// A draft invoice the endpoint can post. Committed so the handler's own
 	// transaction sees it.

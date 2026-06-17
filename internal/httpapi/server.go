@@ -54,6 +54,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /supplier-payments/{id}/post", s.postSupplierPayment)
 	mux.HandleFunc("POST /stock-movements/{id}/post", s.postStockMovement)
 
+	// Auto-apply a payment to the counterparty's open documents, oldest first.
+	mux.HandleFunc("POST /customer-payments/{id}/apply", s.applyCustomerPayment)
+	mux.HandleFunc("POST /supplier-payments/{id}/apply", s.applySupplierPayment)
+
 	return mux
 }
 
@@ -118,6 +122,45 @@ func (s *Server) postStockMovement(w http.ResponseWriter, r *http.Request) {
 	s.runPost(w, r, func(tx pgx.Tx) (int, error) {
 		return posting.PostInventoryIssue(r.Context(), tx, id, body.Currency)
 	})
+}
+
+func (s *Server) applyCustomerPayment(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	s.runApply(w, r, func(tx pgx.Tx) ([]posting.Application, error) {
+		return posting.AutoApplyCustomerPayment(r.Context(), tx, id)
+	})
+}
+
+func (s *Server) applySupplierPayment(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	s.runApply(w, r, func(tx pgx.Tx) ([]posting.Application, error) {
+		return posting.AutoApplySupplierPayment(r.Context(), tx, id)
+	})
+}
+
+// runApply executes an auto-application inside a transaction and writes the
+// applications it created, or an appropriate error response.
+func (s *Server) runApply(w http.ResponseWriter, r *http.Request, apply func(pgx.Tx) ([]posting.Application, error)) {
+	var apps []posting.Application
+	err := db.WithTx(r.Context(), s.pool, func(tx pgx.Tx) error {
+		var e error
+		apps, e = apply(tx)
+		return e
+	})
+	if err != nil {
+		s.writePostingError(w, err)
+		return
+	}
+	if apps == nil {
+		apps = []posting.Application{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"applications": apps})
 }
 
 // runPost executes a posting function inside a transaction and writes the

@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"tadmor/internal/db"
 	"tadmor/internal/dbtest"
 	"tadmor/internal/posting"
 )
@@ -17,10 +16,7 @@ func TestPostingBalances(t *testing.T) {
 	pool, cleanup := dbtest.Acquire(ctx, t)
 	defer cleanup()
 
-	// Ensure the schema exists (idempotent; the migrate test may have reset it).
-	if _, err := db.Apply(ctx, pool, dbtest.MigrationsDir(t)); err != nil {
-		t.Fatalf("apply migrations: %v", err)
-	}
+	dbtest.Reset(ctx, t, pool)
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {

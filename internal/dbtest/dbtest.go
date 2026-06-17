@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"tadmor/internal/db"
 )
 
 // advisoryLockKey serializes all DB integration tests. `go test ./...` runs
@@ -60,4 +62,17 @@ func Acquire(ctx context.Context, t *testing.T) (*pgxpool.Pool, func()) {
 		pool.Close()
 	}
 	return pool, cleanup
+}
+
+// Reset drops and recreates the public schema, then applies all migrations,
+// leaving the database at a clean, fully-migrated state. Safe to call from a
+// test holding the advisory lock from Acquire.
+func Reset(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`); err != nil {
+		t.Fatalf("reset schema: %v", err)
+	}
+	if _, err := db.Apply(ctx, pool, MigrationsDir(t)); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
 }
