@@ -139,3 +139,68 @@ func TestPostingBalances(t *testing.T) {
 		t.Error("sales invoice was not linked to a journal entry")
 	}
 }
+
+// TestInventoryReceiptClearsAgainstBill posts an inventory receipt (Dr inventory
+// / Cr GRNI) and the matching purchase bill (Dr GRNI / Cr A/P), then checks the
+// clearing account nets to zero and inventory/A/P land correctly.
+func TestInventoryReceiptClearsAgainstBill(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+	dbtest.Reset(ctx, t, pool)
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	exec, queryID := execAndQueryID(ctx, t, tx)
+
+	exec(`INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY2026','2026-01-01','2026-12-31')`)
+	exec(`INSERT INTO accounting_periods (fiscal_year_id, name, start_date, end_date)
+	      SELECT id,'2026-06','2026-06-01','2026-06-30' FROM fiscal_years WHERE name='FY2026'`)
+	grni := queryID(`SELECT id FROM accounts WHERE code='2150'`)
+	supID := queryID(`WITH o AS (INSERT INTO organizations (name) VALUES ('Beta') RETURNING id)
+	      INSERT INTO suppliers (organization_id, ap_account_id)
+	      SELECT o.id,(SELECT id FROM accounts WHERE code='2000') FROM o RETURNING id`)
+	invProd := queryID(`INSERT INTO products (sku, name, track_inventory, inventory_account_id, cogs_account_id)
+	      VALUES ('P-INV','Widget',true,(SELECT id FROM accounts WHERE code='1200'),(SELECT id FROM accounts WHERE code='5000')) RETURNING id`)
+	whID := queryID(`INSERT INTO warehouses (code, name) VALUES ('MAIN','Main') RETURNING id`)
+
+	// Receive 10 units @ 7 = 70: Dr inventory 70 / Cr GRNI 70.
+	movID := queryID(`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, quantity, unit_cost)
+	      VALUES ($1,$2,'receipt',10,7) RETURNING id`, invProd, whID)
+	if _, err := posting.PostInventoryReceipt(ctx, tx, movID, "USD", grni); err != nil {
+		t.Fatalf("post receipt: %v", err)
+	}
+
+	// The matching bill clears GRNI: a line for the same goods booked to GRNI
+	// gives Dr GRNI 70 / Cr A/P 70.
+	billID := queryID(`INSERT INTO purchase_bills (bill_number, supplier_id, bill_date, currency_code)
+	      VALUES ('BILL-1',$1,'2026-06-15','USD') RETURNING id`, supID)
+	exec(`INSERT INTO purchase_bill_lines (bill_id, line_no, description, quantity, unit_cost, expense_account_id)
+	      VALUES ($1,1,'Widget',10,7,$2)`, billID, grni)
+	if _, err := posting.PostPurchaseBill(ctx, tx, billID); err != nil {
+		t.Fatalf("post bill: %v", err)
+	}
+
+	if _, err := tx.Exec(ctx, `SET CONSTRAINTS ALL IMMEDIATE`); err != nil {
+		t.Fatalf("a generated journal entry is unbalanced: %v", err)
+	}
+
+	want := map[string]string{
+		"1200": "70.0000",  // inventory on the books
+		"2150": "0.0000",   // GRNI cleared (received then invoiced)
+		"2000": "-70.0000", // A/P owed to the supplier
+	}
+	for code, expected := range want {
+		var bal string
+		if err := tx.QueryRow(ctx, `SELECT balance::text FROM trial_balance WHERE code = $1`, code).Scan(&bal); err != nil {
+			t.Fatalf("balance %s: %v", code, err)
+		}
+		if bal != expected {
+			t.Errorf("account %s balance = %s, want %s", code, bal, expected)
+		}
+	}
+}

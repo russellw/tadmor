@@ -107,9 +107,10 @@ func (s *Server) postStockMovement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Stock movements carry no currency of their own; the caller supplies the
-	// functional currency to record the entry in.
+	// functional currency. Receipts also need a credit (clearing) account.
 	var body struct {
-		Currency string `json:"currency"`
+		Currency        string `json:"currency"`
+		CreditAccountID int    `json:"credit_account_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -120,7 +121,7 @@ func (s *Server) postStockMovement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.runPost(w, r, func(tx pgx.Tx) (int, error) {
-		return posting.PostInventoryIssue(r.Context(), tx, id, body.Currency)
+		return posting.PostStockMovement(r.Context(), tx, id, body.Currency, body.CreditAccountID)
 	})
 }
 

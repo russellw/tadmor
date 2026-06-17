@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"tadmor/internal/dbtest"
@@ -91,10 +92,80 @@ func TestPostSalesInvoiceEndpoint(t *testing.T) {
 	}
 }
 
+func TestPostStockMovementReceiptEndpoint(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+	dbtest.Reset(ctx, t, pool)
+
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("setup exec: %v\nsql: %s", err, sql)
+		}
+	}
+	exec(`INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY2026','2026-01-01','2026-12-31')`)
+	exec(`INSERT INTO accounting_periods (fiscal_year_id, name, start_date, end_date)
+	      SELECT id,'2026-06','2026-06-01','2026-06-30' FROM fiscal_years WHERE name='FY2026'`)
+	exec(`INSERT INTO products (sku, name, track_inventory, inventory_account_id, cogs_account_id)
+	      VALUES ('P-INV','Widget',true,(SELECT id FROM accounts WHERE code='1200'),(SELECT id FROM accounts WHERE code='5000'))`)
+	exec(`INSERT INTO warehouses (code, name) VALUES ('MAIN','Main')`)
+
+	var movID, grni int
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, quantity, unit_cost)
+		 VALUES ((SELECT id FROM products WHERE sku='P-INV'), (SELECT id FROM warehouses WHERE code='MAIN'), 'receipt', 10, 7)
+		 RETURNING id`).Scan(&movID); err != nil {
+		t.Fatalf("create movement: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE code='2150'`).Scan(&grni); err != nil {
+		t.Fatalf("grni account: %v", err)
+	}
+
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	defer srv.Close()
+	url := srv.URL + "/stock-movements/" + strconv.Itoa(movID) + "/post"
+
+	// Missing credit_account_id -> 422 (a receipt needs a clearing account).
+	if status, body := postJSON(t, url, `{"currency":"USD"}`); status != http.StatusUnprocessableEntity {
+		t.Fatalf("receipt without credit account: status = %d, want 422 (body: %s)", status, body)
+	}
+
+	// With the GRNI account it posts.
+	status, body := postJSON(t, url, `{"currency":"USD","credit_account_id":`+strconv.Itoa(grni)+`}`)
+	if status != http.StatusOK {
+		t.Fatalf("receipt post: status = %d, want 200 (body: %s)", status, body)
+	}
+	var ok struct {
+		JournalEntryID int `json:"journal_entry_id"`
+	}
+	if err := json.Unmarshal([]byte(body), &ok); err != nil || ok.JournalEntryID <= 0 {
+		t.Fatalf("decode %q: %v / id=%d", body, err, ok.JournalEntryID)
+	}
+
+	var inv string
+	if err := pool.QueryRow(ctx, `SELECT balance::text FROM trial_balance WHERE code='1200'`).Scan(&inv); err != nil {
+		t.Fatalf("inventory balance: %v", err)
+	}
+	if inv != "70.0000" {
+		t.Fatalf("inventory balance = %s, want 70.0000", inv)
+	}
+}
+
 // post issues a POST with an empty JSON body and returns the status and body.
 func post(t *testing.T, url string) (int, string) {
 	t.Helper()
-	resp, err := http.Post(url, "application/json", nil)
+	return postJSON(t, url, "")
+}
+
+// postJSON issues a POST with the given JSON body and returns the status and body.
+func postJSON(t *testing.T, url, body string) (int, string) {
+	t.Helper()
+	var r io.Reader
+	if body != "" {
+		r = strings.NewReader(body)
+	}
+	resp, err := http.Post(url, "application/json", r)
 	if err != nil {
 		t.Fatalf("POST %s: %v", url, err)
 	}

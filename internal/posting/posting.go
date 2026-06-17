@@ -444,3 +444,109 @@ func PostInventoryIssue(ctx context.Context, tx pgx.Tx, movementID int, currency
 	}
 	return je, nil
 }
+
+// PostInventoryReceipt posts the cost of an inventory receipt (a 'receipt' stock
+// movement): Dr inventory, Cr the supplied clearing account. That credit
+// account is typically a Goods-Received-Not-Invoiced account which the matching
+// purchase bill later debits, so it nets to zero once the goods are invoiced.
+// currency is the functional currency to record the entry in.
+func PostInventoryReceipt(ctx context.Context, tx pgx.Tx, movementID int, currency string, creditAccountID int) (int, error) {
+	var (
+		movementType, date string
+		invAccount         *int
+		journalEntryID     *int
+		hasCost            bool
+	)
+	err := tx.QueryRow(ctx,
+		`SELECT sm.movement_type, sm.movement_date::text, sm.journal_entry_id,
+		        p.inventory_account_id, (sm.total_cost <> 0)
+		 FROM stock_movements sm JOIN products p ON p.id = sm.product_id
+		 WHERE sm.id = $1`, movementID).Scan(&movementType, &date, &journalEntryID, &invAccount, &hasCost)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("posting: stock movement %d: %w", movementID, ErrNotFound)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if journalEntryID != nil {
+		return 0, fmt.Errorf("posting: stock movement %d: %w", movementID, ErrAlreadyPosted)
+	}
+	if movementType != "receipt" {
+		return 0, fmt.Errorf("posting: stock movement %d: only 'receipt' movements post an inventory receipt (got %q): %w", movementID, movementType, ErrNotPostable)
+	}
+	if !hasCost {
+		return 0, fmt.Errorf("posting: stock movement %d: %w", movementID, ErrNothingToPost)
+	}
+	if invAccount == nil {
+		return 0, fmt.Errorf("posting: stock movement %d: product inventory account: %w", movementID, ErrMissingAccount)
+	}
+
+	// The supplied credit account must exist and be postable.
+	var postable bool
+	err = tx.QueryRow(ctx, `SELECT is_postable AND is_active FROM accounts WHERE id = $1`, creditAccountID).Scan(&postable)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("posting: credit account %d: %w", creditAccountID, ErrMissingAccount)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if !postable {
+		return 0, fmt.Errorf("posting: credit account %d is not postable/active: %w", creditAccountID, ErrMissingAccount)
+	}
+
+	period, err := periodForDate(ctx, tx, date)
+	if err != nil {
+		return 0, err
+	}
+	je, err := createEntry(ctx, tx, date, period, currency, "Inventory receipt", "")
+	if err != nil {
+		return 0, err
+	}
+
+	// total_cost is positive for a receipt.
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
+		 SELECT $1, 1, p.inventory_account_id, sm.total_cost, 0, 'Inventory'
+		 FROM stock_movements sm JOIN products p ON p.id = sm.product_id
+		 WHERE sm.id = $2`, je, movementID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
+		 SELECT $1, 2, $3, 0, sm.total_cost, 'Goods received not invoiced'
+		 FROM stock_movements sm WHERE sm.id = $2`, je, movementID, creditAccountID); err != nil {
+		return 0, err
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE stock_movements SET journal_entry_id = $1, period_id = $2 WHERE id = $3`,
+		je, period, movementID); err != nil {
+		return 0, err
+	}
+	return je, nil
+}
+
+// PostStockMovement posts a stock movement to the GL, dispatching on its type:
+// an 'issue' posts COGS, a 'receipt' posts inventory against creditAccountID.
+// creditAccountID is ignored for issues and required (> 0) for receipts.
+func PostStockMovement(ctx context.Context, tx pgx.Tx, movementID int, currency string, creditAccountID int) (int, error) {
+	var movementType string
+	err := tx.QueryRow(ctx, `SELECT movement_type FROM stock_movements WHERE id = $1`, movementID).Scan(&movementType)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("posting: stock movement %d: %w", movementID, ErrNotFound)
+	}
+	if err != nil {
+		return 0, err
+	}
+	switch movementType {
+	case "issue":
+		return PostInventoryIssue(ctx, tx, movementID, currency)
+	case "receipt":
+		if creditAccountID <= 0 {
+			return 0, fmt.Errorf("posting: stock movement %d: a credit account is required to post a receipt: %w", movementID, ErrMissingAccount)
+		}
+		return PostInventoryReceipt(ctx, tx, movementID, currency, creditAccountID)
+	default:
+		return 0, fmt.Errorf("posting: stock movement %d: type %q is not postable to the GL: %w", movementID, movementType, ErrNotPostable)
+	}
+}
