@@ -52,7 +52,7 @@ func run(logger *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.Handler(pool),
+		Handler:           httpapi.NewServer(pool, logger).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

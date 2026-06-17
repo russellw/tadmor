@@ -26,8 +26,10 @@ import (
 // Errors returned for documents that cannot be posted. Callers may test these
 // with errors.Is.
 var (
+	ErrNotFound       = errors.New("document not found")
 	ErrNotDraft       = errors.New("document is not in draft status")
 	ErrAlreadyPosted  = errors.New("document is already posted")
+	ErrNotPostable    = errors.New("document is not eligible for this posting")
 	ErrNoOpenPeriod   = errors.New("no open accounting period for the document date")
 	ErrMissingAccount = errors.New("a required GL account is not configured")
 	ErrNothingToPost  = errors.New("document total is zero or negative")
@@ -73,7 +75,7 @@ func PostSalesInvoice(ctx context.Context, tx pgx.Tx, invoiceID int) (int, error
 		 FROM sales_invoices si JOIN customers c ON c.id = si.customer_id
 		 WHERE si.id = $1`, invoiceID).Scan(&status, &currency, &date, &number, &arAccount, &hasTotal)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, fmt.Errorf("posting: sales invoice %d not found", invoiceID)
+		return 0, fmt.Errorf("posting: sales invoice %d: %w", invoiceID, ErrNotFound)
 	}
 	if err != nil {
 		return 0, err
@@ -168,7 +170,7 @@ func PostPurchaseBill(ctx context.Context, tx pgx.Tx, billID int) (int, error) {
 		 FROM purchase_bills pb JOIN suppliers s ON s.id = pb.supplier_id
 		 WHERE pb.id = $1`, billID).Scan(&status, &currency, &date, &number, &apAccount, &hasTotal)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, fmt.Errorf("posting: purchase bill %d not found", billID)
+		return 0, fmt.Errorf("posting: purchase bill %d: %w", billID, ErrNotFound)
 	}
 	if err != nil {
 		return 0, err
@@ -264,7 +266,7 @@ func PostCustomerPayment(ctx context.Context, tx pgx.Tx, paymentID int) (int, er
 		 FROM customer_payments cp JOIN customers c ON c.id = cp.customer_id
 		 WHERE cp.id = $1`, paymentID).Scan(&status, &currency, &date, &arAccount, &depositAccount, &hasAmount)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, fmt.Errorf("posting: customer payment %d not found", paymentID)
+		return 0, fmt.Errorf("posting: customer payment %d: %w", paymentID, ErrNotFound)
 	}
 	if err != nil {
 		return 0, err
@@ -326,7 +328,7 @@ func PostSupplierPayment(ctx context.Context, tx pgx.Tx, paymentID int) (int, er
 		 FROM supplier_payments sp JOIN suppliers s ON s.id = sp.supplier_id
 		 WHERE sp.id = $1`, paymentID).Scan(&status, &currency, &date, &apAccount, &paymentAccount, &hasAmount)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, fmt.Errorf("posting: supplier payment %d not found", paymentID)
+		return 0, fmt.Errorf("posting: supplier payment %d: %w", paymentID, ErrNotFound)
 	}
 	if err != nil {
 		return 0, err
@@ -392,7 +394,7 @@ func PostInventoryIssue(ctx context.Context, tx pgx.Tx, movementID int, currency
 		 FROM stock_movements sm JOIN products p ON p.id = sm.product_id
 		 WHERE sm.id = $1`, movementID).Scan(&movementType, &date, &journalEntryID, &cogsAccount, &invAccount, &hasCost)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, fmt.Errorf("posting: stock movement %d not found", movementID)
+		return 0, fmt.Errorf("posting: stock movement %d: %w", movementID, ErrNotFound)
 	}
 	if err != nil {
 		return 0, err
@@ -401,7 +403,7 @@ func PostInventoryIssue(ctx context.Context, tx pgx.Tx, movementID int, currency
 		return 0, fmt.Errorf("posting: stock movement %d: %w", movementID, ErrAlreadyPosted)
 	}
 	if movementType != "issue" {
-		return 0, fmt.Errorf("posting: stock movement %d: only 'issue' movements post COGS, got %q", movementID, movementType)
+		return 0, fmt.Errorf("posting: stock movement %d: only 'issue' movements post COGS (got %q): %w", movementID, movementType, ErrNotPostable)
 	}
 	if !hasCost {
 		return 0, fmt.Errorf("posting: stock movement %d: %w", movementID, ErrNothingToPost)

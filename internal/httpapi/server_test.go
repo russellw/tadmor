@@ -1,0 +1,110 @@
+package httpapi_test
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+
+	"tadmor/internal/db"
+	"tadmor/internal/dbtest"
+	"tadmor/internal/httpapi"
+)
+
+func TestPostSalesInvoiceEndpoint(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+
+	// Start from a clean ledger (safe: the advisory lock serializes DB tests).
+	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`); err != nil {
+		t.Fatalf("reset schema: %v", err)
+	}
+	if _, err := db.Apply(ctx, pool, dbtest.MigrationsDir(t)); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+
+	// A draft invoice the endpoint can post. Committed so the handler's own
+	// transaction sees it.
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("setup exec: %v\nsql: %s", err, sql)
+		}
+	}
+	exec(`INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY2026','2026-01-01','2026-12-31')`)
+	exec(`INSERT INTO accounting_periods (fiscal_year_id, name, start_date, end_date)
+	      SELECT id,'2026-06','2026-06-01','2026-06-30' FROM fiscal_years WHERE name='FY2026'`)
+	exec(`WITH o AS (INSERT INTO organizations (name) VALUES ('Acme') RETURNING id)
+	      INSERT INTO customers (organization_id, ar_account_id)
+	      SELECT o.id, (SELECT id FROM accounts WHERE code='1100') FROM o`)
+
+	var invID int
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO sales_invoices (invoice_number, customer_id, invoice_date, currency_code)
+		 VALUES ('INV-1', (SELECT id FROM customers LIMIT 1), '2026-06-15', 'USD') RETURNING id`).Scan(&invID); err != nil {
+		t.Fatalf("create invoice: %v", err)
+	}
+	exec(`INSERT INTO sales_invoice_lines (invoice_id, line_no, description, quantity, unit_price, revenue_account_id)
+	      VALUES ($1, 1, 'Service', 10, 5, (SELECT id FROM accounts WHERE code='4000'))`, invID)
+
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	defer srv.Close()
+
+	invURL := srv.URL + "/sales-invoices/" + strconv.Itoa(invID) + "/post"
+
+	// First post succeeds and returns a journal-entry id.
+	status, body := post(t, invURL)
+	if status != http.StatusOK {
+		t.Fatalf("first post: status = %d, want 200 (body: %s)", status, body)
+	}
+	var ok struct {
+		JournalEntryID int `json:"journal_entry_id"`
+	}
+	if err := json.Unmarshal([]byte(body), &ok); err != nil {
+		t.Fatalf("decode body %q: %v", body, err)
+	}
+	if ok.JournalEntryID <= 0 {
+		t.Fatalf("expected a journal_entry_id, got %d", ok.JournalEntryID)
+	}
+
+	// Posting again conflicts (no longer draft).
+	if status, body := post(t, invURL); status != http.StatusConflict {
+		t.Fatalf("second post: status = %d, want 409 (body: %s)", status, body)
+	}
+
+	// Unknown invoice is a 404.
+	if status, body := post(t, srv.URL+"/sales-invoices/999999/post"); status != http.StatusNotFound {
+		t.Fatalf("missing invoice: status = %d, want 404 (body: %s)", status, body)
+	}
+
+	// Non-numeric id is a 400.
+	if status, body := post(t, srv.URL+"/sales-invoices/abc/post"); status != http.StatusBadRequest {
+		t.Fatalf("bad id: status = %d, want 400 (body: %s)", status, body)
+	}
+
+	// The committed posting balanced the ledger.
+	var sumBalance string
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(sum(balance),0)::text FROM trial_balance`).Scan(&sumBalance); err != nil {
+		t.Fatalf("sum trial balance: %v", err)
+	}
+	if sumBalance != "0.0000" {
+		t.Fatalf("ledger does not net to zero after posting: %s", sumBalance)
+	}
+}
+
+// post issues a POST with an empty JSON body and returns the status and body.
+func post(t *testing.T, url string) (int, string) {
+	t.Helper()
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
