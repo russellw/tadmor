@@ -353,12 +353,109 @@ func TestCreateThenPostSalesInvoiceEndpoint(t *testing.T) {
 	}
 }
 
+// TestFullFlowOverHTTP builds master data and drives a document through posting
+// entirely over HTTP — no SQL beyond the schema reset — proving the API is
+// self-sufficient.
+func TestFullFlowOverHTTP(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+	dbtest.Reset(ctx, t, pool)
+
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	defer srv.Close()
+
+	// Discover seeded account ids by code via the accounts list endpoint.
+	_, accountsBody := get(t, srv.URL+"/accounts")
+	var accounts []struct {
+		ID   int    `json:"id"`
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal([]byte(accountsBody), &accounts); err != nil {
+		t.Fatalf("decode accounts: %v", err)
+	}
+	acct := map[string]int{}
+	for _, a := range accounts {
+		acct[a.Code] = a.ID
+	}
+	if acct["1100"] == 0 || acct["4000"] == 0 {
+		t.Fatalf("seeded accounts missing: %v", acct)
+	}
+
+	// createID POSTs a body and returns the new record id.
+	createID := func(path, body string) int {
+		t.Helper()
+		status, respBody := postJSON(t, srv.URL+path, body)
+		if status != http.StatusCreated {
+			t.Fatalf("POST %s: status = %d (body: %s)", path, status, respBody)
+		}
+		var created struct {
+			ID int `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(respBody), &created); err != nil || created.ID <= 0 {
+			t.Fatalf("POST %s: decode %q: %v", path, respBody, err)
+		}
+		return created.ID
+	}
+
+	orgID := createID("/organizations", `{"name":"Acme Corp"}`)
+	custID := createID("/customers", `{"organization_id":`+itoa(orgID)+`,"ar_account_id":`+itoa(acct["1100"])+`}`)
+	prodID := createID("/products", `{"sku":"WIDGET","name":"Widget","unit_price":"5","revenue_account_id":`+itoa(acct["4000"])+`}`)
+	createID("/fiscal-years", `{"name":"FY2026","start_date":"2026-01-01","end_date":"2026-12-31"}`)
+	createID("/accounting-periods", `{"fiscal_year_id":1,"name":"2026-06","start_date":"2026-06-01","end_date":"2026-06-30"}`)
+
+	// Update the product (PUT full replace) and confirm via GET.
+	if status, body := putJSON(t, srv.URL+"/products/"+itoa(prodID),
+		`{"sku":"WIDGET","name":"Widget v2","unit_price":"6","revenue_account_id":`+itoa(acct["4000"])+`,"is_active":true}`); status != http.StatusNoContent {
+		t.Fatalf("PUT product: status = %d (body: %s)", status, body)
+	}
+	if _, body := get(t, srv.URL+"/products/"+itoa(prodID)); !strings.Contains(body, `"name":"Widget v2"`) || !strings.Contains(body, `"unit_price":"6.0000"`) {
+		t.Fatalf("product after update: %s", body)
+	}
+
+	// Create an invoice referencing the product, then post it.
+	invID := createID("/sales-invoices", `{
+		"invoice_number":"INV-1","customer_id":`+itoa(custID)+`,"invoice_date":"2026-06-15","currency_code":"USD",
+		"lines":[{"product_id":`+itoa(prodID)+`,"description":"Widget","quantity":"10","unit_price":"5","revenue_account_id":`+itoa(acct["4000"])+`}]
+	}`)
+	if status, body := post(t, srv.URL+"/sales-invoices/"+itoa(invID)+"/post"); status != http.StatusOK {
+		t.Fatalf("post invoice: status = %d (body: %s)", status, body)
+	}
+
+	// The invoice is posted with a balance of 50, and it shows in the trial balance.
+	if _, body := get(t, srv.URL+"/sales-invoices/"+itoa(invID)); !strings.Contains(body, `"status":"posted"`) || !strings.Contains(body, `"balance":"50.0000"`) {
+		t.Fatalf("posted invoice: %s", body)
+	}
+	if _, body := get(t, srv.URL+"/trial-balance"); !strings.Contains(body, `"code":"1100"`) || !strings.Contains(body, `"balance":"50.0000"`) {
+		t.Fatalf("trial balance: %s", body)
+	}
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
 // get issues a GET and returns the status and body.
 func get(t *testing.T, url string) (int, string) {
 	t.Helper()
 	resp, err := http.Get(url)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
+
+// putJSON issues a PUT with the given JSON body and returns the status and body.
+func putJSON(t *testing.T, url, body string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new PUT %s: %v", url, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT %s: %v", url, err)
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)

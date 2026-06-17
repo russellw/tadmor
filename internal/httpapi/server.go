@@ -75,6 +75,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /supplier-payments/{id}/unpost", s.unpostSupplierPayment)
 	mux.HandleFunc("POST /stock-movements/{id}/unpost", s.unpostStockMovement)
 
+	// Master data CRUD.
+	s.registerMasterRoutes(mux)
+
 	// Read / reporting.
 	mux.HandleFunc("GET /trial-balance", s.getTrialBalance)
 	mux.HandleFunc("GET /ar-aging", s.getARaging)
