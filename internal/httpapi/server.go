@@ -58,7 +58,80 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /customer-payments/{id}/apply", s.applyCustomerPayment)
 	mux.HandleFunc("POST /supplier-payments/{id}/apply", s.applySupplierPayment)
 
+	// Unpost a document: reverse its journal entry and return it to draft.
+	mux.HandleFunc("POST /sales-invoices/{id}/unpost", s.unpostSalesInvoice)
+	mux.HandleFunc("POST /purchase-bills/{id}/unpost", s.unpostPurchaseBill)
+	mux.HandleFunc("POST /customer-payments/{id}/unpost", s.unpostCustomerPayment)
+	mux.HandleFunc("POST /supplier-payments/{id}/unpost", s.unpostSupplierPayment)
+	mux.HandleFunc("POST /stock-movements/{id}/unpost", s.unpostStockMovement)
+
 	return mux
+}
+
+func (s *Server) unpostSalesInvoice(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	s.runReverse(w, r, func(tx pgx.Tx) (int, error) {
+		return posting.UnpostSalesInvoice(r.Context(), tx, id)
+	})
+}
+
+func (s *Server) unpostPurchaseBill(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	s.runReverse(w, r, func(tx pgx.Tx) (int, error) {
+		return posting.UnpostPurchaseBill(r.Context(), tx, id)
+	})
+}
+
+func (s *Server) unpostCustomerPayment(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	s.runReverse(w, r, func(tx pgx.Tx) (int, error) {
+		return posting.UnpostCustomerPayment(r.Context(), tx, id)
+	})
+}
+
+func (s *Server) unpostSupplierPayment(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	s.runReverse(w, r, func(tx pgx.Tx) (int, error) {
+		return posting.UnpostSupplierPayment(r.Context(), tx, id)
+	})
+}
+
+func (s *Server) unpostStockMovement(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	s.runReverse(w, r, func(tx pgx.Tx) (int, error) {
+		return posting.UnpostStockMovement(r.Context(), tx, id)
+	})
+}
+
+// runReverse executes an unpost inside a transaction and writes the id of the
+// reversing journal entry, or an appropriate error response.
+func (s *Server) runReverse(w http.ResponseWriter, r *http.Request, reverse func(pgx.Tx) (int, error)) {
+	var reversalID int
+	err := db.WithTx(r.Context(), s.pool, func(tx pgx.Tx) error {
+		var e error
+		reversalID, e = reverse(tx)
+		return e
+	})
+	if err != nil {
+		s.writePostingError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"reversal_entry_id": reversalID})
 }
 
 func (s *Server) postSalesInvoice(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +268,11 @@ func postingStatus(err error) int {
 	switch {
 	case errors.Is(err, posting.ErrNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, posting.ErrNotDraft), errors.Is(err, posting.ErrAlreadyPosted):
+	case errors.Is(err, posting.ErrNotDraft),
+		errors.Is(err, posting.ErrNotPosted),
+		errors.Is(err, posting.ErrAlreadyPosted),
+		errors.Is(err, posting.ErrAlreadyReversed),
+		errors.Is(err, posting.ErrHasApplications):
 		return http.StatusConflict
 	case errors.Is(err, posting.ErrNotPostable),
 		errors.Is(err, posting.ErrNoOpenPeriod),

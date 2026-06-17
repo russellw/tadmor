@@ -152,6 +152,66 @@ func TestPostStockMovementReceiptEndpoint(t *testing.T) {
 	}
 }
 
+func TestUnpostSalesInvoiceEndpoint(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+	dbtest.Reset(ctx, t, pool)
+
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("setup exec: %v\nsql: %s", err, sql)
+		}
+	}
+	exec(`INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY2026','2026-01-01','2026-12-31')`)
+	exec(`INSERT INTO accounting_periods (fiscal_year_id, name, start_date, end_date)
+	      SELECT id,'2026-06','2026-06-01','2026-06-30' FROM fiscal_years WHERE name='FY2026'`)
+	exec(`WITH o AS (INSERT INTO organizations (name) VALUES ('Acme') RETURNING id)
+	      INSERT INTO customers (organization_id, ar_account_id)
+	      SELECT o.id,(SELECT id FROM accounts WHERE code='1100') FROM o`)
+	var invID int
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO sales_invoices (invoice_number, customer_id, invoice_date, currency_code)
+		 VALUES ('INV-1', (SELECT id FROM customers LIMIT 1), '2026-06-15', 'USD') RETURNING id`).Scan(&invID); err != nil {
+		t.Fatalf("create invoice: %v", err)
+	}
+	exec(`INSERT INTO sales_invoice_lines (invoice_id, line_no, description, quantity, unit_price, revenue_account_id)
+	      VALUES ($1, 1, 'Service', 10, 5, (SELECT id FROM accounts WHERE code='4000'))`, invID)
+
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	defer srv.Close()
+	base := srv.URL + "/sales-invoices/" + strconv.Itoa(invID)
+
+	if status, body := post(t, base+"/post"); status != http.StatusOK {
+		t.Fatalf("post: status = %d (body: %s)", status, body)
+	}
+
+	// Unpost returns the reversing journal entry id.
+	status, body := post(t, base+"/unpost")
+	if status != http.StatusOK {
+		t.Fatalf("unpost: status = %d, want 200 (body: %s)", status, body)
+	}
+	var got struct {
+		ReversalEntryID int `json:"reversal_entry_id"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil || got.ReversalEntryID <= 0 {
+		t.Fatalf("decode %q: %v / id=%d", body, err, got.ReversalEntryID)
+	}
+
+	// Invoice is draft again, and a second unpost conflicts.
+	var ds string
+	if err := pool.QueryRow(ctx, `SELECT status FROM sales_invoices WHERE id=$1`, invID).Scan(&ds); err != nil {
+		t.Fatalf("read status: %v", err)
+	}
+	if ds != "draft" {
+		t.Fatalf("invoice status = %s, want draft", ds)
+	}
+	if status, body := post(t, base+"/unpost"); status != http.StatusConflict {
+		t.Fatalf("second unpost: status = %d, want 409 (body: %s)", status, body)
+	}
+}
+
 // post issues a POST with an empty JSON body and returns the status and body.
 func post(t *testing.T, url string) (int, string) {
 	t.Helper()

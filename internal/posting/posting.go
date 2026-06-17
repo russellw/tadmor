@@ -26,13 +26,16 @@ import (
 // Errors returned for documents that cannot be posted. Callers may test these
 // with errors.Is.
 var (
-	ErrNotFound       = errors.New("document not found")
-	ErrNotDraft       = errors.New("document is not in draft status")
-	ErrAlreadyPosted  = errors.New("document is already posted")
-	ErrNotPostable    = errors.New("document is not eligible for this posting")
-	ErrNoOpenPeriod   = errors.New("no open accounting period for the document date")
-	ErrMissingAccount = errors.New("a required GL account is not configured")
-	ErrNothingToPost  = errors.New("document total is zero or negative")
+	ErrNotFound        = errors.New("document not found")
+	ErrNotDraft        = errors.New("document is not in draft status")
+	ErrNotPosted       = errors.New("document is not posted")
+	ErrAlreadyPosted   = errors.New("document is already posted")
+	ErrAlreadyReversed = errors.New("journal entry is already reversed")
+	ErrHasApplications = errors.New("document has payment applications that must be unwound first")
+	ErrNotPostable     = errors.New("document is not eligible for this posting")
+	ErrNoOpenPeriod    = errors.New("no open accounting period for the document date")
+	ErrMissingAccount  = errors.New("a required GL account is not configured")
+	ErrNothingToPost   = errors.New("document total is zero or negative")
 )
 
 // periodForDate returns the id of the open accounting period containing date.
