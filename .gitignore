@@ -8,6 +8,10 @@
 *.so
 *.dylib
 
+# Compiled binaries. Go executables on Linux/macOS have no extension, so the
+# *.exe rule above won't catch them. Build into bin/ (e.g. `go build -o bin/server ./cmd/server`).
+/bin/
+
 # Test binary, built with `go test -c`
 *.test
 
