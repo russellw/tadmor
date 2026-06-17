@@ -16,6 +16,7 @@ import (
 
 	"tadmor/internal/db"
 	"tadmor/internal/posting"
+	"tadmor/internal/reporting"
 )
 
 // Server holds the dependencies shared by the HTTP handlers.
@@ -65,7 +66,86 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /supplier-payments/{id}/unpost", s.unpostSupplierPayment)
 	mux.HandleFunc("POST /stock-movements/{id}/unpost", s.unpostStockMovement)
 
+	// Read / reporting.
+	mux.HandleFunc("GET /trial-balance", s.getTrialBalance)
+	mux.HandleFunc("GET /ar-aging", s.getARaging)
+	mux.HandleFunc("GET /ap-aging", s.getAPaging)
+	mux.HandleFunc("GET /inventory/valuation", s.getInventoryValuation)
+	mux.HandleFunc("GET /sales-invoices/{id}", s.getSalesInvoice)
+	mux.HandleFunc("GET /purchase-bills/{id}", s.getPurchaseBill)
+
 	return mux
+}
+
+func (s *Server) getTrialBalance(w http.ResponseWriter, r *http.Request) {
+	rows, err := reporting.TrialBalance(r.Context(), s.pool)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) getARaging(w http.ResponseWriter, r *http.Request) {
+	rows, err := reporting.ARaging(r.Context(), s.pool)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) getAPaging(w http.ResponseWriter, r *http.Request) {
+	rows, err := reporting.APaging(r.Context(), s.pool)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) getInventoryValuation(w http.ResponseWriter, r *http.Request) {
+	rows, err := reporting.StockValuation(r.Context(), s.pool)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) getSalesInvoice(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	inv, err := reporting.SalesInvoiceBalance(r.Context(), s.pool, id)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, inv)
+}
+
+func (s *Server) getPurchaseBill(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	bill, err := reporting.PurchaseBillBalance(r.Context(), s.pool, id)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, bill)
+}
+
+func (s *Server) writeReadError(w http.ResponseWriter, err error) {
+	if errors.Is(err, reporting.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	s.log.Error("query failed", "err", err)
+	writeError(w, http.StatusInternalServerError, "internal error")
 }
 
 func (s *Server) unpostSalesInvoice(w http.ResponseWriter, r *http.Request) {

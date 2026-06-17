@@ -212,6 +212,80 @@ func TestUnpostSalesInvoiceEndpoint(t *testing.T) {
 	}
 }
 
+func TestReadEndpoints(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+	dbtest.Reset(ctx, t, pool)
+
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("setup exec: %v\nsql: %s", err, sql)
+		}
+	}
+	exec(`INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY2026','2026-01-01','2026-12-31')`)
+	exec(`INSERT INTO accounting_periods (fiscal_year_id, name, start_date, end_date)
+	      SELECT id,'2026-06','2026-06-01','2026-06-30' FROM fiscal_years WHERE name='FY2026'`)
+	exec(`WITH o AS (INSERT INTO organizations (name) VALUES ('Acme') RETURNING id)
+	      INSERT INTO customers (organization_id, ar_account_id)
+	      SELECT o.id,(SELECT id FROM accounts WHERE code='1100') FROM o`)
+	var invID int
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO sales_invoices (invoice_number, customer_id, invoice_date, currency_code)
+		 VALUES ('INV-1', (SELECT id FROM customers LIMIT 1), '2026-06-15', 'USD') RETURNING id`).Scan(&invID); err != nil {
+		t.Fatalf("create invoice: %v", err)
+	}
+	exec(`INSERT INTO sales_invoice_lines (invoice_id, line_no, description, quantity, unit_price, revenue_account_id)
+	      VALUES ($1, 1, 'Service', 10, 5, (SELECT id FROM accounts WHERE code='4000'))`, invID)
+
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	defer srv.Close()
+
+	if status, body := post(t, srv.URL+"/sales-invoices/"+strconv.Itoa(invID)+"/post"); status != http.StatusOK {
+		t.Fatalf("post: status = %d (body: %s)", status, body)
+	}
+
+	// GET the single invoice.
+	status, body := get(t, srv.URL+"/sales-invoices/"+strconv.Itoa(invID))
+	if status != http.StatusOK {
+		t.Fatalf("get invoice: status = %d (body: %s)", status, body)
+	}
+	var inv struct {
+		Total         string `json:"total"`
+		Balance       string `json:"balance"`
+		PaymentStatus string `json:"payment_status"`
+	}
+	if err := json.Unmarshal([]byte(body), &inv); err != nil {
+		t.Fatalf("decode invoice %q: %v", body, err)
+	}
+	if inv.Total != "50.0000" || inv.Balance != "50.0000" || inv.PaymentStatus != "unpaid" {
+		t.Errorf("invoice = %+v, want 50.0000/50.0000/unpaid", inv)
+	}
+
+	// GET the trial balance (a JSON array).
+	if status, body := get(t, srv.URL+"/trial-balance"); status != http.StatusOK || !strings.Contains(body, `"code":"1100"`) {
+		t.Fatalf("trial-balance: status = %d, body = %s", status, body)
+	}
+
+	// Unknown invoice -> 404.
+	if status, body := get(t, srv.URL+"/sales-invoices/999999"); status != http.StatusNotFound {
+		t.Fatalf("missing invoice: status = %d, want 404 (body: %s)", status, body)
+	}
+}
+
+// get issues a GET and returns the status and body.
+func get(t *testing.T, url string) (int, string) {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
+
 // post issues a POST with an empty JSON body and returns the status and body.
 func post(t *testing.T, url string) (int, string) {
 	t.Helper()
