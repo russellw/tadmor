@@ -29,10 +29,26 @@ vendor/            all third-party source, committed and reviewable
 
 ## Build, run, test
 
+A `Makefile` wraps the common tasks with the pinned toolchain and a hermetic
+(offline, vendored) environment. Run `make` to list targets:
+
 ```sh
-go build ./...
+make build    # build bin/server
+make run      # build and run the server
+make test     # full test suite from scratch (integration tests reset the DB)
+make vet      # go vet
+make fmt      # gofmt -w
+```
+
+Override connection strings on the command line, e.g.
+`make test TEST_DATABASE_URL=postgres://user:pass@host:5432/db?sslmode=disable`.
+
+The equivalent raw commands:
+
+```sh
+go build -o bin/server ./cmd/server
 DATABASE_URL='postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable' go run ./cmd/server
-TEST_DATABASE_URL='postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable' go test ./...
+TEST_DATABASE_URL='postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable' go test -count=1 ./...
 ```
 
 The server applies any pending migrations on startup. Endpoints: `GET /healthz`
