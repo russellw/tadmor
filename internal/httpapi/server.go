@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"tadmor/internal/db"
+	"tadmor/internal/documents"
 	"tadmor/internal/posting"
 	"tadmor/internal/reporting"
 )
@@ -47,6 +49,13 @@ func (s *Server) Handler() http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
+
+	// Create draft subledger documents.
+	mux.HandleFunc("POST /sales-invoices", s.createSalesInvoice)
+	mux.HandleFunc("POST /purchase-bills", s.createPurchaseBill)
+	mux.HandleFunc("POST /customer-payments", s.createCustomerPayment)
+	mux.HandleFunc("POST /supplier-payments", s.createSupplierPayment)
+	mux.HandleFunc("POST /stock-movements", s.createStockMovement)
 
 	// Post a draft subledger document to the general ledger.
 	mux.HandleFunc("POST /sales-invoices/{id}/post", s.postSalesInvoice)
@@ -146,6 +155,102 @@ func (s *Server) writeReadError(w http.ResponseWriter, err error) {
 	}
 	s.log.Error("query failed", "err", err)
 	writeError(w, http.StatusInternalServerError, "internal error")
+}
+
+func (s *Server) createSalesInvoice(w http.ResponseWriter, r *http.Request) {
+	var in documents.SalesInvoiceInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	s.runCreate(w, r, in.Validate, func(tx pgx.Tx) (int, error) {
+		return documents.CreateSalesInvoice(r.Context(), tx, in)
+	})
+}
+
+func (s *Server) createPurchaseBill(w http.ResponseWriter, r *http.Request) {
+	var in documents.PurchaseBillInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	s.runCreate(w, r, in.Validate, func(tx pgx.Tx) (int, error) {
+		return documents.CreatePurchaseBill(r.Context(), tx, in)
+	})
+}
+
+func (s *Server) createCustomerPayment(w http.ResponseWriter, r *http.Request) {
+	var in documents.CustomerPaymentInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	s.runCreate(w, r, in.Validate, func(tx pgx.Tx) (int, error) {
+		return documents.CreateCustomerPayment(r.Context(), tx, in)
+	})
+}
+
+func (s *Server) createSupplierPayment(w http.ResponseWriter, r *http.Request) {
+	var in documents.SupplierPaymentInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	s.runCreate(w, r, in.Validate, func(tx pgx.Tx) (int, error) {
+		return documents.CreateSupplierPayment(r.Context(), tx, in)
+	})
+}
+
+func (s *Server) createStockMovement(w http.ResponseWriter, r *http.Request) {
+	var in documents.StockMovementInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	s.runCreate(w, r, in.Validate, func(tx pgx.Tx) (int, error) {
+		return documents.CreateStockMovement(r.Context(), tx, in)
+	})
+}
+
+// runCreate validates the request, creates the document in a transaction, and
+// writes 201 with its id.
+func (s *Server) runCreate(w http.ResponseWriter, r *http.Request, validate func() string, create func(pgx.Tx) (int, error)) {
+	if msg := validate(); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	var id int
+	err := db.WithTx(r.Context(), s.pool, func(tx pgx.Tx) error {
+		var e error
+		id, e = create(tx)
+		return e
+	})
+	if err != nil {
+		s.writeCreateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]int{"id": id})
+}
+
+// writeCreateError maps database constraint violations to client errors.
+func (s *Server) writeCreateError(w http.ResponseWriter, err error) {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23505": // unique_violation
+			writeError(w, http.StatusConflict, pgErr.Message)
+			return
+		case "23503", "23514", "23502", "22P02", "23P01", "P0001":
+			// foreign key, check, not-null, invalid text, exclusion, raised
+			writeError(w, http.StatusUnprocessableEntity, pgErr.Message)
+			return
+		}
+	}
+	s.log.Error("create failed", "err", err)
+	writeError(w, http.StatusInternalServerError, "internal error")
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return false
+	}
+	return true
 }
 
 func (s *Server) unpostSalesInvoice(w http.ResponseWriter, r *http.Request) {

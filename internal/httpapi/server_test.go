@@ -274,6 +274,85 @@ func TestReadEndpoints(t *testing.T) {
 	}
 }
 
+func TestCreateThenPostSalesInvoiceEndpoint(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+	dbtest.Reset(ctx, t, pool)
+
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("setup exec: %v\nsql: %s", err, sql)
+		}
+	}
+	exec(`INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY2026','2026-01-01','2026-12-31')`)
+	exec(`INSERT INTO accounting_periods (fiscal_year_id, name, start_date, end_date)
+	      SELECT id,'2026-06','2026-06-01','2026-06-30' FROM fiscal_years WHERE name='FY2026'`)
+	var custID, revAcct int
+	if err := pool.QueryRow(ctx,
+		`WITH o AS (INSERT INTO organizations (name) VALUES ('Acme') RETURNING id)
+		 INSERT INTO customers (organization_id, ar_account_id)
+		 SELECT id, (SELECT id FROM accounts WHERE code='1100') FROM o RETURNING id`).Scan(&custID); err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE code='4000'`).Scan(&revAcct); err != nil {
+		t.Fatalf("revenue account: %v", err)
+	}
+
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	defer srv.Close()
+
+	body := `{
+		"invoice_number": "INV-1",
+		"customer_id": ` + strconv.Itoa(custID) + `,
+		"invoice_date": "2026-06-15",
+		"currency_code": "USD",
+		"lines": [
+			{"description": "Service", "quantity": "10", "unit_price": "5", "revenue_account_id": ` + strconv.Itoa(revAcct) + `}
+		]
+	}`
+
+	// Create returns 201 with the new id.
+	status, respBody := postJSON(t, srv.URL+"/sales-invoices", body)
+	if status != http.StatusCreated {
+		t.Fatalf("create: status = %d, want 201 (body: %s)", status, respBody)
+	}
+	var created struct {
+		ID int `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(respBody), &created); err != nil || created.ID <= 0 {
+		t.Fatalf("decode %q: %v / id=%d", respBody, err, created.ID)
+	}
+	idStr := strconv.Itoa(created.ID)
+
+	// It is fetchable, draft, with a trigger-computed total of 50.
+	if s, b := get(t, srv.URL+"/sales-invoices/"+idStr); s != http.StatusOK || !strings.Contains(b, `"total":"50.0000"`) || !strings.Contains(b, `"status":"draft"`) {
+		t.Fatalf("get created invoice: status=%d body=%s", s, b)
+	}
+
+	// And it can be posted via the existing endpoint.
+	if s, b := post(t, srv.URL+"/sales-invoices/"+idStr+"/post"); s != http.StatusOK {
+		t.Fatalf("post created invoice: status=%d body=%s", s, b)
+	}
+
+	// A duplicate invoice number conflicts (409).
+	if s, b := postJSON(t, srv.URL+"/sales-invoices", body); s != http.StatusConflict {
+		t.Fatalf("duplicate create: status = %d, want 409 (body: %s)", s, b)
+	}
+
+	// A missing required field is a 400.
+	if s, _ := postJSON(t, srv.URL+"/sales-invoices", `{"customer_id": `+strconv.Itoa(custID)+`}`); s != http.StatusBadRequest {
+		t.Fatalf("invalid create: status = %d, want 400", s)
+	}
+
+	// A nonexistent customer fails the foreign key (422).
+	bad := `{"invoice_number":"INV-X","customer_id":999999,"invoice_date":"2026-06-15","currency_code":"USD"}`
+	if s, _ := postJSON(t, srv.URL+"/sales-invoices", bad); s != http.StatusUnprocessableEntity {
+		t.Fatalf("bad customer: status = %d, want 422", s)
+	}
+}
+
 // get issues a GET and returns the status and body.
 func get(t *testing.T, url string) (int, string) {
 	t.Helper()
