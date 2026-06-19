@@ -1,0 +1,27 @@
+# Frontend (Vite + React + TS, pnpm). Mirrors the supply-chain posture in
+# docs/frontend-stack-design-notes.md: commit the lockfile (pin + integrity,
+# like go.sum), never commit the installed tree (platform-specific build
+# artifact, like Go's vendored source is NOT the analog here — the lockfile is).
+
+# Installed dependency tree — never committed.
+node_modules/
+
+# pnpm content-addressable store, if created locally inside web/.
+.pnpm-store/
+
+# IMPORTANT: pnpm-lock.yaml is committed deliberately (Tier 1 vendoring).
+# Do NOT add it here.
+
+# Build output.
+dist/
+dist-ssr/
+
+# Vite / tooling caches.
+.vite/
+*.tsbuildinfo
+
+# Test coverage.
+coverage/
+
+# Local-only overrides.
+*.local
