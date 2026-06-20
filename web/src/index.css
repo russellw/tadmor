@@ -1,0 +1,4 @@
+@import "tailwindcss";
+
+/* shadcn/ui injects its theme tokens (@theme / CSS variables) here when you run
+   `pnpm dlx shadcn@latest add ...`. Kept minimal until the first component lands. */

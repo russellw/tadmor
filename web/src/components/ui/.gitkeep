@@ -1,0 +1,2 @@
+# shadcn/ui components are vendored into this directory via
+# `pnpm dlx shadcn@latest add <name>` and committed as our own source.

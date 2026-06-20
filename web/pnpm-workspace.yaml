@@ -1,0 +1,11 @@
+# pnpm hardening knobs (pnpm 10). See docs/frontend-stack.md §4.4.
+
+# Cooldown: refuse any version published less than 7 days ago. Defeats the
+# "compromised version published an hour ago" class. Value is in minutes.
+minimumReleaseAge: 10080
+
+# Lifecycle scripts are blocked by default in pnpm 10; a package runs install
+# scripts only if listed here. Keep this minimal. pnpm warns you exactly what it
+# blocked, so add only what a build genuinely needs.
+onlyBuiltDependencies:
+  - esbuild

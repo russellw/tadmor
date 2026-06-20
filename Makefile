@@ -13,7 +13,12 @@ DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable
 TEST_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable
 
 .DEFAULT_GOAL := help
-.PHONY: help build run test vet fmt fmt-check
+.PHONY: help build run test vet fmt fmt-check web-install web-dev web-build web-check
+
+# Frontend lives in web/ (pnpm, corepack-pinned). Mirrors the Go targets'
+# discipline: the committed pnpm-lock.yaml is the source of truth and CI installs
+# are frozen. See docs/frontend-stack.md.
+WEB := web
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -39,3 +44,15 @@ fmt-check: ## Fail if any Go source is not gofmt-clean
 	if [ -n "$$unformatted" ]; then \
 		echo "unformatted files:"; echo "$$unformatted"; exit 1; \
 	fi
+
+web-install: ## Install frontend deps from the frozen lockfile
+	cd $(WEB) && corepack pnpm install --frozen-lockfile
+
+web-dev: ## Run the Vite dev server
+	cd $(WEB) && corepack pnpm dev
+
+web-build: ## Production build into web/dist
+	cd $(WEB) && corepack pnpm build
+
+web-check: ## Type-check + audit the frontend
+	cd $(WEB) && corepack pnpm typecheck && corepack pnpm audit --audit-level=high
