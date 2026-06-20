@@ -48,3 +48,35 @@ export interface Account {
 export function listAccounts(): Promise<Account[]> {
   return get<Account[]>("/accounts")
 }
+
+/** An organization (the party a customer/supplier role attaches to). */
+export interface Organization {
+  id: number
+  name: string
+  legal_name: string | null
+  tax_id: string | null
+  country_code: string | null
+  default_currency: string | null
+}
+
+export function listOrganizations(): Promise<Organization[]> {
+  return get<Organization[]>("/organizations")
+}
+
+/** A customer: a role on an organization. The display name lives on the
+ *  organization (join via organization_id), mirroring master.Customer. */
+export interface Customer {
+  id: number
+  organization_id: number
+  customer_number: string | null
+  ar_account_id: number | null
+  payment_terms_code: string | null
+  currency_code: string | null
+  tax_code: string | null
+  credit_limit: string | null
+  is_active: boolean
+}
+
+export function listCustomers(): Promise<Customer[]> {
+  return get<Customer[]>("/customers")
+}
