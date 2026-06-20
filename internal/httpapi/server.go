@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -34,9 +35,55 @@ func NewServer(pool *pgxpool.Pool, log *slog.Logger) *Server {
 
 // Handler wires the routes. Routing uses the standard library's method-aware
 // ServeMux (Go 1.22+), so no third-party router is needed.
-func (s *Server) Handler() http.Handler {
+//
+// distFS, when non-nil, is the built front-end (the contents of web/dist); it is
+// served for any path outside /api/, with an index.html fallback so client-side
+// routing works. Pass nil to disable SPA serving (e.g. in API tests).
+func (s *Server) Handler(distFS fs.FS) http.Handler {
+	// API routes are registered unprefixed and mounted under /api/ below via
+	// StripPrefix, so the handler patterns stay short and the front-end's own
+	// client-side routes can't collide with API paths.
+	api := http.NewServeMux()
+
+	// Create draft subledger documents.
+	api.HandleFunc("POST /sales-invoices", s.createSalesInvoice)
+	api.HandleFunc("POST /purchase-bills", s.createPurchaseBill)
+	api.HandleFunc("POST /customer-payments", s.createCustomerPayment)
+	api.HandleFunc("POST /supplier-payments", s.createSupplierPayment)
+	api.HandleFunc("POST /stock-movements", s.createStockMovement)
+
+	// Post a draft subledger document to the general ledger.
+	api.HandleFunc("POST /sales-invoices/{id}/post", s.postSalesInvoice)
+	api.HandleFunc("POST /purchase-bills/{id}/post", s.postPurchaseBill)
+	api.HandleFunc("POST /customer-payments/{id}/post", s.postCustomerPayment)
+	api.HandleFunc("POST /supplier-payments/{id}/post", s.postSupplierPayment)
+	api.HandleFunc("POST /stock-movements/{id}/post", s.postStockMovement)
+
+	// Auto-apply a payment to the counterparty's open documents, oldest first.
+	api.HandleFunc("POST /customer-payments/{id}/apply", s.applyCustomerPayment)
+	api.HandleFunc("POST /supplier-payments/{id}/apply", s.applySupplierPayment)
+
+	// Unpost a document: reverse its journal entry and return it to draft.
+	api.HandleFunc("POST /sales-invoices/{id}/unpost", s.unpostSalesInvoice)
+	api.HandleFunc("POST /purchase-bills/{id}/unpost", s.unpostPurchaseBill)
+	api.HandleFunc("POST /customer-payments/{id}/unpost", s.unpostCustomerPayment)
+	api.HandleFunc("POST /supplier-payments/{id}/unpost", s.unpostSupplierPayment)
+	api.HandleFunc("POST /stock-movements/{id}/unpost", s.unpostStockMovement)
+
+	// Master data CRUD.
+	s.registerMasterRoutes(api)
+
+	// Read / reporting.
+	api.HandleFunc("GET /trial-balance", s.getTrialBalance)
+	api.HandleFunc("GET /ar-aging", s.getARaging)
+	api.HandleFunc("GET /ap-aging", s.getAPaging)
+	api.HandleFunc("GET /inventory/valuation", s.getInventoryValuation)
+	api.HandleFunc("GET /sales-invoices/{id}", s.getSalesInvoice)
+	api.HandleFunc("GET /purchase-bills/{id}", s.getPurchaseBill)
+
 	mux := http.NewServeMux()
 
+	// Liveness/readiness probes stay at the root for load balancers/orchestrators.
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -50,41 +97,11 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
 
-	// Create draft subledger documents.
-	mux.HandleFunc("POST /sales-invoices", s.createSalesInvoice)
-	mux.HandleFunc("POST /purchase-bills", s.createPurchaseBill)
-	mux.HandleFunc("POST /customer-payments", s.createCustomerPayment)
-	mux.HandleFunc("POST /supplier-payments", s.createSupplierPayment)
-	mux.HandleFunc("POST /stock-movements", s.createStockMovement)
-
-	// Post a draft subledger document to the general ledger.
-	mux.HandleFunc("POST /sales-invoices/{id}/post", s.postSalesInvoice)
-	mux.HandleFunc("POST /purchase-bills/{id}/post", s.postPurchaseBill)
-	mux.HandleFunc("POST /customer-payments/{id}/post", s.postCustomerPayment)
-	mux.HandleFunc("POST /supplier-payments/{id}/post", s.postSupplierPayment)
-	mux.HandleFunc("POST /stock-movements/{id}/post", s.postStockMovement)
-
-	// Auto-apply a payment to the counterparty's open documents, oldest first.
-	mux.HandleFunc("POST /customer-payments/{id}/apply", s.applyCustomerPayment)
-	mux.HandleFunc("POST /supplier-payments/{id}/apply", s.applySupplierPayment)
-
-	// Unpost a document: reverse its journal entry and return it to draft.
-	mux.HandleFunc("POST /sales-invoices/{id}/unpost", s.unpostSalesInvoice)
-	mux.HandleFunc("POST /purchase-bills/{id}/unpost", s.unpostPurchaseBill)
-	mux.HandleFunc("POST /customer-payments/{id}/unpost", s.unpostCustomerPayment)
-	mux.HandleFunc("POST /supplier-payments/{id}/unpost", s.unpostSupplierPayment)
-	mux.HandleFunc("POST /stock-movements/{id}/unpost", s.unpostStockMovement)
-
-	// Master data CRUD.
-	s.registerMasterRoutes(mux)
-
-	// Read / reporting.
-	mux.HandleFunc("GET /trial-balance", s.getTrialBalance)
-	mux.HandleFunc("GET /ar-aging", s.getARaging)
-	mux.HandleFunc("GET /ap-aging", s.getAPaging)
-	mux.HandleFunc("GET /inventory/valuation", s.getInventoryValuation)
-	mux.HandleFunc("GET /sales-invoices/{id}", s.getSalesInvoice)
-	mux.HandleFunc("GET /purchase-bills/{id}", s.getPurchaseBill)
+	// JSON API under /api/; everything else falls through to the embedded SPA.
+	mux.Handle("/api/", http.StripPrefix("/api", api))
+	if distFS != nil {
+		mux.Handle("/", spaHandler(distFS))
+	}
 
 	return mux
 }

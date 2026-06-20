@@ -12,8 +12,11 @@ node_modules/
 # IMPORTANT: pnpm-lock.yaml is committed deliberately (Tier 1 vendoring).
 # Do NOT add it here.
 
-# Build output.
-dist/
+# Build output. dist/ is ignored except for the committed .gitkeep placeholder,
+# which keeps the Go embed (web/embed.go: //go:embed all:dist) compiling before
+# any `make web-build` has run.
+dist/*
+!dist/.gitkeep
 dist-ssr/
 
 # Vite / tooling caches.

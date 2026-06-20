@@ -15,6 +15,7 @@ import (
 	"tadmor/internal/config"
 	"tadmor/internal/db"
 	"tadmor/internal/httpapi"
+	"tadmor/web"
 )
 
 func main() {
@@ -52,7 +53,7 @@ func run(logger *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewServer(pool, logger).Handler(),
+		Handler:           httpapi.NewServer(pool, logger).Handler(web.DistFS()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

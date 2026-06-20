@@ -13,7 +13,7 @@ DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable
 TEST_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable
 
 .DEFAULT_GOAL := help
-.PHONY: help build run test vet fmt fmt-check web-install web-dev web-build web-check
+.PHONY: help build release run test vet fmt fmt-check web-install web-dev web-build web-check
 
 # Frontend lives in web/ (pnpm, corepack-pinned). Mirrors the Go targets'
 # discipline: the committed pnpm-lock.yaml is the source of truth and CI installs
@@ -24,8 +24,10 @@ help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN{FS=":.*## "}{printf "  make %-10s %s\n", $$1, $$2}'
 
-build: ## Build the server binary into bin/
+build: ## Build the server binary into bin/ (embeds whatever is in web/dist)
 	go build -o bin/server ./cmd/server
+
+release: web-build build ## Build the front-end then the server (embedded SPA)
 
 run: build ## Build and run the server
 	DATABASE_URL=$(DATABASE_URL) ./bin/server
@@ -51,8 +53,9 @@ web-install: ## Install frontend deps from the frozen lockfile
 web-dev: ## Run the Vite dev server
 	cd $(WEB) && corepack pnpm dev
 
-web-build: ## Production build into web/dist
+web-build: ## Production build into web/dist (embedded by the Go server)
 	cd $(WEB) && corepack pnpm build
+	@touch $(WEB)/dist/.gitkeep  # Vite's emptyOutDir wipes it; keep the embed placeholder tracked
 
 web-check: ## Type-check + audit the frontend
 	cd $(WEB) && corepack pnpm typecheck && corepack pnpm audit --audit-level=high

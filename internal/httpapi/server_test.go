@@ -47,10 +47,10 @@ func TestPostSalesInvoiceEndpoint(t *testing.T) {
 	exec(`INSERT INTO sales_invoice_lines (invoice_id, line_no, description, quantity, unit_price, revenue_account_id)
 	      VALUES ($1, 1, 'Service', 10, 5, (SELECT id FROM accounts WHERE code='4000'))`, invID)
 
-	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler(nil))
 	defer srv.Close()
 
-	invURL := srv.URL + "/sales-invoices/" + strconv.Itoa(invID) + "/post"
+	invURL := srv.URL + "/api/sales-invoices/" + strconv.Itoa(invID) + "/post"
 
 	// First post succeeds and returns a journal-entry id.
 	status, body := post(t, invURL)
@@ -73,12 +73,12 @@ func TestPostSalesInvoiceEndpoint(t *testing.T) {
 	}
 
 	// Unknown invoice is a 404.
-	if status, body := post(t, srv.URL+"/sales-invoices/999999/post"); status != http.StatusNotFound {
+	if status, body := post(t, srv.URL+"/api/sales-invoices/999999/post"); status != http.StatusNotFound {
 		t.Fatalf("missing invoice: status = %d, want 404 (body: %s)", status, body)
 	}
 
 	// Non-numeric id is a 400.
-	if status, body := post(t, srv.URL+"/sales-invoices/abc/post"); status != http.StatusBadRequest {
+	if status, body := post(t, srv.URL+"/api/sales-invoices/abc/post"); status != http.StatusBadRequest {
 		t.Fatalf("bad id: status = %d, want 400 (body: %s)", status, body)
 	}
 
@@ -122,9 +122,9 @@ func TestPostStockMovementReceiptEndpoint(t *testing.T) {
 		t.Fatalf("grni account: %v", err)
 	}
 
-	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler(nil))
 	defer srv.Close()
-	url := srv.URL + "/stock-movements/" + strconv.Itoa(movID) + "/post"
+	url := srv.URL + "/api/stock-movements/" + strconv.Itoa(movID) + "/post"
 
 	// Missing credit_account_id -> 422 (a receipt needs a clearing account).
 	if status, body := postJSON(t, url, `{"currency":"USD"}`); status != http.StatusUnprocessableEntity {
@@ -179,9 +179,9 @@ func TestUnpostSalesInvoiceEndpoint(t *testing.T) {
 	exec(`INSERT INTO sales_invoice_lines (invoice_id, line_no, description, quantity, unit_price, revenue_account_id)
 	      VALUES ($1, 1, 'Service', 10, 5, (SELECT id FROM accounts WHERE code='4000'))`, invID)
 
-	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler(nil))
 	defer srv.Close()
-	base := srv.URL + "/sales-invoices/" + strconv.Itoa(invID)
+	base := srv.URL + "/api/sales-invoices/" + strconv.Itoa(invID)
 
 	if status, body := post(t, base+"/post"); status != http.StatusOK {
 		t.Fatalf("post: status = %d (body: %s)", status, body)
@@ -239,15 +239,15 @@ func TestReadEndpoints(t *testing.T) {
 	exec(`INSERT INTO sales_invoice_lines (invoice_id, line_no, description, quantity, unit_price, revenue_account_id)
 	      VALUES ($1, 1, 'Service', 10, 5, (SELECT id FROM accounts WHERE code='4000'))`, invID)
 
-	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler(nil))
 	defer srv.Close()
 
-	if status, body := post(t, srv.URL+"/sales-invoices/"+strconv.Itoa(invID)+"/post"); status != http.StatusOK {
+	if status, body := post(t, srv.URL+"/api/sales-invoices/"+strconv.Itoa(invID)+"/post"); status != http.StatusOK {
 		t.Fatalf("post: status = %d (body: %s)", status, body)
 	}
 
 	// GET the single invoice.
-	status, body := get(t, srv.URL+"/sales-invoices/"+strconv.Itoa(invID))
+	status, body := get(t, srv.URL+"/api/sales-invoices/"+strconv.Itoa(invID))
 	if status != http.StatusOK {
 		t.Fatalf("get invoice: status = %d (body: %s)", status, body)
 	}
@@ -264,12 +264,12 @@ func TestReadEndpoints(t *testing.T) {
 	}
 
 	// GET the trial balance (a JSON array).
-	if status, body := get(t, srv.URL+"/trial-balance"); status != http.StatusOK || !strings.Contains(body, `"code":"1100"`) {
+	if status, body := get(t, srv.URL+"/api/trial-balance"); status != http.StatusOK || !strings.Contains(body, `"code":"1100"`) {
 		t.Fatalf("trial-balance: status = %d, body = %s", status, body)
 	}
 
 	// Unknown invoice -> 404.
-	if status, body := get(t, srv.URL+"/sales-invoices/999999"); status != http.StatusNotFound {
+	if status, body := get(t, srv.URL+"/api/sales-invoices/999999"); status != http.StatusNotFound {
 		t.Fatalf("missing invoice: status = %d, want 404 (body: %s)", status, body)
 	}
 }
@@ -300,7 +300,7 @@ func TestCreateThenPostSalesInvoiceEndpoint(t *testing.T) {
 		t.Fatalf("revenue account: %v", err)
 	}
 
-	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler(nil))
 	defer srv.Close()
 
 	body := `{
@@ -314,7 +314,7 @@ func TestCreateThenPostSalesInvoiceEndpoint(t *testing.T) {
 	}`
 
 	// Create returns 201 with the new id.
-	status, respBody := postJSON(t, srv.URL+"/sales-invoices", body)
+	status, respBody := postJSON(t, srv.URL+"/api/sales-invoices", body)
 	if status != http.StatusCreated {
 		t.Fatalf("create: status = %d, want 201 (body: %s)", status, respBody)
 	}
@@ -327,28 +327,28 @@ func TestCreateThenPostSalesInvoiceEndpoint(t *testing.T) {
 	idStr := strconv.Itoa(created.ID)
 
 	// It is fetchable, draft, with a trigger-computed total of 50.
-	if s, b := get(t, srv.URL+"/sales-invoices/"+idStr); s != http.StatusOK || !strings.Contains(b, `"total":"50.0000"`) || !strings.Contains(b, `"status":"draft"`) {
+	if s, b := get(t, srv.URL+"/api/sales-invoices/"+idStr); s != http.StatusOK || !strings.Contains(b, `"total":"50.0000"`) || !strings.Contains(b, `"status":"draft"`) {
 		t.Fatalf("get created invoice: status=%d body=%s", s, b)
 	}
 
 	// And it can be posted via the existing endpoint.
-	if s, b := post(t, srv.URL+"/sales-invoices/"+idStr+"/post"); s != http.StatusOK {
+	if s, b := post(t, srv.URL+"/api/sales-invoices/"+idStr+"/post"); s != http.StatusOK {
 		t.Fatalf("post created invoice: status=%d body=%s", s, b)
 	}
 
 	// A duplicate invoice number conflicts (409).
-	if s, b := postJSON(t, srv.URL+"/sales-invoices", body); s != http.StatusConflict {
+	if s, b := postJSON(t, srv.URL+"/api/sales-invoices", body); s != http.StatusConflict {
 		t.Fatalf("duplicate create: status = %d, want 409 (body: %s)", s, b)
 	}
 
 	// A missing required field is a 400.
-	if s, _ := postJSON(t, srv.URL+"/sales-invoices", `{"customer_id": `+strconv.Itoa(custID)+`}`); s != http.StatusBadRequest {
+	if s, _ := postJSON(t, srv.URL+"/api/sales-invoices", `{"customer_id": `+strconv.Itoa(custID)+`}`); s != http.StatusBadRequest {
 		t.Fatalf("invalid create: status = %d, want 400", s)
 	}
 
 	// A nonexistent customer fails the foreign key (422).
 	bad := `{"invoice_number":"INV-X","customer_id":999999,"invoice_date":"2026-06-15","currency_code":"USD"}`
-	if s, _ := postJSON(t, srv.URL+"/sales-invoices", bad); s != http.StatusUnprocessableEntity {
+	if s, _ := postJSON(t, srv.URL+"/api/sales-invoices", bad); s != http.StatusUnprocessableEntity {
 		t.Fatalf("bad customer: status = %d, want 422", s)
 	}
 }
@@ -362,11 +362,11 @@ func TestFullFlowOverHTTP(t *testing.T) {
 	defer cleanup()
 	dbtest.Reset(ctx, t, pool)
 
-	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler(nil))
 	defer srv.Close()
 
 	// Discover seeded account ids by code via the accounts list endpoint.
-	_, accountsBody := get(t, srv.URL+"/accounts")
+	_, accountsBody := get(t, srv.URL+"/api/accounts")
 	var accounts []struct {
 		ID   int    `json:"id"`
 		Code string `json:"code"`
@@ -385,7 +385,7 @@ func TestFullFlowOverHTTP(t *testing.T) {
 	// createID POSTs a body and returns the new record id.
 	createID := func(path, body string) int {
 		t.Helper()
-		status, respBody := postJSON(t, srv.URL+path, body)
+		status, respBody := postJSON(t, srv.URL+"/api"+path, body)
 		if status != http.StatusCreated {
 			t.Fatalf("POST %s: status = %d (body: %s)", path, status, respBody)
 		}
@@ -405,11 +405,11 @@ func TestFullFlowOverHTTP(t *testing.T) {
 	createID("/accounting-periods", `{"fiscal_year_id":1,"name":"2026-06","start_date":"2026-06-01","end_date":"2026-06-30"}`)
 
 	// Update the product (PUT full replace) and confirm via GET.
-	if status, body := putJSON(t, srv.URL+"/products/"+itoa(prodID),
+	if status, body := putJSON(t, srv.URL+"/api/products/"+itoa(prodID),
 		`{"sku":"WIDGET","name":"Widget v2","unit_price":"6","revenue_account_id":`+itoa(acct["4000"])+`,"is_active":true}`); status != http.StatusNoContent {
 		t.Fatalf("PUT product: status = %d (body: %s)", status, body)
 	}
-	if _, body := get(t, srv.URL+"/products/"+itoa(prodID)); !strings.Contains(body, `"name":"Widget v2"`) || !strings.Contains(body, `"unit_price":"6.0000"`) {
+	if _, body := get(t, srv.URL+"/api/products/"+itoa(prodID)); !strings.Contains(body, `"name":"Widget v2"`) || !strings.Contains(body, `"unit_price":"6.0000"`) {
 		t.Fatalf("product after update: %s", body)
 	}
 
@@ -418,15 +418,15 @@ func TestFullFlowOverHTTP(t *testing.T) {
 		"invoice_number":"INV-1","customer_id":`+itoa(custID)+`,"invoice_date":"2026-06-15","currency_code":"USD",
 		"lines":[{"product_id":`+itoa(prodID)+`,"description":"Widget","quantity":"10","unit_price":"5","revenue_account_id":`+itoa(acct["4000"])+`}]
 	}`)
-	if status, body := post(t, srv.URL+"/sales-invoices/"+itoa(invID)+"/post"); status != http.StatusOK {
+	if status, body := post(t, srv.URL+"/api/sales-invoices/"+itoa(invID)+"/post"); status != http.StatusOK {
 		t.Fatalf("post invoice: status = %d (body: %s)", status, body)
 	}
 
 	// The invoice is posted with a balance of 50, and it shows in the trial balance.
-	if _, body := get(t, srv.URL+"/sales-invoices/"+itoa(invID)); !strings.Contains(body, `"status":"posted"`) || !strings.Contains(body, `"balance":"50.0000"`) {
+	if _, body := get(t, srv.URL+"/api/sales-invoices/"+itoa(invID)); !strings.Contains(body, `"status":"posted"`) || !strings.Contains(body, `"balance":"50.0000"`) {
 		t.Fatalf("posted invoice: %s", body)
 	}
-	if _, body := get(t, srv.URL+"/trial-balance"); !strings.Contains(body, `"code":"1100"`) || !strings.Contains(body, `"balance":"50.0000"`) {
+	if _, body := get(t, srv.URL+"/api/trial-balance"); !strings.Contains(body, `"code":"1100"`) || !strings.Contains(body, `"balance":"50.0000"`) {
 		t.Fatalf("trial balance: %s", body)
 	}
 }

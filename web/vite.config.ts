@@ -14,4 +14,11 @@ export default defineConfig({
   build: {
     outDir: 'dist',
   },
+  server: {
+    // Dev server proxies the API to the Go backend (default :8080) so the app
+    // calls same-origin /api/* in both dev and production.
+    proxy: {
+      '/api': 'http://localhost:8080',
+    },
+  },
 })
