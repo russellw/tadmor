@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 
 import { listAccounts, type Account } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -11,9 +13,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-// The first real screen: a read-only list of the chart of accounts, fetched
-// from GET /api/accounts. It exercises the full dev-server -> /api -> Go loop and
-// the first vendored shadcn components (Table, Badge).
+// The chart of accounts: a list of GL accounts from GET /api/accounts, with a
+// New-account button and per-row Edit link into the account form.
 export function ChartOfAccounts() {
   const [accounts, setAccounts] = useState<Account[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -36,13 +37,18 @@ export function ChartOfAccounts() {
 
   return (
     <section className="mx-auto w-full max-w-5xl p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Chart of Accounts
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          The general-ledger accounts, ordered by code.
-        </p>
+      <header className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Chart of Accounts
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            The general-ledger accounts, ordered by code.
+          </p>
+        </div>
+        <Button asChild>
+          <Link to="/accounts/new">New account</Link>
+        </Button>
       </header>
 
       {error !== null && (
@@ -69,6 +75,7 @@ export function ChartOfAccounts() {
               <TableHead>Currency</TableHead>
               <TableHead>Postable</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="w-0"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -87,6 +94,14 @@ export function ChartOfAccounts() {
                   <Badge variant={a.is_active ? "default" : "outline"}>
                     {a.is_active ? "Active" : "Inactive"}
                   </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Link
+                    to={`/accounts/${a.id}`}
+                    className="text-sm font-medium text-primary hover:underline"
+                  >
+                    Edit
+                  </Link>
                 </TableCell>
               </TableRow>
             ))}

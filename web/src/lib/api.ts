@@ -69,8 +69,42 @@ export interface Account {
   is_active: boolean
 }
 
+/** The writable fields of an account (Account without its id), mirroring
+ *  master.AccountInput. PUT is a full replace. */
+export interface AccountInput {
+  code: string
+  name: string
+  account_type: string
+  parent_id: number | null
+  currency_code: string | null
+  is_postable: boolean
+  is_active: boolean
+}
+
+// The fixed account_types lookup (db/migrations/000004). A closed set with no
+// list endpoint, so it's mirrored here rather than fetched.
+export const ACCOUNT_TYPES = [
+  { code: "asset", name: "Asset" },
+  { code: "liability", name: "Liability" },
+  { code: "equity", name: "Equity" },
+  { code: "revenue", name: "Revenue" },
+  { code: "expense", name: "Expense" },
+] as const
+
 export function listAccounts(): Promise<Account[]> {
   return get<Account[]>("/accounts")
+}
+
+export function getAccount(id: number): Promise<Account> {
+  return get<Account>(`/accounts/${id}`)
+}
+
+export function createAccount(input: AccountInput): Promise<{ id: number }> {
+  return post<{ id: number }>("/accounts", input)
+}
+
+export function updateAccount(id: number, input: AccountInput): Promise<void> {
+  return send("PUT", `/accounts/${id}`, input)
 }
 
 /** An organization (the party a customer/supplier role attaches to). */

@@ -499,11 +499,19 @@ on) via a module-level `AccountSelect` helper. `lib/api.ts` gained `ProductInput
 product" button and per-row Edit link. Verified the POST→PUT→GET round-trip
 against the dev DB.
 
-All four master-data entities (accounts, customers, suppliers, products) now have
-list screens; the three writable ones (customers, suppliers, products) have full
-create+edit. (Accounts remain read-only — no edit screen yet.)
+Accounts then got the create+edit pattern too
+(`web/src/components/account-form.tsx`, routes `/accounts/new` and
+`/accounts/:id`; "New account" button + per-row Edit link on the chart of
+accounts). `account_type` is a required dropdown sourced from a hardcoded
+`ACCOUNT_TYPES` constant in `lib/api.ts` (the 5-value lookup is a closed set with
+no list endpoint — mirrored rather than fetched); `parent_id` is a nullable
+self-referencing account dropdown that excludes the account itself in edit mode
+(a CHECK forbids self-parent). `lib/api.ts` gained `AccountInput`, `getAccount`,
+`createAccount`, `updateAccount`. Verified the POST→PUT→GET round-trip.
 
-Next: tighten the CSP off `'unsafe-inline'` styles before launch; an accounts
-create+edit screen if chart-of-accounts maintenance is wanted in-app; and (when
+All four master-data entities (accounts, customers, suppliers, products) now have
+full list + create + edit screens.
+
+Next: tighten the CSP off `'unsafe-inline'` styles before launch; and (when
 reference data needs managing) add org/payment-terms/currency screens so those FK
 fields can become dropdowns instead of free text.

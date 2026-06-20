@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom"
 
+import { AccountForm } from "@/components/account-form"
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
@@ -46,6 +47,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/accounts" replace />} />
           <Route path="/accounts" element={<ChartOfAccounts />} />
+          <Route path="/accounts/new" element={<AccountForm mode="create" />} />
+          <Route path="/accounts/:id" element={<AccountForm mode="edit" />} />
           <Route path="/customers" element={<Customers />} />
           <Route path="/customers/new" element={<CustomerForm mode="create" />} />
           <Route path="/customers/:id" element={<CustomerForm mode="edit" />} />
