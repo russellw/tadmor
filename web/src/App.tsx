@@ -1,49 +1,54 @@
-import { useState } from "react"
+import { NavLink, Navigate, Route, Routes } from "react-router-dom"
 
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { Customers } from "@/components/customers"
 import { cn } from "@/lib/utils"
 
-// A minimal state-based view switcher. Deliberately not a URL router yet: a real
-// client-side router is a new runtime dependency and a deliberate choice under
-// the supply-chain policy (see docs/frontend-stack.md), to be made when deep
-// links / the back button actually matter.
-const screens = {
-  accounts: { label: "Chart of Accounts", Component: ChartOfAccounts },
-  customers: { label: "Customers", Component: Customers },
-} as const
-
-type ScreenKey = keyof typeof screens
-const screenKeys = Object.keys(screens) as ScreenKey[]
+// URL routing via react-router-dom (v7). The Go backend's spaHandler falls back
+// to index.html for non-/api/ paths, so deep links like /customers resolve in
+// production; Vite's dev server does the same in development.
+const navItems = [
+  { to: "/accounts", label: "Chart of Accounts" },
+  { to: "/customers", label: "Customers" },
+]
 
 export default function App() {
-  const [active, setActive] = useState<ScreenKey>("accounts")
-  const { Component } = screens[active]
-
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b">
         <nav className="mx-auto flex w-full max-w-5xl gap-1 p-3">
-          {screenKeys.map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setActive(key)}
-              aria-current={active === key ? "page" : undefined}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                active === key
-                  ? "bg-secondary text-secondary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
+          {navItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                cn(
+                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-secondary text-secondary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )
+              }
             >
-              {screens[key].label}
-            </button>
+              {item.label}
+            </NavLink>
           ))}
         </nav>
       </header>
       <main>
-        <Component />
+        <Routes>
+          <Route path="/" element={<Navigate to="/accounts" replace />} />
+          <Route path="/accounts" element={<ChartOfAccounts />} />
+          <Route path="/customers" element={<Customers />} />
+          <Route
+            path="*"
+            element={
+              <p className="mx-auto w-full max-w-5xl p-6 text-sm text-muted-foreground">
+                Page not found.
+              </p>
+            }
+          />
+        </Routes>
       </main>
     </div>
   )

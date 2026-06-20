@@ -318,6 +318,53 @@ working file-watching.
 
 ---
 
+### 4.10 Client-side routing: react-router-dom
+
+**Decision:** **`react-router-dom` v7** for URL routing (added 2026-06-20, pinned
+to `7.17.0` — `7.18.0` existed but was inside the 7-day cooldown window).
+
+**Why a dependency at all** — this reverses the earlier lean toward a hand-rolled
+router. The general principle still holds (a few tens of lines beat a dependency
+when they truly do the same job), but routing is a case where the honest scope
+*grows past* tens of lines: a hand-rolled History-API router stays small only for
+flat, top-level screens, and gets fiddly and bug-prone once you need route params
+(`/customers/:id`), nested layouts, link-click edge cases (modifier/middle-click,
+`target`/`download`/external), scroll restoration, and dirty-form navigation
+guards — all of which a heavy CRUD app will want. "Start as we mean to continue"
+won the call: adopt the standard now rather than migrate off a bespoke router
+later.
+
+**Why react-router-dom over the alternatives**, decided primarily on
+supply-chain surface (the metric this doc optimizes — *distinct maintainers
+trusted at runtime*). Measured the production transitive trees (excluding the
+shared `react`/`react-dom`/`scheduler` base):
+
+| Router | New runtime pkgs | Distinct maintainers | Extra third-party deps |
+|---|---|---|---|
+| **react-router-dom** (chosen) | 4 | 3 | `cookie` (jshttp, ubiquitous), `set-cookie-parser` |
+| `@tanstack/react-router` | 10 | ~5 | `seroval`+`seroval-plugins`, `isbot`, `cookie-es` |
+| `wouter` | 1 | ~1 | none |
+
+- **wouter** was the smallest surface but **crossed off**: no loaders/actions/
+  nav-blocking, so we'd likely outgrow it exactly when the app gets complex —
+  the opposite of "won't be outgrown."
+- **TanStack Router** is the more "modern" option (fully type-safe routes/
+  search-params), but its win is **DX, not supply chain**: it adds ~2.5× the
+  packages and more independent maintainers, and its extras (`seroval`
+  serialization, `isbot`) exist for SSR/data features a **client-only SPA
+  embedded in Go won't use** — paying maintainer surface for unused capability.
+- **react-router-dom** is the smallest *full-featured* surface, the
+  battle-tested standard (won't be outgrown), and its only third-party extras
+  are mature cookie utilities.
+
+Installed under the standard precautions (§4.4): cooldown-gated version, pinned
+in `pnpm-lock.yaml`, install scripts blocked. Routes deep-link correctly because
+the Go `spaHandler` (§4.8) already falls back to `index.html` for non-`/api/`
+paths — verified against the embedded build (`/accounts`, `/customers` → HTML;
+`/api/customers` → JSON).
+
+---
+
 ## 5. Residual risks (what this does NOT solve)
 
 - **Build-time execution.** Script-blocking stops *install*-time code, but the
@@ -400,6 +447,13 @@ tsconfig, not `tsconfig.app.json`, and otherwise wrote files to a literal `@/`
 dir). Verified: `pnpm build` clean and `GET /api/accounts` served end-to-end by
 the Go backend against the dev database (11 seeded accounts).
 
+Done (second screen + routing): a read-only **Customers** screen
+(`web/src/components/customers.tsx`) that joins `/api/customers` with
+`/api/organizations` client-side (a customer is a role on an organization and
+carries no name of its own). URL routing adopted via `react-router-dom` v7
+(§4.10); `App.tsx` is now a nav + `<Routes>` layout, `main.tsx` wraps it in
+`<BrowserRouter>`. Deep links verified against the embedded build.
+
 Next: tighten the CSP off `'unsafe-inline'` styles before launch; grow the screen
-set (the same pattern extends to customers/suppliers/products) and add
-client-side routing when the second screen lands.
+set (the same pattern extends to suppliers/products); add the first detail route
+(`/customers/:id`) when an edit/detail view is needed.
