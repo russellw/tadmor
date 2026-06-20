@@ -264,6 +264,37 @@ primary upstream defense; CSP is the runtime containment.
 
 ---
 
+### 4.9 Node toolchain: fnm
+
+**Decision:** Node is managed per-user by **fnm** (Fast Node Manager), with the
+project's Node major pinned in `web/.nvmrc` (`22`) and corepack enabling the
+pnpm pin. Dev environment is WSL.
+
+**Why fnm over the alternatives** (nvm / distro `apt` / NodeSource):
+
+- It **reads `web/.nvmrc` and auto-switches on `cd`** (`fnm env --use-on-cd`), so
+  the committed Node pin is enforced automatically — the toolchain analog of the
+  pinned Go toolchain.
+- Fast (Rust, single binary), per-user, no root, and **bundles corepack** —
+  unlike Ubuntu's `apt` `nodejs` package, which ships an often-stale Node and
+  does not reliably include corepack, working against the pnpm pin.
+- `apt` (distro) has the best trust story but won't reliably provide Node 22;
+  **NodeSource** gives a current, GPG-signed apt repo but is single-version and
+  adds a third-party repo to trust; **nvm** is fully auditable bash but slow
+  (shell-function overhead) and lacks a native binary.
+
+The residual trust cost — fnm is a prebuilt GitHub-release binary — is
+acceptable and can be neutralised by `cargo install fnm` (build from source) or
+verifying the release checksum. Note that both nvm and fnm fetch Node from the
+official nodejs.org dist and verify checksums, so the *Node binary's* provenance
+is identical across the version managers; the choice is about the manager.
+
+**WSL note:** install Linux-native (not the Windows Node, which `PATH` bleed can
+shadow) and keep `web/` on the Linux filesystem, not `/mnt/c`, for speed and
+working file-watching.
+
+---
+
 ## 5. Residual risks (what this does NOT solve)
 
 - **Build-time execution.** Script-blocking stops *install*-time code, but the
@@ -328,6 +359,11 @@ web-check:    ## Type-check + lint + audit
 
 ## 8. Status and next step
 
-Done: stack ratified; `web/.gitignore` written (Tier 1). Not yet done: scaffold
-the rest of `web/` (config files above + Makefile targets) and run the initial
-`pnpm install` to generate the committed lockfile.
+Done: stack ratified; `web/` scaffolded and committed (Vite + React + TS +
+Tailwind, hardened pnpm config, `web-*` Makefile targets); committed
+`pnpm-lock.yaml` generated via fnm-managed Node 22 + corepack pnpm 10.18; build
+verified (`tsc -b` clean, `vite build` succeeds).
+
+Next: first shadcn component (`pnpm dlx shadcn@latest add ...`, which injects the
+theme tokens into `src/index.css`); serve `web/dist` from the Go backend behind a
+CSP (the public-facing delivery decision in §4.8).
