@@ -117,8 +117,35 @@ export interface Organization {
   default_currency: string | null
 }
 
+/** The writable fields of an organization (Organization without its id),
+ *  mirroring master.OrganizationInput. PUT is a full replace. */
+export interface OrganizationInput {
+  name: string
+  legal_name: string | null
+  tax_id: string | null
+  country_code: string | null
+  default_currency: string | null
+}
+
 export function listOrganizations(): Promise<Organization[]> {
   return get<Organization[]>("/organizations")
+}
+
+export function getOrganization(id: number): Promise<Organization> {
+  return get<Organization>(`/organizations/${id}`)
+}
+
+export function createOrganization(
+  input: OrganizationInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/organizations", input)
+}
+
+export function updateOrganization(
+  id: number,
+  input: OrganizationInput,
+): Promise<void> {
+  return send("PUT", `/organizations/${id}`, input)
 }
 
 /** A customer: a role on an organization. The display name lives on the

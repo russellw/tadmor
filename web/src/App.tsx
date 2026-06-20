@@ -4,6 +4,8 @@ import { AccountForm } from "@/components/account-form"
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
+import { OrganizationForm } from "@/components/organization-form"
+import { Organizations } from "@/components/organizations"
 import { ProductForm } from "@/components/product-form"
 import { Products } from "@/components/products"
 import { SupplierForm } from "@/components/supplier-form"
@@ -15,6 +17,7 @@ import { cn } from "@/lib/utils"
 // production; Vite's dev server does the same in development.
 const navItems = [
   { to: "/accounts", label: "Chart of Accounts" },
+  { to: "/organizations", label: "Organizations" },
   { to: "/customers", label: "Customers" },
   { to: "/suppliers", label: "Suppliers" },
   { to: "/products", label: "Products" },
@@ -49,6 +52,15 @@ export default function App() {
           <Route path="/accounts" element={<ChartOfAccounts />} />
           <Route path="/accounts/new" element={<AccountForm mode="create" />} />
           <Route path="/accounts/:id" element={<AccountForm mode="edit" />} />
+          <Route path="/organizations" element={<Organizations />} />
+          <Route
+            path="/organizations/new"
+            element={<OrganizationForm mode="create" />}
+          />
+          <Route
+            path="/organizations/:id"
+            element={<OrganizationForm mode="edit" />}
+          />
           <Route path="/customers" element={<Customers />} />
           <Route path="/customers/new" element={<CustomerForm mode="create" />} />
           <Route path="/customers/:id" element={<CustomerForm mode="edit" />} />
