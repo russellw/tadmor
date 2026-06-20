@@ -365,6 +365,69 @@ paths — verified against the embedded build (`/accounts`, `/customers` → HTM
 
 ---
 
+### 4.11 Why not a meta-framework / SSR (Next.js, Remix)
+
+**Decision:** **no meta-framework.** Stay a client-only SPA (Vite + React +
+react-router) served by the Go backend. We do *not* adopt Next.js, Remix/React
+Router framework mode, or any server-rendering / React-Server-Components stack.
+
+This addresses the standard "if you're building with React you should start with
+Next.js" advice head-on, because it's the most likely "why didn't you just…?" a
+future reader will raise. That advice is real and once led React's own docs, but
+its value is tied to assumptions this project doesn't share.
+
+**What that advice is actually selling.** A meta-framework's headline value is
+*running React on a server*: server-side rendering / static generation, React
+Server Components, streaming, server actions — which buy fast first paint,
+SEO-crawlable HTML, and built-in data-loading conventions. Almost all of that
+matters for **publicly-indexed, content-first, first-paint-sensitive** sites
+(marketing, e-commerce, blogs, docs).
+
+**Why it doesn't fit tadmor:**
+
+- **No SEO/SSR need.** This is login-gated, line-of-business CRUD over a ledger,
+  not public content. Nothing needs to be crawlable, and first paint of an admin
+  tool isn't a business metric. The framework's headline feature delivers ~nothing
+  here.
+- **The server already exists, and it's Go.** Next.js/Remix want to *be* the
+  server (Node runtime, API routes, server components/actions). tadmor's system of
+  record is the Go backend, with the API under `/api`. Adopting a meta-framework
+  means either running a **second Node server** beside Go (two runtimes, two deploy
+  artifacts, two supply chains) or folding backend logic into the framework —
+  contradicting the design. It also breaks the single-binary model: we embed the
+  static bundle *into the Go binary* (`//go:embed all:dist`, §4.8); an SSR
+  framework can't be embedded that way.
+- **Supply-chain posture (the decisive one).** This whole document optimizes for
+  *minimizing distinct maintainers trusted at runtime* (§2) — vendored shadcn
+  source, hand-rolled grid (§4.6), react-router chosen for its small tree (§4.10).
+  A meta-framework is the opposite vector: a large, opaque framework surface with
+  its own build/runtime machinery. It would directly contradict the principle the
+  rest of the stack is built on.
+- **Solo-dev complexity.** App Router, RSC, the server/client component boundary,
+  and the caching model are real conceptual overhead. For one person building
+  screens that call a Go `/api`, "it's just a client app talking to an API" is the
+  simpler, cheaper mental model.
+
+**What we kept from the advice.** The defensible kernel of "use a framework, not
+bare React" is *don't hand-roll core plumbing like routing* — and we honored that
+by adopting react-router-dom (§4.10, which reversed an earlier hand-rolled-router
+lean). So we took the *routing slice* a framework would provide and left the
+*SSR/server slice* we don't need. React's docs now also acknowledge SPA/Vite as a
+legitimate path, not a mistake.
+
+**The trade-off we accept.** No file-based routing, no automatic per-route
+code-splitting (we split manually — e.g. ECharts is lazy-loaded, §4.7), no
+built-in image optimization or data-loading conventions. For a client-only CRUD
+SPA behind a Go API these are conveniences, not necessities, and each would
+re-expand the dependency surface we're deliberately keeping small.
+
+**When to revisit:** if tadmor ever grows a genuinely public, SEO-sensitive,
+content-first surface (a marketing site, a customer portal with shareable pages),
+that surface — *not* the internal app — could justify a separate SSR front end.
+It would be an additional deployable, not a migration of this one.
+
+---
+
 ## 5. Residual risks (what this does NOT solve)
 
 - **Build-time execution.** Script-blocking stops *install*-time code, but the
