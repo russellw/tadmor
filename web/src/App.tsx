@@ -1,7 +1,9 @@
+import { ChartOfAccounts } from "@/components/chart-of-accounts"
+
 export default function App() {
   return (
-    <main className="grid min-h-screen place-items-center">
-      <h1 className="text-2xl font-semibold tracking-tight">tadmor</h1>
+    <main className="min-h-screen bg-background text-foreground">
+      <ChartOfAccounts />
     </main>
   )
 }

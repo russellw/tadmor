@@ -389,8 +389,17 @@ verified (`tsc -b` clean, `vite build` succeeds). API namespaced under `/api/`
 and the embedded SPA served from the Go backend behind a CSP (§4.8, commit
 93c6ebe), verified against the full Go test suite plus a no-DB routing test.
 
-Next: the first real screen — wire `App.tsx` to an `/api` endpoint (e.g. list
-accounts) and add the first shadcn component (`pnpm dlx shadcn@latest add ...`,
-which injects the theme tokens into `src/index.css`), validating the full
-dev-server → `/api` → Go loop in the browser. Later: tighten the CSP off
-`'unsafe-inline'` styles before launch.
+Done (first screen): a read-only **Chart of Accounts** screen (`web/src/components/
+chart-of-accounts.tsx`) backed by a typed `/api` client (`web/src/lib/api.ts`)
+calling `GET /api/accounts`. First vendored shadcn components added (`table`,
+`badge` in `components/ui/`); the shadcn theme tokens (new-york / neutral, oklch)
+now live in `src/index.css` — `shadcn add` only emits components, so the tokens
+`shadcn init` would have written were added directly. `tsconfig.json` gained the
+`@/*` → `./src/*` path alias the shadcn CLI reads (it only consulted the root
+tsconfig, not `tsconfig.app.json`, and otherwise wrote files to a literal `@/`
+dir). Verified: `pnpm build` clean and `GET /api/accounts` served end-to-end by
+the Go backend against the dev database (11 seeded accounts).
+
+Next: tighten the CSP off `'unsafe-inline'` styles before launch; grow the screen
+set (the same pattern extends to customers/suppliers/products) and add
+client-side routing when the second screen lands.
