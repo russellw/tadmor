@@ -488,7 +488,22 @@ gained a "New supplier" button and per-row Edit link. `lib/api.ts` gained
 `SupplierInput`, `getSupplier`, `createSupplier`, `updateSupplier`. Verified the
 POST→PUT→GET round-trip against the dev DB.
 
-Next: tighten the CSP off `'unsafe-inline'` styles before launch; apply the
-list+edit+create pattern to products; and (when reference data needs managing)
-add org/payment-terms/currency screens so those FK fields can become dropdowns
-instead of free text.
+Finally **products** got the create+edit pattern
+(`web/src/components/product-form.tsx`, routes `/products/new` and
+`/products/:id`). Products are standalone (no organization), so the form has no
+org field but more fields: SKU/name (required), a description textarea (new
+shadcn `textarea`, no new deps), unit price, currency, and three nullable account
+FK dropdowns (revenue, plus inventory + COGS shown only when "track inventory" is
+on) via a module-level `AccountSelect` helper. `lib/api.ts` gained `ProductInput`,
+`getProduct`, `createProduct`, `updateProduct`. The products list got a "New
+product" button and per-row Edit link. Verified the POST→PUT→GET round-trip
+against the dev DB.
+
+All four master-data entities (accounts, customers, suppliers, products) now have
+list screens; the three writable ones (customers, suppliers, products) have full
+create+edit. (Accounts remain read-only — no edit screen yet.)
+
+Next: tighten the CSP off `'unsafe-inline'` styles before launch; an accounts
+create+edit screen if chart-of-accounts maintenance is wanted in-app; and (when
+reference data needs managing) add org/payment-terms/currency screens so those FK
+fields can become dropdowns instead of free text.

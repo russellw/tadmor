@@ -201,6 +201,34 @@ export interface Product {
   is_active: boolean
 }
 
+/** The writable fields of a product (Product without its id), mirroring
+ *  master.ProductInput. PUT is a full replace. */
+export interface ProductInput {
+  sku: string
+  name: string
+  description: string | null
+  unit_price: string
+  currency_code: string | null
+  revenue_account_id: number | null
+  tax_code: string | null
+  track_inventory: boolean
+  inventory_account_id: number | null
+  cogs_account_id: number | null
+  is_active: boolean
+}
+
 export function listProducts(): Promise<Product[]> {
   return get<Product[]>("/products")
+}
+
+export function getProduct(id: number): Promise<Product> {
+  return get<Product>(`/products/${id}`)
+}
+
+export function createProduct(input: ProductInput): Promise<{ id: number }> {
+  return post<{ id: number }>("/products", input)
+}
+
+export function updateProduct(id: number, input: ProductInput): Promise<void> {
+  return send("PUT", `/products/${id}`, input)
 }

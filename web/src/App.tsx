@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom"
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
+import { ProductForm } from "@/components/product-form"
 import { Products } from "@/components/products"
 import { SupplierForm } from "@/components/supplier-form"
 import { Suppliers } from "@/components/suppliers"
@@ -52,6 +53,8 @@ export default function App() {
           <Route path="/suppliers/new" element={<SupplierForm mode="create" />} />
           <Route path="/suppliers/:id" element={<SupplierForm mode="edit" />} />
           <Route path="/products" element={<Products />} />
+          <Route path="/products/new" element={<ProductForm mode="create" />} />
+          <Route path="/products/:id" element={<ProductForm mode="edit" />} />
           <Route
             path="*"
             element={
