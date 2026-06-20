@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 
 import {
   listOrganizations,
@@ -7,6 +8,7 @@ import {
   type Supplier,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -48,11 +50,16 @@ export function Suppliers() {
 
   return (
     <section className="mx-auto w-full max-w-5xl p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Suppliers</h1>
-        <p className="text-sm text-muted-foreground">
-          Organizations with a supplier role, ordered by id.
-        </p>
+      <header className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Suppliers</h1>
+          <p className="text-sm text-muted-foreground">
+            Organizations with a supplier role, ordered by id.
+          </p>
+        </div>
+        <Button asChild>
+          <Link to="/suppliers/new">New supplier</Link>
+        </Button>
       </header>
 
       {error !== null && (
@@ -79,6 +86,7 @@ export function Suppliers() {
               <TableHead>Tax Code</TableHead>
               <TableHead>Terms</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="w-0"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -105,6 +113,14 @@ export function Suppliers() {
                     <Badge variant={s.is_active ? "default" : "outline"}>
                       {s.is_active ? "Active" : "Inactive"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Link
+                      to={`/suppliers/${s.id}`}
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      Edit
+                    </Link>
                   </TableCell>
                 </TableRow>
               )

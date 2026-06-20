@@ -480,7 +480,15 @@ constraint); in edit mode it stays read-only. The customers list got a "New
 customer" button. Verified the POST→GET round-trip against the dev DB (created a
 throwaway org + customer, then deleted both).
 
+The same create+edit pattern was then applied to **suppliers**
+(`web/src/components/supplier-form.tsx`, routes `/suppliers/new` and
+`/suppliers/:id`), mirroring the customer form (supplier is also a UNIQUE role on
+an organization; AP account instead of AR, no credit limit). The suppliers list
+gained a "New supplier" button and per-row Edit link. `lib/api.ts` gained
+`SupplierInput`, `getSupplier`, `createSupplier`, `updateSupplier`. Verified the
+POST→PUT→GET round-trip against the dev DB.
+
 Next: tighten the CSP off `'unsafe-inline'` styles before launch; apply the
-list+edit+create pattern to suppliers/products; and (when reference data needs
-managing) add org/payment-terms/currency screens so those FK fields can become
-dropdowns instead of free text.
+list+edit+create pattern to products; and (when reference data needs managing)
+add org/payment-terms/currency screens so those FK fields can become dropdowns
+instead of free text.

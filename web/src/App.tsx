@@ -4,6 +4,7 @@ import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
 import { Products } from "@/components/products"
+import { SupplierForm } from "@/components/supplier-form"
 import { Suppliers } from "@/components/suppliers"
 import { cn } from "@/lib/utils"
 
@@ -48,6 +49,8 @@ export default function App() {
           <Route path="/customers/new" element={<CustomerForm mode="create" />} />
           <Route path="/customers/:id" element={<CustomerForm mode="edit" />} />
           <Route path="/suppliers" element={<Suppliers />} />
+          <Route path="/suppliers/new" element={<SupplierForm mode="create" />} />
+          <Route path="/suppliers/:id" element={<SupplierForm mode="edit" />} />
           <Route path="/products" element={<Products />} />
           <Route
             path="*"

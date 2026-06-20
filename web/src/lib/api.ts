@@ -156,8 +156,32 @@ export interface Supplier {
   is_active: boolean
 }
 
+/** The writable fields of a supplier (Supplier without its id), mirroring
+ *  master.SupplierInput. PUT is a full replace. */
+export interface SupplierInput {
+  organization_id: number
+  supplier_number: string | null
+  ap_account_id: number | null
+  payment_terms_code: string | null
+  currency_code: string | null
+  tax_code: string | null
+  is_active: boolean
+}
+
 export function listSuppliers(): Promise<Supplier[]> {
   return get<Supplier[]>("/suppliers")
+}
+
+export function getSupplier(id: number): Promise<Supplier> {
+  return get<Supplier>(`/suppliers/${id}`)
+}
+
+export function createSupplier(input: SupplierInput): Promise<{ id: number }> {
+  return post<{ id: number }>("/suppliers", input)
+}
+
+export function updateSupplier(id: number, input: SupplierInput): Promise<void> {
+  return send("PUT", `/suppliers/${id}`, input)
 }
 
 /** A catalog product/service, mirroring master.Product. Standalone (its own SKU
