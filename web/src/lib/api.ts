@@ -97,3 +97,24 @@ export interface Supplier {
 export function listSuppliers(): Promise<Supplier[]> {
   return get<Supplier[]>("/suppliers")
 }
+
+/** A catalog product/service, mirroring master.Product. Standalone (its own SKU
+ *  and name), so no organization join is needed. */
+export interface Product {
+  id: number
+  sku: string
+  name: string
+  description: string | null
+  unit_price: string
+  currency_code: string | null
+  revenue_account_id: number | null
+  tax_code: string | null
+  track_inventory: boolean
+  inventory_account_id: number | null
+  cogs_account_id: number | null
+  is_active: boolean
+}
+
+export function listProducts(): Promise<Product[]> {
+  return get<Product[]>("/products")
+}

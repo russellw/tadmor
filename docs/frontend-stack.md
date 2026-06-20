@@ -456,8 +456,11 @@ carries no name of its own). URL routing adopted via `react-router-dom` v7
 
 A **Suppliers** screen (`web/src/components/suppliers.tsx`) followed, mirroring
 Customers (supplier is also a role on an organization; same `/api` + org-name
-join, minus credit limit) and wired as the `/suppliers` route.
+join, minus credit limit) and wired as the `/suppliers` route. A **Products**
+screen (`web/src/components/products.tsx`) completed the master-data list set;
+products are standalone catalog entities (own SKU/name), so it is a single fetch
+with no org join, wired as the `/products` route.
 
-Next: tighten the CSP off `'unsafe-inline'` styles before launch; the same
-list-screen pattern still extends to products; add the first detail route
-(`/customers/:id`) when an edit/detail view is needed.
+Next: tighten the CSP off `'unsafe-inline'` styles before launch; the read-only
+list screens for master data are now in place — the next new piece is the first
+detail/edit route (`/customers/:id`) and the create/update (POST/PUT) write path.
