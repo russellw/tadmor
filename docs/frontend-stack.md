@@ -454,6 +454,10 @@ carries no name of its own). URL routing adopted via `react-router-dom` v7
 (§4.10); `App.tsx` is now a nav + `<Routes>` layout, `main.tsx` wraps it in
 `<BrowserRouter>`. Deep links verified against the embedded build.
 
-Next: tighten the CSP off `'unsafe-inline'` styles before launch; grow the screen
-set (the same pattern extends to suppliers/products); add the first detail route
+A **Suppliers** screen (`web/src/components/suppliers.tsx`) followed, mirroring
+Customers (supplier is also a role on an organization; same `/api` + org-name
+join, minus credit limit) and wired as the `/suppliers` route.
+
+Next: tighten the CSP off `'unsafe-inline'` styles before launch; the same
+list-screen pattern still extends to products; add the first detail route
 (`/customers/:id`) when an edit/detail view is needed.

@@ -80,3 +80,20 @@ export interface Customer {
 export function listCustomers(): Promise<Customer[]> {
   return get<Customer[]>("/customers")
 }
+
+/** A supplier: a role on an organization, like Customer. The display name lives
+ *  on the organization (join via organization_id), mirroring master.Supplier. */
+export interface Supplier {
+  id: number
+  organization_id: number
+  supplier_number: string | null
+  ap_account_id: number | null
+  payment_terms_code: string | null
+  currency_code: string | null
+  tax_code: string | null
+  is_active: boolean
+}
+
+export function listSuppliers(): Promise<Supplier[]> {
+  return get<Supplier[]>("/suppliers")
+}
