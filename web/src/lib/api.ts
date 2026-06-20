@@ -15,22 +15,35 @@ export class ApiError extends Error {
   }
 }
 
+// The backend reports errors as { "error": "..." }; fall back to the status.
+async function failure(res: Response): Promise<ApiError> {
+  let message = `request failed (${res.status})`
+  try {
+    const body = (await res.json()) as { error?: string }
+    if (body?.error) message = body.error
+  } catch {
+    // Non-JSON error body; keep the status-based message.
+  }
+  return new ApiError(res.status, message)
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { Accept: "application/json" },
   })
-  if (!res.ok) {
-    // The backend reports errors as { "error": "..." }; fall back to the status.
-    let message = `request failed (${res.status})`
-    try {
-      const body = (await res.json()) as { error?: string }
-      if (body?.error) message = body.error
-    } catch {
-      // Non-JSON error body; keep the status-based message.
-    }
-    throw new ApiError(res.status, message)
-  }
+  if (!res.ok) throw await failure(res)
   return (await res.json()) as T
+}
+
+// Send a body-bearing request (POST/PUT). Used for writes; the backend's PUT
+// updates return 204 with no body, so nothing is parsed on success.
+async function send(method: string, path: string, body: unknown): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw await failure(res)
 }
 
 /** A general-ledger account, mirroring master.Account on the backend. */
@@ -77,8 +90,42 @@ export interface Customer {
   is_active: boolean
 }
 
+/** The writable fields of a customer (Customer without its id), mirroring
+ *  master.CustomerInput. PUT is a full replace. */
+export interface CustomerInput {
+  organization_id: number
+  customer_number: string | null
+  ar_account_id: number | null
+  payment_terms_code: string | null
+  currency_code: string | null
+  tax_code: string | null
+  credit_limit: string | null
+  is_active: boolean
+}
+
 export function listCustomers(): Promise<Customer[]> {
   return get<Customer[]>("/customers")
+}
+
+export function getCustomer(id: number): Promise<Customer> {
+  return get<Customer>(`/customers/${id}`)
+}
+
+export function updateCustomer(id: number, input: CustomerInput): Promise<void> {
+  return send("PUT", `/customers/${id}`, input)
+}
+
+/** A tax code (natural key: code), mirroring master.TaxCode. */
+export interface TaxCode {
+  code: string
+  name: string
+  rate: string
+  tax_account_id: number | null
+  is_active: boolean
+}
+
+export function listTaxCodes(): Promise<TaxCode[]> {
+  return get<TaxCode[]>("/tax-codes")
 }
 
 /** A supplier: a role on an organization, like Customer. The display name lives

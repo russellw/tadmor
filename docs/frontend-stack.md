@@ -461,6 +461,16 @@ screen (`web/src/components/products.tsx`) completed the master-data list set;
 products are standalone catalog entities (own SKU/name), so it is a single fetch
 with no org join, wired as the `/products` route.
 
-Next: tighten the CSP off `'unsafe-inline'` styles before launch; the read-only
-list screens for master data are now in place — the next new piece is the first
-detail/edit route (`/customers/:id`) and the create/update (POST/PUT) write path.
+The first **edit screen and write path** followed: `/customers/:id`
+(`web/src/components/customer-edit.tsx`) — the first param route — loads a
+customer plus the reference lists (organizations, accounts, tax codes) and PUTs
+the full record back via a new `send()` write helper in `lib/api.ts` (PUT returns
+204, no body). The customers list grew an Edit link per row. Added shadcn form
+primitives (`button`, `input`, `label`, `checkbox`, `select`) — no new npm deps,
+as they import from the already-vendored `radix-ui` meta-package. Organization is
+shown read-only (a customer's organization is its identity, not reassigned here).
+Verified the GET→PUT→GET round-trip against the dev DB.
+
+Next: tighten the CSP off `'unsafe-inline'` styles before launch; a "New
+customer" create route (POST) reusing the same form; then apply the
+list+edit pattern to suppliers/products.

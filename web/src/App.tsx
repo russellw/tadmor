@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom"
 
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
+import { CustomerEdit } from "@/components/customer-edit"
 import { Customers } from "@/components/customers"
 import { Products } from "@/components/products"
 import { Suppliers } from "@/components/suppliers"
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/accounts" replace />} />
           <Route path="/accounts" element={<ChartOfAccounts />} />
           <Route path="/customers" element={<Customers />} />
+          <Route path="/customers/:id" element={<CustomerEdit />} />
           <Route path="/suppliers" element={<Suppliers />} />
           <Route path="/products" element={<Products />} />
           <Route

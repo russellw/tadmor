@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 
 import {
   listCustomers,
@@ -80,6 +81,7 @@ export function Customers() {
               <TableHead>Terms</TableHead>
               <TableHead className="text-right">Credit Limit</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="w-0"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -109,6 +111,14 @@ export function Customers() {
                     <Badge variant={c.is_active ? "default" : "outline"}>
                       {c.is_active ? "Active" : "Inactive"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Link
+                      to={`/customers/${c.id}`}
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      Edit
+                    </Link>
                   </TableCell>
                 </TableRow>
               )
