@@ -3,13 +3,16 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 
 import {
   ApiError,
+  createCustomer,
   getCustomer,
   listAccounts,
+  listCustomers,
   listOrganizations,
   listTaxCodes,
   updateCustomer,
   type Account,
   type CustomerInput,
+  type Organization,
   type TaxCode,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -24,15 +27,17 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
+type Mode = "create" | "edit"
+
 // Radix Select reserves "" as a value, so nullable selects use this sentinel.
 const NONE = "__none__"
 
-// Form state mirrors CustomerInput but holds everything the inputs need as
-// strings; conversion back to CustomerInput happens on submit. organizationId is
-// kept but not editable — a customer's organization is its identity here.
+// Form state holds everything the inputs need as strings; conversion back to
+// CustomerInput happens on submit. organizationId is a select when creating and
+// read-only when editing (a customer's organization is its identity, and the
+// column is UNIQUE — one customer per organization).
 interface FormState {
-  organizationId: number
-  organizationName: string
+  organizationId: string
   customerNumber: string
   arAccountId: string
   paymentTermsCode: string
@@ -42,17 +47,32 @@ interface FormState {
   isActive: boolean
 }
 
+const blankForm: FormState = {
+  organizationId: "",
+  customerNumber: "",
+  arAccountId: NONE,
+  paymentTermsCode: "",
+  currencyCode: "",
+  taxCode: NONE,
+  creditLimit: "",
+  isActive: true,
+}
+
 function emptyToNull(s: string): string | null {
   const t = s.trim()
   return t === "" ? null : t
 }
 
-export function CustomerEdit() {
+export function CustomerForm({ mode }: { mode: Mode }) {
   const { id } = useParams()
   const customerId = Number(id)
   const navigate = useNavigate()
 
   const [form, setForm] = useState<FormState | null>(null)
+  // Organizations selectable for this form: in create mode, only those without
+  // an existing customer (the UNIQUE constraint); in edit mode, just the
+  // customer's own organization (shown read-only).
+  const [orgOptions, setOrgOptions] = useState<Organization[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [taxCodes, setTaxCodes] = useState<TaxCode[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -60,53 +80,76 @@ export function CustomerEdit() {
   const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!Number.isInteger(customerId) || customerId <= 0) {
-      setError("Invalid customer id.")
-      return
-    }
     let cancelled = false
-    Promise.all([
-      getCustomer(customerId),
-      listOrganizations(),
-      listAccounts(),
-      listTaxCodes(),
-    ])
-      .then(([customer, organizations, accts, taxes]) => {
-        if (cancelled) return
-        const org = organizations.find((o) => o.id === customer.organization_id)
-        setAccounts(accts)
-        setTaxCodes(taxes)
-        setForm({
-          organizationId: customer.organization_id,
-          organizationName: org?.name ?? `#${customer.organization_id}`,
-          customerNumber: customer.customer_number ?? "",
-          arAccountId:
-            customer.ar_account_id != null
-              ? String(customer.ar_account_id)
-              : NONE,
-          paymentTermsCode: customer.payment_terms_code ?? "",
-          currencyCode: customer.currency_code ?? "",
-          taxCode: customer.tax_code ?? NONE,
-          creditLimit: customer.credit_limit ?? "",
-          isActive: customer.is_active,
-        })
-      })
-      .catch((err: unknown) => {
+
+    async function load() {
+      try {
+        if (mode === "edit") {
+          if (!Number.isInteger(customerId) || customerId <= 0) {
+            setError("Invalid customer id.")
+            return
+          }
+          const [customer, organizations, accts, taxes] = await Promise.all([
+            getCustomer(customerId),
+            listOrganizations(),
+            listAccounts(),
+            listTaxCodes(),
+          ])
+          if (cancelled) return
+          const org = organizations.find((o) => o.id === customer.organization_id)
+          setOrgOptions(org ? [org] : [])
+          setAccounts(accts)
+          setTaxCodes(taxes)
+          setForm({
+            organizationId: String(customer.organization_id),
+            customerNumber: customer.customer_number ?? "",
+            arAccountId:
+              customer.ar_account_id != null
+                ? String(customer.ar_account_id)
+                : NONE,
+            paymentTermsCode: customer.payment_terms_code ?? "",
+            currencyCode: customer.currency_code ?? "",
+            taxCode: customer.tax_code ?? NONE,
+            creditLimit: customer.credit_limit ?? "",
+            isActive: customer.is_active,
+          })
+        } else {
+          const [organizations, customers, accts, taxes] = await Promise.all([
+            listOrganizations(),
+            listCustomers(),
+            listAccounts(),
+            listTaxCodes(),
+          ])
+          if (cancelled) return
+          const taken = new Set(customers.map((c) => c.organization_id))
+          setOrgOptions(organizations.filter((o) => !taken.has(o.id)))
+          setAccounts(accts)
+          setTaxCodes(taxes)
+          setForm(blankForm)
+        }
+      } catch (err: unknown) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err))
         }
-      })
+      }
+    }
+
+    void load()
     return () => {
       cancelled = true
     }
-  }, [customerId])
+  }, [mode, customerId])
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!form) return
+    if (mode === "create" && form.organizationId === "") {
+      setSaveError("Please choose an organization.")
+      return
+    }
     const currency = form.currencyCode.trim().toUpperCase()
     const input: CustomerInput = {
-      organization_id: form.organizationId,
+      organization_id: Number(form.organizationId),
       customer_number: emptyToNull(form.customerNumber),
       ar_account_id: form.arAccountId === NONE ? null : Number(form.arAccountId),
       payment_terms_code: emptyToNull(form.paymentTermsCode),
@@ -117,7 +160,11 @@ export function CustomerEdit() {
     }
     setSaving(true)
     setSaveError(null)
-    updateCustomer(customerId, input)
+    const action =
+      mode === "create"
+        ? createCustomer(input).then(() => undefined)
+        : updateCustomer(customerId, input)
+    action
       .then(() => navigate("/customers"))
       .catch((err: unknown) => {
         setSaving(false)
@@ -125,12 +172,21 @@ export function CustomerEdit() {
       })
   }
 
+  const creating = mode === "create"
+  const orgName =
+    orgOptions.find((o) => String(o.id) === form?.organizationId)?.name ??
+    (form ? `#${form.organizationId}` : "")
+
   return (
     <section className="mx-auto w-full max-w-2xl p-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Edit Customer</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {creating ? "New Customer" : "Edit Customer"}
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Update the customer's terms and accounts.
+          {creating
+            ? "Give an organization a customer role."
+            : "Update the customer's terms and accounts."}
         </p>
       </header>
 
@@ -151,12 +207,41 @@ export function CustomerEdit() {
 
       {form !== null && (
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-1.5">
-            <Label>Organization</Label>
-            <p className="text-sm font-medium">{form.organizationName}</p>
-            <p className="text-xs text-muted-foreground">
-              A customer's organization can't be reassigned here.
-            </p>
+          <div className="space-y-2">
+            <Label htmlFor="organization">Organization</Label>
+            {creating ? (
+              orgOptions.length > 0 ? (
+                <Select
+                  value={form.organizationId}
+                  onValueChange={(v) =>
+                    setForm({ ...form, organizationId: v })
+                  }
+                >
+                  <SelectTrigger id="organization" className="w-full">
+                    <SelectValue placeholder="Select an organization" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {orgOptions.map((o) => (
+                      <SelectItem key={o.id} value={String(o.id)}>
+                        {o.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Every organization already has a customer. Create an
+                  organization first.
+                </p>
+              )
+            ) : (
+              <>
+                <p className="text-sm font-medium">{orgName}</p>
+                <p className="text-xs text-muted-foreground">
+                  A customer's organization can't be reassigned here.
+                </p>
+              </>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -263,8 +348,11 @@ export function CustomerEdit() {
           )}
 
           <div className="flex gap-2">
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save"}
+            <Button
+              type="submit"
+              disabled={saving || (creating && orgOptions.length === 0)}
+            >
+              {saving ? "Saving…" : creating ? "Create" : "Save"}
             </Button>
             <Button type="button" variant="outline" asChild>
               <Link to="/customers">Cancel</Link>

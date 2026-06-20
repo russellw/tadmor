@@ -471,6 +471,16 @@ as they import from the already-vendored `radix-ui` meta-package. Organization i
 shown read-only (a customer's organization is its identity, not reassigned here).
 Verified the GET→PUT→GET round-trip against the dev DB.
 
-Next: tighten the CSP off `'unsafe-inline'` styles before launch; a "New
-customer" create route (POST) reusing the same form; then apply the
-list+edit pattern to suppliers/products.
+A **New customer** create route (`/customers/new`, POST) followed: the edit
+component was refactored into a single shared `customer-form.tsx` driven by a
+`mode` prop (`create` | `edit`), and `lib/api.ts` gained a `post()` helper +
+`createCustomer`. In create mode the organization is a required dropdown filtered
+to organizations that don't already have a customer (the `organization_id` UNIQUE
+constraint); in edit mode it stays read-only. The customers list got a "New
+customer" button. Verified the POST→GET round-trip against the dev DB (created a
+throwaway org + customer, then deleted both).
+
+Next: tighten the CSP off `'unsafe-inline'` styles before launch; apply the
+list+edit+create pattern to suppliers/products; and (when reference data needs
+managing) add org/payment-terms/currency screens so those FK fields can become
+dropdowns instead of free text.

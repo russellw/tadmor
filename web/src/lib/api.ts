@@ -46,6 +46,17 @@ async function send(method: string, path: string, body: unknown): Promise<void> 
   if (!res.ok) throw await failure(res)
 }
 
+// POST a body and parse the JSON response (creates return 201 with { "id": ... }).
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw await failure(res)
+  return (await res.json()) as T
+}
+
 /** A general-ledger account, mirroring master.Account on the backend. */
 export interface Account {
   id: number
@@ -109,6 +120,10 @@ export function listCustomers(): Promise<Customer[]> {
 
 export function getCustomer(id: number): Promise<Customer> {
   return get<Customer>(`/customers/${id}`)
+}
+
+export function createCustomer(input: CustomerInput): Promise<{ id: number }> {
+  return post<{ id: number }>("/customers", input)
 }
 
 export function updateCustomer(id: number, input: CustomerInput): Promise<void> {

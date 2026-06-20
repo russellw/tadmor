@@ -8,6 +8,7 @@ import {
   type Organization,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -49,11 +50,16 @@ export function Customers() {
 
   return (
     <section className="mx-auto w-full max-w-5xl p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
-        <p className="text-sm text-muted-foreground">
-          Organizations with a customer role, ordered by id.
-        </p>
+      <header className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
+          <p className="text-sm text-muted-foreground">
+            Organizations with a customer role, ordered by id.
+          </p>
+        </div>
+        <Button asChild>
+          <Link to="/customers/new">New customer</Link>
+        </Button>
       </header>
 
       {error !== null && (
