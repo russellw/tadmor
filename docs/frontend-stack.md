@@ -252,7 +252,7 @@ we ever want it gone.
 - **Chart.js** — moderate size, simple, small tree, but less flexible for bespoke
   heavy/interactive visualization. Rejected on capability.
 
-### 4.8 Deployment
+### 4.8 Deployment (implemented)
 
 **Decision:** the production bundle is built into `web/dist` and **served by the Go
 backend** (not a third-party CDN), behind a **Content-Security-Policy**.
@@ -261,6 +261,29 @@ backend** (not a third-party CDN), behind a **Content-Security-Policy**.
 additional runtime trust party and delivery attack surface; a CSP limits the blast
 radius if a bundled dependency is nonetheless compromised. Cooldown remains the
 primary upstream defense; CSP is the runtime containment.
+
+**How it's wired (commit 93c6ebe):**
+
+- **API namespaced under `/api/`.** All JSON routes are registered unprefixed on
+  an inner `ServeMux` and mounted via `http.StripPrefix("/api", …)`. This was the
+  prerequisite decision: the backend originally served the API at the root
+  (`GET /customers` etc.), which would collide with the SPA's own client-side
+  routes once it serves `index.html` as a catch-all. Liveness/readiness probes
+  (`/healthz`, `/readyz`) stay at the root for load balancers.
+- **SPA embedded, not shipped loose.** `web/embed.go` embeds `web/dist` with
+  `//go:embed all:dist`, so the binary is self-contained (matches the hermetic
+  single-deployable ethos). `spaHandler` serves a static file when one exists,
+  else falls back to `index.html` for client-side routing. A committed
+  `dist/.gitkeep` keeps the embed compiling before any build; `make web-build`
+  recreates it after Vite's `emptyOutDir` wipes the directory.
+- **CSP + `X-Content-Type-Options: nosniff`** set on SPA responses. The policy is
+  same-origin (`default-src 'self'`, `script-src 'self'`, `connect-src 'self'`);
+  it currently allows `'unsafe-inline'` for **styles only** (UI libraries set
+  inline `style` attributes) — tightenable to hashes/nonces before launch.
+- **Dev loop.** The Vite dev server proxies `/api` → `http://localhost:8080`, so
+  the app calls same-origin `/api/*` in both dev and production.
+- **Build targets.** `make build` embeds whatever is in `web/dist`; `make release`
+  runs `web-build` first to embed a fresh bundle.
 
 ---
 
@@ -362,8 +385,12 @@ web-check:    ## Type-check + lint + audit
 Done: stack ratified; `web/` scaffolded and committed (Vite + React + TS +
 Tailwind, hardened pnpm config, `web-*` Makefile targets); committed
 `pnpm-lock.yaml` generated via fnm-managed Node 22 + corepack pnpm 10.18; build
-verified (`tsc -b` clean, `vite build` succeeds).
+verified (`tsc -b` clean, `vite build` succeeds). API namespaced under `/api/`
+and the embedded SPA served from the Go backend behind a CSP (§4.8, commit
+93c6ebe), verified against the full Go test suite plus a no-DB routing test.
 
-Next: first shadcn component (`pnpm dlx shadcn@latest add ...`, which injects the
-theme tokens into `src/index.css`); serve `web/dist` from the Go backend behind a
-CSP (the public-facing delivery decision in §4.8).
+Next: the first real screen — wire `App.tsx` to an `/api` endpoint (e.g. list
+accounts) and add the first shadcn component (`pnpm dlx shadcn@latest add ...`,
+which injects the theme tokens into `src/index.css`), validating the full
+dev-server → `/api` → Go loop in the browser. Later: tighten the CSP off
+`'unsafe-inline'` styles before launch.
