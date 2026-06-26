@@ -12,6 +12,7 @@ internal/db/       Postgres connectivity + the migration runner
 internal/httpapi/  HTTP routes (net/http, no framework)
 db/migrations/     ordered SQL migrations (see db/README.md)
 vendor/            all third-party source, committed and reviewable
+e2e/               browser-driven UI tests (Playwright; see docs/e2e-testing.md)
 ```
 
 ## Prerequisites
@@ -56,6 +57,14 @@ The server applies any pending migrations on startup. Endpoints: `GET /healthz`
 
 > The integration test **drops and recreates the `public` schema** of
 > `TEST_DATABASE_URL`. Point it only at a throwaway database.
+
+### UI / end-to-end tests
+
+Browser-driven UI tests (Playwright) live in `e2e/`, in their own project so the
+test tooling stays out of the front end's runtime dependency tree. With the stack
+running, `make e2e-test` drives a headless browser against the app. See
+[`docs/e2e-testing.md`](docs/e2e-testing.md) for one-time setup, the supply-chain
+rationale, and the test structure.
 
 ## Dependency / supply-chain policy
 
