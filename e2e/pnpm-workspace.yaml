@@ -1,0 +1,13 @@
+# pnpm hardening knobs (pnpm 10). Mirrors web/pnpm-workspace.yaml — see
+# docs/frontend-stack.md §4.4.
+
+# Cooldown: refuse any version published less than 7 days ago. Defeats the
+# "compromised version published an hour ago" class. Value is in minutes.
+minimumReleaseAge: 10080
+
+# Lifecycle scripts are blocked by default in pnpm 10 (and by ignore-scripts in
+# .npmrc); a package runs install scripts only if listed here. We deliberately
+# keep this EMPTY: Playwright's postinstall would download browser binaries, but
+# we run that explicitly and auditably via `pnpm install-browser`
+# (`playwright install chromium`) instead of letting an install script do it.
+onlyBuiltDependencies: []

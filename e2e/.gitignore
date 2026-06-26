@@ -1,0 +1,8 @@
+# Build/run artifacts — never committed. pnpm-lock.yaml is deliberately NOT
+# ignored (it is the integrity-pinned source of truth; the go.sum analog).
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/.cache/
+*.log

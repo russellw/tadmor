@@ -1,0 +1,19 @@
+{
+  "name": "tadmor-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright end-to-end / UI tests for tadmor. Isolated from web/ so Playwright never enters the shipped app's runtime dependency tree.",
+  "packageManager": "pnpm@10.18.0",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report",
+    "install-browser": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.0"
+  }
+}

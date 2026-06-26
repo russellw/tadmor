@@ -1,0 +1,28 @@
+import { defineConfig, devices } from "@playwright/test"
+
+// Where the running app is served. Default is the Vite dev server (which proxies
+// /api → the Go backend on :8080). To test the embedded production build served
+// by the Go binary directly, run with BASE_URL=http://localhost:8080.
+const baseURL = process.env.BASE_URL ?? "http://localhost:5173"
+
+export default defineConfig({
+  testDir: "./tests",
+  fullyParallel: true,
+  // Fail the build if a test was left focused with test.only (CI hygiene).
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
+  reporter: process.env.CI ? "github" : "list",
+  use: {
+    baseURL,
+    headless: true,
+    // Artifacts only when something goes wrong — keeps runs cheap and lets us
+    // actually see a failing screen.
+    screenshot: "only-on-failure",
+    trace: "on-first-retry",
+  },
+  projects: [
+    // Chromium only: Playwright's own version-matched build, installed via
+    // `pnpm install-browser`. We do not pull Firefox/WebKit.
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+  ],
+})
