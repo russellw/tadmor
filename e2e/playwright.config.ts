@@ -7,6 +7,9 @@ const baseURL = process.env.BASE_URL ?? "http://localhost:5173"
 
 export default defineConfig({
   testDir: "./tests",
+  // Removes the throwaway org/customer rows the tests create (the app has no
+  // hard-delete for master data). See global-teardown.ts.
+  globalTeardown: "./global-teardown.ts",
   fullyParallel: true,
   // Fail the build if a test was left focused with test.only (CI hygiene).
   forbidOnly: !!process.env.CI,

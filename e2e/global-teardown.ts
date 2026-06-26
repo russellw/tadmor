@@ -1,0 +1,37 @@
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
+
+import { E2E_PREFIX } from "./tests/helpers"
+
+const exec = promisify(execFile)
+
+// The app has no hard-delete for master data (accounting entities are
+// deactivated, not removed). Tests create throwaway organizations + customers
+// named with E2E_PREFIX; we delete those rows directly via psql after the run so
+// the dev database doesn't accumulate test data. psql is a system tool, so this
+// adds no npm dependency.
+//
+// Connection defaults to the dev database used by `make run`; override with
+// E2E_DATABASE_URL (e.g. to point at a dedicated test DB).
+const DB =
+  process.env.E2E_DATABASE_URL ??
+  "postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable"
+
+export default async function globalTeardown(): Promise<void> {
+  // Delete customers first (FK to organizations), then the organizations. The
+  // prefix is a fixed literal, not user input, so interpolation is safe here.
+  const sql = `
+    DELETE FROM customers
+     WHERE organization_id IN (
+       SELECT id FROM organizations WHERE name LIKE '${E2E_PREFIX}%'
+     );
+    DELETE FROM organizations WHERE name LIKE '${E2E_PREFIX}%';
+  `
+  try {
+    await exec("psql", [DB, "-v", "ON_ERROR_STOP=1", "-q", "-c", sql])
+  } catch (err) {
+    // Don't fail the whole run on teardown trouble — surface it so leftover rows
+    // can be cleaned up manually.
+    console.error("e2e global-teardown (psql) failed:", err)
+  }
+}
