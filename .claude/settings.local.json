@@ -1,11 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git checkout *)",
-      "Bash(git add *)",
-      "Bash(go mod *)",
-      "Bash(go build *)",
-      "Bash(git commit *)"
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(go mod:*)",
+      "Bash(go build:*)"
     ]
   }
 }
