@@ -13,7 +13,7 @@ DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable
 TEST_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable
 
 .DEFAULT_GOAL := help
-.PHONY: help build release run test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test
+.PHONY: help build release run test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
 
 # Frontend lives in web/ (pnpm, corepack-pinned). Mirrors the Go targets'
 # discipline: the committed pnpm-lock.yaml is the source of truth and CI installs
@@ -69,3 +69,6 @@ e2e-install: ## Install e2e deps (frozen) + Playwright's Chromium (see e2e/READM
 
 e2e-test: ## Run the Playwright UI tests (stack must already be running; BASE_URL overridable)
 	cd $(E2E) && corepack pnpm test
+
+e2e: ## Build+run the server, run the Playwright UI tests, then tear it down
+	DATABASE_URL=$(DATABASE_URL) $(E2E)/run-local.sh
