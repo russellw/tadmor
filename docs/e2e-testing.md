@@ -189,6 +189,7 @@ tadmor/
     pnpm-lock.yaml          # committed (the integrity-pinned source of truth)
     playwright.config.ts    # chromium-only, headless, BASE_URL-overridable, globalTeardown
     global-teardown.ts      # psql cleanup of E2E- rows
+    run-local.sh            # one-shot orchestrator for `make e2e` (build+run server, test, tear down)
     tests/
       helpers.ts            # API setup helpers + E2E_PREFIX
       smoke.spec.ts
@@ -208,8 +209,22 @@ corepack pnpm install-browser                        # download Playwright's Chr
 sudo env "PATH=$PATH" corepack pnpm exec playwright install-deps chromium   # OS libs (root)
 ```
 
-**Running** (stack must be up — Vite dev on :5173 proxying /api → Go on :8080,
-with Postgres running):
+**Running — the one-shot way (preferred).** With Postgres up, `make e2e` does the
+whole run itself and needs nothing else standing:
+
+```sh
+make e2e              # build+run the embedded-SPA server, wait for it, test, tear down
+```
+
+`run-local.sh` builds the Go binary (which embeds `web/dist`), starts it on
+:8080, waits for it to accept connections, runs the suite against it, and
+**always** tears the server down again via a shell `trap` (even on test failure
+or Ctrl-C). `DATABASE_URL` and `BASE_URL` are overridable. Because the run is a
+single `make` invocation, it also stays inside the agent's `make:*` permission
+allowlist — one command, no per-step prompts.
+
+**Running — against an already-running stack.** If the stack is already up (Vite
+dev on :5173 proxying /api → Go on :8080, with Postgres), run the tests alone:
 
 ```sh
 make web-dev          # :5173
@@ -220,7 +235,8 @@ make e2e-test         # or: cd e2e && corepack pnpm test
 BASE_URL=http://localhost:8080 corepack pnpm test
 ```
 
-`make e2e-install` and `make e2e-test` mirror the `web-*` Makefile targets.
+`make e2e-install` and `make e2e-test` mirror the `web-*` Makefile targets;
+`make e2e` is the self-contained superset that also manages the server.
 
 ---
 
