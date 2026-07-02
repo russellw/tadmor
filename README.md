@@ -26,6 +26,7 @@ e2e/               browser-driven UI tests (Playwright; see docs/e2e-testing.md)
 | ---------------- | -------- | --------- | -------------------------------- |
 | `DATABASE_URL`   | yes      | —         | Postgres connection string       |
 | `HTTP_ADDR`      | no       | `:8080`   | HTTP listen address              |
+| `PORT`           | no       | —         | Listen port; overrides `HTTP_ADDR` when set (Cloud Run injects it) |
 | `TEST_DATABASE_URL` | for tests | — | Database the integration tests reset and use |
 
 ## Build, run, test
@@ -65,6 +66,14 @@ test tooling stays out of the front end's runtime dependency tree. With the stac
 running, `make e2e-test` drives a headless browser against the app. See
 [`docs/e2e-testing.md`](docs/e2e-testing.md) for one-time setup, the supply-chain
 rationale, and the test structure.
+
+## Deployment
+
+The server is self-contained: the Go binary embeds the built SPA and serves the
+API, so it deploys as a single container (see the repo-root `Dockerfile`). For a
+low-cost demo on Google Cloud Run backed by Neon Postgres — the build stages, the
+one-time setup, and the deploy command — see
+[`docs/deployment.md`](docs/deployment.md).
 
 ## Dependency / supply-chain policy
 
