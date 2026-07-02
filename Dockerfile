@@ -10,7 +10,7 @@
 FROM node:22-bookworm-slim AS web
 WORKDIR /src/web
 RUN corepack enable && corepack prepare pnpm@10.18.0 --activate
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/.npmrc web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
