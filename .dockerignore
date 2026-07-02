@@ -1,0 +1,11 @@
+# The SPA is rebuilt fresh inside the image; keep local build output and
+# installed deps out of the build context. vendor/ and db/migrations/ are
+# deliberately NOT ignored -- the hermetic build and startup migrations need
+# them.
+web/node_modules
+web/dist
+node_modules
+bin
+.git
+e2e
+docs
