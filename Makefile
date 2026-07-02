@@ -13,7 +13,7 @@ DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable
 TEST_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable
 
 .DEFAULT_GOAL := help
-.PHONY: help build release run test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
+.PHONY: help build release image run test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
 
 # Frontend lives in web/ (pnpm, corepack-pinned). Mirrors the Go targets'
 # discipline: the committed pnpm-lock.yaml is the source of truth and CI installs
@@ -24,6 +24,9 @@ WEB := web
 # dependency tree). See e2e/README.md.
 E2E := e2e
 
+# Container image tag for `make image`. See docs/deployment.md.
+IMAGE := tadmor
+
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN{FS=":.*## "}{printf "  make %-10s %s\n", $$1, $$2}'
@@ -32,6 +35,9 @@ build: ## Build the server binary into bin/ (embeds whatever is in web/dist)
 	go build -o bin/server ./cmd/server
 
 release: web-build build ## Build the front-end then the server (embedded SPA)
+
+image: ## Build the deployable container image (self-contained; see docs/deployment.md)
+	docker build -t $(IMAGE) .
 
 run: build ## Build and run the server
 	DATABASE_URL=$(DATABASE_URL) ./bin/server

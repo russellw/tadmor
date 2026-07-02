@@ -44,7 +44,7 @@ discipline:
 Validate it locally before the first deploy (requires a running Docker daemon):
 
 ```bash
-docker build -t tadmor .
+make image        # wraps: docker build -t tadmor .
 ```
 
 If you would rather not run Docker locally, skip this — `gcloud run deploy
