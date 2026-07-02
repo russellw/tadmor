@@ -50,6 +50,45 @@ docker build -t tadmor .
 If you would rather not run Docker locally, skip this — `gcloud run deploy
 --source .` builds the same Dockerfile remotely on Cloud Build (§4).
 
+### 2.1 On pinning the base images (deferred, deliberately)
+
+The three base images float on their tags: `golang:1.25.11-bookworm` pins the Go
+version but not the Debian layer under it, `node:22-bookworm-slim` pins only the
+major, and `gcr.io/distroless/static:nonroot` floats entirely. They could be
+pinned by digest (`golang:1.25.11-bookworm@sha256:...`). We have **not** done so,
+and this section records why, so it isn't mistaken for an oversight.
+
+What pinning would and wouldn't buy:
+
+- **It does not affect dependency versions.** Go deps come from the committed
+  `vendor/` tree with `GOPROXY=off` (fails closed if anything is missing); npm
+  deps come from the frozen `pnpm-lock.yaml`; pnpm itself is corepack-pinned.
+  None of that floats regardless of the base images.
+- **The real gap it closes is toolchain integrity.** The `golang` and `node`
+  images are *builders* — they compile the binary and build the SPA. A poisoned
+  builder could inject code into the shipped artifacts, and vendoring plus a
+  frozen lockfile do **nothing** against that: they verify the dependencies, not
+  the compiler. A repointed official-image tag (Docker Hub push-access
+  compromise is the concrete precedent) is exactly the vector that path leaves
+  open. Digest pinning means a rebuild keeps using the known-good image instead
+  of silently ingesting a swapped one.
+- **But it is an exposure-window reduction, not a cure.** It only protects until
+  the next deliberate re-pin, at which point trust re-extends to whatever is
+  current; it assumes the digest pinned today was itself verified against
+  Docker's published digest (pinning whatever the wire happened to serve just
+  freezes an unaudited snapshot); and freezing the *runtime* image means it stops
+  receiving OS security patches until bumped. So pinning without a renovate-style
+  bump discipline trades one risk for another.
+
+Calibration: **low probability, high impact.** For a throwaway demo the expected
+value is small enough that pinning here would be closer to theater than defence,
+so we skip it. When this project moves to a real production deployment, pin the
+two **builder** images by verified digest (that is the part vendoring cannot
+cover), with a deliberate process for bumping them — and justify it
+**reproducibility-first** (a rebuild months later is provably the image you
+audited, benefit with probability 1), **toolchain-integrity-second** (the
+low-probability attack above).
+
 ---
 
 ## 3. One-time setup
