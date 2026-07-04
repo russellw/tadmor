@@ -18,7 +18,7 @@ e2e/               browser-driven UI tests (Playwright; see docs/e2e-testing.md)
 ## Prerequisites
 
 - **Go 1.25.11** (pinned in `go.mod` via the `toolchain` directive)
-- **Postgres 16** reachable via `DATABASE_URL`
+- **Postgres 16 or 17** reachable via `DATABASE_URL` (the deployment box runs Debian 13's Postgres 17; the suite passes on both)
 
 ## Configuration
 
