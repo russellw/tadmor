@@ -32,7 +32,6 @@ RUN go build -o /out/server ./cmd/server
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /app
 COPY --from=build /out/server /app/server
-COPY --from=build /src/db/migrations /app/db/migrations
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/app/server"]

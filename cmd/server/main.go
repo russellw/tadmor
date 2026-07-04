@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"tadmor/db/migrations"
 	"tadmor/internal/config"
 	"tadmor/internal/db"
 	"tadmor/internal/httpapi"
@@ -41,7 +42,7 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	applied, err := db.Apply(ctx, pool, "db/migrations")
+	applied, err := db.Apply(ctx, pool, migrations.FS)
 	if err != nil {
 		return err
 	}

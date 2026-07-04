@@ -3,8 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"sort"
 	"strings"
 
@@ -19,14 +18,16 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at timestamptz NOT NULL DEFAULT now()
 );`
 
-// Apply runs every "*.up.sql" file in dir, in lexical (version) order, that has
-// not yet been recorded in schema_migrations. Each file is executed atomically
-// together with the row that records it, so a failed migration leaves no trace.
-// It returns the versions that were newly applied.
+// Apply runs every "*.up.sql" file at the root of fsys (normally the embedded
+// db/migrations tree), in lexical (version) order, that has not yet been
+// recorded in schema_migrations. Each file is executed atomically together
+// with the row that records it, so a failed migration leaves no trace.
+// It returns the versions that were newly applied. An fsys with no migration
+// files at all is an error: it means a broken build, not an up-to-date schema.
 //
 // Multi-statement files (including pl/pgsql function bodies) are sent as a
 // single simple-query batch, which pgx supports for argument-less Exec.
-func Apply(ctx context.Context, pool *pgxpool.Pool, dir string) ([]string, error) {
+func Apply(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS) ([]string, error) {
 	if _, err := pool.Exec(ctx, schemaMigrationsDDL); err != nil {
 		return nil, fmt.Errorf("db: ensure schema_migrations: %w", err)
 	}
@@ -36,19 +37,22 @@ func Apply(ctx context.Context, pool *pgxpool.Pool, dir string) ([]string, error
 		return nil, err
 	}
 
-	files, err := filepath.Glob(filepath.Join(dir, "*.up.sql"))
+	files, err := fs.Glob(fsys, "*.up.sql")
 	if err != nil {
 		return nil, fmt.Errorf("db: list migrations: %w", err)
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("db: no *.up.sql migration files found")
 	}
 	sort.Strings(files)
 
 	var applied []string
 	for _, f := range files {
-		version := strings.TrimSuffix(filepath.Base(f), ".up.sql")
+		version := strings.TrimSuffix(f, ".up.sql")
 		if done[version] {
 			continue
 		}
-		sql, err := os.ReadFile(f)
+		sql, err := fs.ReadFile(fsys, f)
 		if err != nil {
 			return applied, fmt.Errorf("db: read %s: %w", f, err)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"tadmor/db/migrations"
 	"tadmor/internal/db"
 	"tadmor/internal/dbtest"
 )
@@ -13,14 +14,12 @@ func TestMigrationsAndInvariants(t *testing.T) {
 	pool, cleanup := dbtest.Acquire(ctx, t)
 	defer cleanup()
 
-	dir := dbtest.MigrationsDir(t)
-
 	// Reset to a clean slate. Safe because the advisory lock serializes DB tests.
 	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`); err != nil {
 		t.Fatalf("reset schema: %v", err)
 	}
 
-	applied, err := db.Apply(ctx, pool, dir)
+	applied, err := db.Apply(ctx, pool, migrations.FS)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -30,7 +29,7 @@ func TestMigrationsAndInvariants(t *testing.T) {
 	t.Logf("applied %d migrations: %v", len(applied), applied)
 
 	// Running again must be a no-op (idempotent).
-	again, err := db.Apply(ctx, pool, dir)
+	again, err := db.Apply(ctx, pool, migrations.FS)
 	if err != nil {
 		t.Fatalf("second apply: %v", err)
 	}
