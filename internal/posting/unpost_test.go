@@ -175,8 +175,8 @@ func TestUnpostStockMovement(t *testing.T) {
 	invProd := queryID(`INSERT INTO products (sku, name, track_inventory, inventory_account_id, cogs_account_id)
 	      VALUES ('P-INV','Widget',true,(SELECT id FROM accounts WHERE code='1200'),(SELECT id FROM accounts WHERE code='5000')) RETURNING id`)
 	whID := queryID(`INSERT INTO warehouses (code, name) VALUES ('MAIN','Main') RETURNING id`)
-	movID := queryID(`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, quantity, unit_cost)
-	      VALUES ($1,$2,'receipt',10,7) RETURNING id`, invProd, whID)
+	movID := queryID(`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, movement_date, quantity, unit_cost)
+	      VALUES ($1,$2,'receipt','2026-06-16',10,7) RETURNING id`, invProd, whID)
 
 	if _, err := posting.PostInventoryReceipt(ctx, tx, movID, "USD", grni); err != nil {
 		t.Fatalf("post receipt: %v", err)

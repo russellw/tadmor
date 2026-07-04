@@ -113,8 +113,8 @@ func TestPostStockMovementReceiptEndpoint(t *testing.T) {
 
 	var movID, grni int
 	if err := pool.QueryRow(ctx,
-		`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, quantity, unit_cost)
-		 VALUES ((SELECT id FROM products WHERE sku='P-INV'), (SELECT id FROM warehouses WHERE code='MAIN'), 'receipt', 10, 7)
+		`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, movement_date, quantity, unit_cost)
+		 VALUES ((SELECT id FROM products WHERE sku='P-INV'), (SELECT id FROM warehouses WHERE code='MAIN'), 'receipt', '2026-06-16', 10, 7)
 		 RETURNING id`).Scan(&movID); err != nil {
 		t.Fatalf("create movement: %v", err)
 	}

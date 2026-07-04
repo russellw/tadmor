@@ -78,8 +78,8 @@ func TestPostingBalances(t *testing.T) {
 	      VALUES ($1,'2026-06-16','USD',55,(SELECT id FROM accounts WHERE code='1000')) RETURNING id`, custID)
 	supPay := queryID(`INSERT INTO supplier_payments (supplier_id, payment_date, currency_code, amount, payment_account_id)
 	      VALUES ($1,'2026-06-16','USD',44,(SELECT id FROM accounts WHERE code='1000')) RETURNING id`, supID)
-	movID := queryID(`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, quantity, unit_cost)
-	      VALUES ($1,$2,'issue',-3,7) RETURNING id`, invProd, whID)
+	movID := queryID(`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, movement_date, quantity, unit_cost)
+	      VALUES ($1,$2,'issue','2026-06-16',-3,7) RETURNING id`, invProd, whID)
 
 	// Post everything.
 	mustPost := func(name string, fn func() (int, error)) {
@@ -169,8 +169,8 @@ func TestInventoryReceiptClearsAgainstBill(t *testing.T) {
 	whID := queryID(`INSERT INTO warehouses (code, name) VALUES ('MAIN','Main') RETURNING id`)
 
 	// Receive 10 units @ 7 = 70: Dr inventory 70 / Cr GRNI 70.
-	movID := queryID(`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, quantity, unit_cost)
-	      VALUES ($1,$2,'receipt',10,7) RETURNING id`, invProd, whID)
+	movID := queryID(`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, movement_date, quantity, unit_cost)
+	      VALUES ($1,$2,'receipt','2026-06-16',10,7) RETURNING id`, invProd, whID)
 	if _, err := posting.PostInventoryReceipt(ctx, tx, movID, "USD", grni); err != nil {
 		t.Fatalf("post receipt: %v", err)
 	}
