@@ -1,0 +1,31 @@
+[Unit]
+Description=Tadmor business management server
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/opt/tadmor/server
+EnvironmentFile=/etc/tadmor/env
+Environment=HTTP_ADDR=127.0.0.1:8081
+Restart=on-failure
+RestartSec=2
+
+# Sandboxing: no state on disk, only needs loopback TCP to Postgres/Caddy.
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

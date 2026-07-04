@@ -1,56 +1,136 @@
-# Deployment — Demo Hosting on Cloud Run
+# Deployment — VPS (tadmor.belunaro.com)
 
-How to deploy tadmor as a low-cost demo: the Go server (which embeds the SPA and
-serves the API) as a single container on Google Cloud Run, backed by a serverless
-Postgres on Neon.
+How tadmor is deployed: a single static Go binary (embedding the SPA **and** the
+schema migrations) running as a hardened systemd service on a fixed-price VPS,
+behind Caddy for TLS. No hyperscaler, no per-request billing — the monthly cost
+is bounded by construction.
 
-For the local dev loop see `docs/local-development.md`. The container build lives
-in the repo-root `Dockerfile` / `.dockerignore`.
+For the local dev loop see `docs/local-development.md`.
 
 ---
 
 ## 1. The shape of the deployment
 
-One container, one database, both scaling to zero when idle:
+One box (OVH VPS, Debian 13, `belunaro.com`) shared by several small apps:
 
-| Piece | What runs it | Cost when idle |
-|---|---|---|
-| Go server + embedded SPA | Cloud Run (`--min-instances 0`) | $0 (scaled to zero) |
-| Postgres | Neon free tier | $0 (auto-suspends) |
+| Piece | What runs it |
+|---|---|
+| TLS + routing | Caddy (Debian main repo), auto-HTTPS via Let's Encrypt, one vhost per app |
+| tadmor server | systemd service `tadmor`, listening on `127.0.0.1:8081` |
+| Postgres | Postgres 17 (Debian main repo) on the same box, localhost-only |
 
-The server is self-contained: the Go binary embeds `web/dist` (`//go:embed
-all:dist`) *and* serves `/api/*`, so there is no separate static host. It reads
-its Postgres connection string from `DATABASE_URL` and applies pending migrations
-from `db/migrations/` on startup — the runtime image carries that directory.
+Per-app isolation conventions on the box: each app gets its own localhost port
+behind a Caddy vhost, its own Postgres role + database, and its own systemd
+service running as an unprivileged dynamic user. Wildcard DNS
+(`*.belunaro.com` → the VPS) means a new app needs no DNS work.
 
-The tradeoff for paying nothing while idle is a couple-second cold start on the
-first request after inactivity (Cloud Run wake + Neon wake).
+The server binary is fully self-contained: `web/dist` and `db/migrations` are
+both embedded (`//go:embed`), and pending migrations are applied on startup.
+Deploying is copying one file and restarting one service.
+
+Single instance by design — `db.Apply` takes no cross-instance lock, so the
+one-service setup also sidesteps any migration race. If this ever scales to
+multiple instances, give `db.Apply` a Postgres advisory lock first.
+
+## 2. Routine deploy
+
+```bash
+make deploy
+```
+
+which is:
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 make release   # SPA build + static Go binary
+scp bin/server vps:/tmp/tadmor-server
+ssh vps 'sudo install -m 755 -o root -g root /tmp/tadmor-server /opt/tadmor/server \
+         && rm /tmp/tadmor-server && sudo systemctl restart tadmor'
+curl -fsS https://tadmor.belunaro.com/readyz
+```
+
+`vps` is an SSH alias for the box (key-only auth). The binary must be built
+`CGO_ENABLED=0` so it is static, and the migration runner treats an embedded FS
+with zero migration files as a startup error, so a broken build fails loudly
+instead of serving against an empty schema.
+
+Logs and status:
+
+```bash
+ssh vps 'systemctl status tadmor'
+ssh vps 'sudo journalctl -u tadmor -f'
+```
+
+## 3. One-time box setup (already done; recorded for rebuild)
+
+The box-level hardening (ufw default-deny with only 22/80/443, SSH key-only,
+unattended-upgrades) predates tadmor and is not repeated here.
+
+### 3.1 Postgres
+
+Postgres comes from Debian main (17 on Debian 13) — deliberately not PGDG,
+same repo-preference call as Caddy; the test suite passes on both 16 and 17.
+It listens on localhost only (the Debian default).
+
+```bash
+sudo apt-get install -y postgresql
+sudo -u postgres psql \
+  -c "CREATE ROLE tadmor LOGIN PASSWORD '<generated>'" \
+  -c "CREATE DATABASE tadmor OWNER tadmor"
+```
+
+The connection string lives only on the box, in `/etc/tadmor/env`
+(root:root, mode 600), which systemd reads as root before dropping privileges:
+
+```
+DATABASE_URL=postgres://tadmor:<generated>@127.0.0.1:5432/tadmor?sslmode=disable
+```
+
+`sslmode=disable` is fine here and only here: the connection never leaves
+loopback.
+
+### 3.2 systemd service
+
+The unit is committed at [`deploy/tadmor.service`](../deploy/tadmor.service):
+`DynamicUser` (no app user to manage, no writable filesystem), strict
+sandboxing (the process needs nothing but loopback TCP), `EnvironmentFile`
+for the secret, `HTTP_ADDR` pinned to the app's localhost port.
+
+```bash
+scp deploy/tadmor.service vps:/tmp/
+ssh vps 'sudo install -m 644 -o root -g root /tmp/tadmor.service /etc/systemd/system/tadmor.service \
+         && rm /tmp/tadmor.service && sudo systemctl daemon-reload && sudo systemctl enable --now tadmor'
+```
+
+### 3.3 Caddy vhost
+
+In `/etc/caddy/Caddyfile` on the box:
+
+```
+tadmor.belunaro.com {
+	reverse_proxy 127.0.0.1:8081
+}
+```
+
+then `sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl
+reload caddy`. Caddy obtains and renews the certificate automatically.
 
 ---
 
-## 2. The container build
+## 4. The container build (alternative path)
 
-The repo-root `Dockerfile` is a 3-stage build that mirrors the Makefile's
-discipline:
+The repo-root `Dockerfile` still builds a self-contained image (`make image`)
+for any container host. It is not used by the VPS deployment, but it mirrors
+the same hermetic build discipline and stays maintained:
 
 1. **SPA** — `node:22` + corepack-pinned `pnpm@10.18.0`, installed from the
    frozen lockfile, `pnpm build` → `web/dist`.
 2. **Go** — `golang:1.25.11`, hermetic and vendored (`GOFLAGS=-mod=vendor`,
    `GOPROXY=off`, `GOTOOLCHAIN=local`, `CGO_ENABLED=0`), embedding the SPA from
    stage 1.
-3. **Runtime** — `gcr.io/distroless/static:nonroot` carrying just the binary and
-   `db/migrations/`.
+3. **Runtime** — `gcr.io/distroless/static:nonroot` carrying just the binary
+   (migrations are embedded in it).
 
-Validate it locally before the first deploy (requires a running Docker daemon):
-
-```bash
-make image        # wraps: docker build -t tadmor .
-```
-
-If you would rather not run Docker locally, skip this — `gcloud run deploy
---source .` builds the same Dockerfile remotely on Cloud Build (§4).
-
-### 2.1 On pinning the base images (deferred, deliberately)
+### 4.1 On pinning the base images (deferred, deliberately)
 
 The three base images float on their tags: `golang:1.25.11-bookworm` pins the Go
 version but not the Debian layer under it, `node:22-bookworm-slim` pins only the
@@ -80,91 +160,15 @@ What pinning would and wouldn't buy:
   receiving OS security patches until bumped. So pinning without a renovate-style
   bump discipline trades one risk for another.
 
-Calibration: **low probability, high impact.** For a throwaway demo the expected
-value is small enough that pinning here would be closer to theater than defence,
-so we skip it. When this project moves to a real production deployment, pin the
-two **builder** images by verified digest (that is the part vendoring cannot
+Calibration: **low probability, high impact.** For a demo the expected value is
+small enough that pinning here would be closer to theater than defence, so we
+skip it. When this project moves to a real production deployment, pin the two
+**builder** images by verified digest (that is the part vendoring cannot
 cover), with a deliberate process for bumping them — and justify it
 **reproducibility-first** (a rebuild months later is provably the image you
 audited, benefit with probability 1), **toolchain-integrity-second** (the
 low-probability attack above).
 
----
-
-## 3. One-time setup
-
-### 3.1 Provision the Neon database
-
-Create a Neon project and database, then copy its connection string. Use the
-**direct** endpoint (not the `-pooler` one): pgx v5's default prepared-statement
-caching misbehaves against Neon's PgBouncer pooler, and at demo scale
-(`--max-instances 1`, a single `pgxpool`) you stay well under Neon's connection
-limit, so the pooler buys nothing. Require TLS with `sslmode=require`:
-
-```
-postgresql://USER:PASS@ep-xxx.REGION.aws.neon.tech/tadmor?sslmode=require
-```
-
-### 3.2 Store the connection string as a secret
-
-Never bake `DATABASE_URL` into the image. Put it in Secret Manager:
-
-```bash
-printf 'postgresql://USER:PASS@ep-xxx.REGION.aws.neon.tech/tadmor?sslmode=require' \
-  | gcloud secrets create tadmor-database-url --data-file=-
-```
-
-Grant the Cloud Run runtime service account read access (skip if `gcloud`
-prompts to do this for you during deploy):
-
-```bash
-PROJECT_NUMBER=$(gcloud projects describe "$(gcloud config get-value project)" \
-  --format='value(projectNumber)')
-gcloud secrets add-iam-policy-binding tadmor-database-url \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --role=roles/secretmanager.secretAccessor
-```
-
----
-
-## 4. Deploy
-
-Cloud Build sees the `Dockerfile` and builds the image; Cloud Run runs it:
-
-```bash
-gcloud run deploy tadmor \
-  --source . \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --min-instances 0 \
-  --max-instances 1 \
-  --memory 512Mi \
-  --set-secrets DATABASE_URL=tadmor-database-url:latest
-```
-
-Redeploying after a change is the same command — rerun it from a clean working
-tree.
-
-### Why these flags
-
-- `--min-instances 0` — scale to zero so an idle demo costs nothing.
-- `--max-instances 1` — demo scale, and it sidesteps a migration race: `db.Apply`
-  takes no cross-instance lock, so two instances cold-starting at once could both
-  try to apply the same migration. One instance removes the race entirely.
-- `--allow-unauthenticated` — a public demo; drop this for a private one.
-- `--set-secrets` — injects `DATABASE_URL` from Secret Manager at runtime.
-
-The port needs no flag: Cloud Run injects `PORT` (default 8080) and
-`config.Load` honors it, overriding the `HTTP_ADDR` default.
-
----
-
-## 5. Scaling past a demo
-
-If you later raise `--max-instances`, two things change:
-
-- **Connections** — switch to Neon's `-pooler` endpoint, and set the pool's query
-  exec mode to simple protocol (`pgx.QueryExecModeSimpleProtocol`) so prepared
-  statements work through PgBouncer.
-- **Migrations** — give `db.Apply` a Postgres advisory lock, or run migrations as
-  a one-off step before rolling out, so concurrent instances don't race.
+Note that the VPS path (§1–§3) has no container builders at all: the binary is
+built by the locally installed, pinned Go toolchain from the vendored tree, so
+the base-image question doesn't arise.

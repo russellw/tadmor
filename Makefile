@@ -13,7 +13,7 @@ DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable
 TEST_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable
 
 .DEFAULT_GOAL := help
-.PHONY: help build release image run test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
+.PHONY: help build release image deploy run test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
 
 # Frontend lives in web/ (pnpm, corepack-pinned). Mirrors the Go targets'
 # discipline: the committed pnpm-lock.yaml is the source of truth and CI installs
@@ -38,6 +38,14 @@ release: web-build build ## Build the front-end then the server (embedded SPA)
 
 image: ## Build the deployable container image (self-contained; see docs/deployment.md)
 	docker build -t $(IMAGE) .
+
+deploy: export CGO_ENABLED=0
+deploy: export GOOS=linux
+deploy: export GOARCH=amd64
+deploy: release ## Build and deploy to the VPS (see docs/deployment.md)
+	scp bin/server vps:/tmp/tadmor-server
+	ssh vps 'sudo install -m 755 -o root -g root /tmp/tadmor-server /opt/tadmor/server && rm /tmp/tadmor-server && sudo systemctl restart tadmor'
+	sleep 2 && curl -fsS https://tadmor.belunaro.com/readyz && echo
 
 run: build ## Build and run the server
 	DATABASE_URL=$(DATABASE_URL) ./bin/server

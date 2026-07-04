@@ -69,11 +69,12 @@ rationale, and the test structure.
 
 ## Deployment
 
-The server is self-contained: the Go binary embeds the built SPA and serves the
-API, so it deploys as a single container (see the repo-root `Dockerfile`). For a
-low-cost demo on Google Cloud Run backed by Neon Postgres — the build stages, the
-one-time setup, and the deploy command — see
-[`docs/deployment.md`](docs/deployment.md).
+The server is self-contained: the Go binary embeds the built SPA and the schema
+migrations and serves the API, so the deployable artifact is a single static
+binary (a container build also exists; see the repo-root `Dockerfile`). The demo
+runs at https://tadmor.belunaro.com on a fixed-price VPS behind Caddy —
+`make deploy` redeploys it; see [`docs/deployment.md`](docs/deployment.md) for
+the full setup.
 
 ## Dependency / supply-chain policy
 
