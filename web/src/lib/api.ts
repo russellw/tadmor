@@ -300,6 +300,43 @@ export function updateTaxCode(
   return send("PUT", `/tax-codes/${encodeURIComponent(code)}`, input)
 }
 
+/** A payment term (natural key: code), mirroring master.PaymentTerm. The list
+ *  comes back ordered by due_days, shortest terms first. */
+export interface PaymentTerm {
+  code: string
+  name: string
+  due_days: number
+}
+
+/** The writable fields of a payment term, mirroring master.PaymentTermInput.
+ *  The code is the identity (natural key): sent on create, fixed thereafter. */
+export interface PaymentTermInput {
+  code: string
+  name: string
+  due_days: number
+}
+
+export function listPaymentTerms(): Promise<PaymentTerm[]> {
+  return get<PaymentTerm[]>("/payment-terms")
+}
+
+export function getPaymentTerm(code: string): Promise<PaymentTerm> {
+  return get<PaymentTerm>(`/payment-terms/${encodeURIComponent(code)}`)
+}
+
+export function createPaymentTerm(
+  input: PaymentTermInput,
+): Promise<{ code: string }> {
+  return post<{ code: string }>("/payment-terms", input)
+}
+
+export function updatePaymentTerm(
+  code: string,
+  input: PaymentTermInput,
+): Promise<void> {
+  return send("PUT", `/payment-terms/${encodeURIComponent(code)}`, input)
+}
+
 /** A fiscal year, mirroring master.FiscalYear. Dates are YYYY-MM-DD strings. */
 export interface FiscalYear {
   id: number

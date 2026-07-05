@@ -106,6 +106,19 @@ export async function createTaxCode(
   return code
 }
 
+/** Create a throwaway payment term via the API and return its code. */
+export async function createPaymentTerm(
+  request: APIRequestContext,
+  code: string,
+  dueDays = 0,
+): Promise<string> {
+  const res = await request.post("/api/payment-terms", {
+    data: { code, name: `${code} terms`, due_days: dueDays },
+  })
+  expect(res.ok(), `create payment term failed (${res.status()})`).toBeTruthy()
+  return code
+}
+
 /** Create a throwaway warehouse via the API and return its id. */
 export async function createWarehouse(
   request: APIRequestContext,

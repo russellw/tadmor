@@ -8,11 +8,13 @@ import {
   listAccounts,
   listCustomers,
   listOrganizations,
+  listPaymentTerms,
   listTaxCodes,
   updateCustomer,
   type Account,
   type CustomerInput,
   type Organization,
+  type PaymentTerm,
   type TaxCode,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -51,7 +53,7 @@ const blankForm: FormState = {
   organizationId: "",
   customerNumber: "",
   arAccountId: NONE,
-  paymentTermsCode: "",
+  paymentTermsCode: NONE,
   currencyCode: "",
   taxCode: NONE,
   creditLimit: "",
@@ -75,6 +77,7 @@ export function CustomerForm({ mode }: { mode: Mode }) {
   const [orgOptions, setOrgOptions] = useState<Organization[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [taxCodes, setTaxCodes] = useState<TaxCode[]>([])
+  const [paymentTerms, setPaymentTerms] = useState<PaymentTerm[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -89,17 +92,20 @@ export function CustomerForm({ mode }: { mode: Mode }) {
             setError("Invalid customer id.")
             return
           }
-          const [customer, organizations, accts, taxes] = await Promise.all([
-            getCustomer(customerId),
-            listOrganizations(),
-            listAccounts(),
-            listTaxCodes(),
-          ])
+          const [customer, organizations, accts, taxes, terms] =
+            await Promise.all([
+              getCustomer(customerId),
+              listOrganizations(),
+              listAccounts(),
+              listTaxCodes(),
+              listPaymentTerms(),
+            ])
           if (cancelled) return
           const org = organizations.find((o) => o.id === customer.organization_id)
           setOrgOptions(org ? [org] : [])
           setAccounts(accts)
           setTaxCodes(taxes)
+          setPaymentTerms(terms)
           setForm({
             organizationId: String(customer.organization_id),
             customerNumber: customer.customer_number ?? "",
@@ -107,24 +113,27 @@ export function CustomerForm({ mode }: { mode: Mode }) {
               customer.ar_account_id != null
                 ? String(customer.ar_account_id)
                 : NONE,
-            paymentTermsCode: customer.payment_terms_code ?? "",
+            paymentTermsCode: customer.payment_terms_code ?? NONE,
             currencyCode: customer.currency_code ?? "",
             taxCode: customer.tax_code ?? NONE,
             creditLimit: customer.credit_limit ?? "",
             isActive: customer.is_active,
           })
         } else {
-          const [organizations, customers, accts, taxes] = await Promise.all([
-            listOrganizations(),
-            listCustomers(),
-            listAccounts(),
-            listTaxCodes(),
-          ])
+          const [organizations, customers, accts, taxes, terms] =
+            await Promise.all([
+              listOrganizations(),
+              listCustomers(),
+              listAccounts(),
+              listTaxCodes(),
+              listPaymentTerms(),
+            ])
           if (cancelled) return
           const taken = new Set(customers.map((c) => c.organization_id))
           setOrgOptions(organizations.filter((o) => !taken.has(o.id)))
           setAccounts(accts)
           setTaxCodes(taxes)
+          setPaymentTerms(terms)
           setForm(blankForm)
         }
       } catch (err: unknown) {
@@ -152,7 +161,8 @@ export function CustomerForm({ mode }: { mode: Mode }) {
       organization_id: Number(form.organizationId),
       customer_number: emptyToNull(form.customerNumber),
       ar_account_id: form.arAccountId === NONE ? null : Number(form.arAccountId),
-      payment_terms_code: emptyToNull(form.paymentTermsCode),
+      payment_terms_code:
+        form.paymentTermsCode === NONE ? null : form.paymentTermsCode,
       currency_code: currency === "" ? null : currency,
       tax_code: form.taxCode === NONE ? null : form.taxCode,
       credit_limit: emptyToNull(form.creditLimit),
@@ -298,13 +308,22 @@ export function CustomerForm({ mode }: { mode: Mode }) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="payment_terms">Payment Terms</Label>
-              <Input
-                id="payment_terms"
+              <Select
                 value={form.paymentTermsCode}
-                onChange={(e) =>
-                  setForm({ ...form, paymentTermsCode: e.target.value })
-                }
-              />
+                onValueChange={(v) => setForm({ ...form, paymentTermsCode: v })}
+              >
+                <SelectTrigger id="payment_terms" className="w-full">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>None</SelectItem>
+                  {paymentTerms.map((t) => (
+                    <SelectItem key={t.code} value={t.code}>
+                      {t.code} — {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="currency">Currency</Label>

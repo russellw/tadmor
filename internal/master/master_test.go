@@ -69,6 +69,17 @@ func TestMasterCRUD(t *testing.T) {
 		t.Fatalf("get tax code = %+v, %v", tc, err)
 	}
 
+	// Payment term (natural key) round-trip with update.
+	if _, err := master.CreatePaymentTerm(ctx, tx, master.PaymentTermInput{Code: "NET45", Name: "Net 45", DueDays: 45}); err != nil {
+		t.Fatalf("create payment term: %v", err)
+	}
+	if err := master.UpdatePaymentTerm(ctx, tx, "NET45", master.PaymentTermInput{Code: "NET45", Name: "Net 45 days", DueDays: 45}); err != nil {
+		t.Fatalf("update payment term: %v", err)
+	}
+	if pt, err := master.GetPaymentTerm(ctx, tx, "NET45"); err != nil || pt.Name != "Net 45 days" || pt.DueDays != 45 {
+		t.Fatalf("get payment term = %+v, %v", pt, err)
+	}
+
 	// Smoke-create the remaining entities so every Create path is exercised.
 	supID, err := master.CreateSupplier(ctx, tx, master.SupplierInput{OrganizationID: orgID})
 	if err != nil {

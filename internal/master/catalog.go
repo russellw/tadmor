@@ -196,6 +196,58 @@ func UpdateTaxCode(ctx context.Context, q Querier, code string, in TaxCodeInput)
 }
 
 // ---------------------------------------------------------------------------
+// Payment terms (natural key: code)
+// ---------------------------------------------------------------------------
+
+type PaymentTerm struct {
+	Code    string `db:"code" json:"code"`
+	Name    string `db:"name" json:"name"`
+	DueDays int    `db:"due_days" json:"due_days"`
+}
+
+type PaymentTermInput struct {
+	Code    string `json:"code"`
+	Name    string `json:"name"`
+	DueDays int    `json:"due_days"`
+}
+
+func (in PaymentTermInput) Validate() string {
+	switch {
+	case in.Code == "":
+		return "code is required"
+	case in.Name == "":
+		return "name is required"
+	case in.DueDays < 0:
+		return "due_days must not be negative"
+	}
+	return ""
+}
+
+const paymentTermColumns = `code, name, due_days`
+
+// Listed by due_days so dropdowns read shortest-to-longest terms.
+func ListPaymentTerms(ctx context.Context, q Querier) ([]PaymentTerm, error) {
+	return collectList[PaymentTerm](ctx, q, `SELECT `+paymentTermColumns+` FROM payment_terms ORDER BY due_days, code`)
+}
+
+func GetPaymentTerm(ctx context.Context, q Querier, code string) (PaymentTerm, error) {
+	return collectOne[PaymentTerm](ctx, q, `SELECT `+paymentTermColumns+` FROM payment_terms WHERE code = $1`, code)
+}
+
+func CreatePaymentTerm(ctx context.Context, q Querier, in PaymentTermInput) (string, error) {
+	_, err := q.Exec(ctx,
+		`INSERT INTO payment_terms (code, name, due_days) VALUES ($1,$2,$3)`,
+		in.Code, in.Name, in.DueDays)
+	return in.Code, err
+}
+
+func UpdatePaymentTerm(ctx context.Context, q Querier, code string, in PaymentTermInput) error {
+	return affected(q.Exec(ctx,
+		`UPDATE payment_terms SET name=$2, due_days=$3 WHERE code=$1`,
+		code, in.Name, in.DueDays))
+}
+
+// ---------------------------------------------------------------------------
 // Warehouses
 // ---------------------------------------------------------------------------
 

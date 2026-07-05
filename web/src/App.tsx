@@ -27,6 +27,8 @@ import {
   CustomerPayments,
   SupplierPayments,
 } from "@/components/payment-list"
+import { PaymentTermForm } from "@/components/payment-term-form"
+import { PaymentTerms } from "@/components/payment-terms"
 import { PeriodForm } from "@/components/period-form"
 import { Periods } from "@/components/periods"
 import { StockMovementDetail } from "@/components/stock-movement-detail"
@@ -55,6 +57,7 @@ const masterNavItems = [
   { to: "/suppliers", label: "Suppliers" },
   { to: "/products", label: "Products" },
   { to: "/tax-codes", label: "Tax Codes" },
+  { to: "/payment-terms", label: "Payment Terms" },
   { to: "/warehouses", label: "Warehouses" },
   { to: "/periods", label: "Periods" },
 ]
@@ -175,6 +178,15 @@ export default function App() {
           <Route
             path="/tax-codes/:code"
             element={<TaxCodeForm mode="edit" />}
+          />
+          <Route path="/payment-terms" element={<PaymentTerms />} />
+          <Route
+            path="/payment-terms/new"
+            element={<PaymentTermForm mode="create" />}
+          />
+          <Route
+            path="/payment-terms/:code"
+            element={<PaymentTermForm mode="edit" />}
           />
           <Route path="/warehouses" element={<Warehouses />} />
           <Route

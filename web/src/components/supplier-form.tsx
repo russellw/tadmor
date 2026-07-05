@@ -7,11 +7,13 @@ import {
   getSupplier,
   listAccounts,
   listOrganizations,
+  listPaymentTerms,
   listSuppliers,
   listTaxCodes,
   updateSupplier,
   type Account,
   type Organization,
+  type PaymentTerm,
   type SupplierInput,
   type TaxCode,
 } from "@/lib/api"
@@ -49,7 +51,7 @@ const blankForm: FormState = {
   organizationId: "",
   supplierNumber: "",
   apAccountId: NONE,
-  paymentTermsCode: "",
+  paymentTermsCode: NONE,
   currencyCode: "",
   taxCode: NONE,
   isActive: true,
@@ -71,6 +73,7 @@ export function SupplierForm({ mode }: { mode: Mode }) {
   const [orgOptions, setOrgOptions] = useState<Organization[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [taxCodes, setTaxCodes] = useState<TaxCode[]>([])
+  const [paymentTerms, setPaymentTerms] = useState<PaymentTerm[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -85,17 +88,20 @@ export function SupplierForm({ mode }: { mode: Mode }) {
             setError("Invalid supplier id.")
             return
           }
-          const [supplier, organizations, accts, taxes] = await Promise.all([
-            getSupplier(supplierId),
-            listOrganizations(),
-            listAccounts(),
-            listTaxCodes(),
-          ])
+          const [supplier, organizations, accts, taxes, terms] =
+            await Promise.all([
+              getSupplier(supplierId),
+              listOrganizations(),
+              listAccounts(),
+              listTaxCodes(),
+              listPaymentTerms(),
+            ])
           if (cancelled) return
           const org = organizations.find((o) => o.id === supplier.organization_id)
           setOrgOptions(org ? [org] : [])
           setAccounts(accts)
           setTaxCodes(taxes)
+          setPaymentTerms(terms)
           setForm({
             organizationId: String(supplier.organization_id),
             supplierNumber: supplier.supplier_number ?? "",
@@ -103,23 +109,26 @@ export function SupplierForm({ mode }: { mode: Mode }) {
               supplier.ap_account_id != null
                 ? String(supplier.ap_account_id)
                 : NONE,
-            paymentTermsCode: supplier.payment_terms_code ?? "",
+            paymentTermsCode: supplier.payment_terms_code ?? NONE,
             currencyCode: supplier.currency_code ?? "",
             taxCode: supplier.tax_code ?? NONE,
             isActive: supplier.is_active,
           })
         } else {
-          const [organizations, suppliers, accts, taxes] = await Promise.all([
-            listOrganizations(),
-            listSuppliers(),
-            listAccounts(),
-            listTaxCodes(),
-          ])
+          const [organizations, suppliers, accts, taxes, terms] =
+            await Promise.all([
+              listOrganizations(),
+              listSuppliers(),
+              listAccounts(),
+              listTaxCodes(),
+              listPaymentTerms(),
+            ])
           if (cancelled) return
           const taken = new Set(suppliers.map((s) => s.organization_id))
           setOrgOptions(organizations.filter((o) => !taken.has(o.id)))
           setAccounts(accts)
           setTaxCodes(taxes)
+          setPaymentTerms(terms)
           setForm(blankForm)
         }
       } catch (err: unknown) {
@@ -147,7 +156,8 @@ export function SupplierForm({ mode }: { mode: Mode }) {
       organization_id: Number(form.organizationId),
       supplier_number: emptyToNull(form.supplierNumber),
       ap_account_id: form.apAccountId === NONE ? null : Number(form.apAccountId),
-      payment_terms_code: emptyToNull(form.paymentTermsCode),
+      payment_terms_code:
+        form.paymentTermsCode === NONE ? null : form.paymentTermsCode,
       currency_code: currency === "" ? null : currency,
       tax_code: form.taxCode === NONE ? null : form.taxCode,
       is_active: form.isActive,
@@ -292,13 +302,22 @@ export function SupplierForm({ mode }: { mode: Mode }) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="payment_terms">Payment Terms</Label>
-              <Input
-                id="payment_terms"
+              <Select
                 value={form.paymentTermsCode}
-                onChange={(e) =>
-                  setForm({ ...form, paymentTermsCode: e.target.value })
-                }
-              />
+                onValueChange={(v) => setForm({ ...form, paymentTermsCode: v })}
+              >
+                <SelectTrigger id="payment_terms" className="w-full">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>None</SelectItem>
+                  {paymentTerms.map((t) => (
+                    <SelectItem key={t.code} value={t.code}>
+                      {t.code} — {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="currency">Currency</Label>

@@ -42,6 +42,11 @@ func (s *Server) registerMasterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /tax-codes/{code}", s.getTaxCode)
 	mux.HandleFunc("PUT /tax-codes/{code}", s.updateTaxCode)
 
+	mux.HandleFunc("GET /payment-terms", s.listPaymentTerms)
+	mux.HandleFunc("POST /payment-terms", s.createPaymentTerm)
+	mux.HandleFunc("GET /payment-terms/{code}", s.getPaymentTerm)
+	mux.HandleFunc("PUT /payment-terms/{code}", s.updatePaymentTerm)
+
 	mux.HandleFunc("GET /warehouses", s.listWarehouses)
 	mux.HandleFunc("POST /warehouses", s.createWarehouse)
 	mux.HandleFunc("GET /warehouses/{id}", s.getWarehouse)
@@ -346,6 +351,41 @@ func (s *Server) updateTaxCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.updated(w, master.UpdateTaxCode(r.Context(), s.pool, code, in))
+}
+
+// ---- payment terms (natural key: code) ----
+
+func (s *Server) listPaymentTerms(w http.ResponseWriter, r *http.Request) {
+	v, err := master.ListPaymentTerms(r.Context(), s.pool)
+	s.okJSON(w, v, err)
+}
+
+func (s *Server) getPaymentTerm(w http.ResponseWriter, r *http.Request) {
+	v, err := master.GetPaymentTerm(r.Context(), s.pool, r.PathValue("code"))
+	s.okJSON(w, v, err)
+}
+
+func (s *Server) createPaymentTerm(w http.ResponseWriter, r *http.Request) {
+	var in master.PaymentTermInput
+	if !decodeValid(w, r, &in) {
+		return
+	}
+	code, err := master.CreatePaymentTerm(r.Context(), s.pool, in)
+	s.createdKey(w, code, err)
+}
+
+func (s *Server) updatePaymentTerm(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	var in master.PaymentTermInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	in.Code = code // path wins over body
+	if msg := in.Validate(); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	s.updated(w, master.UpdatePaymentTerm(r.Context(), s.pool, code, in))
 }
 
 // ---- warehouses ----
