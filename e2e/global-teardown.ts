@@ -32,6 +32,8 @@ export default async function globalTeardown(): Promise<void> {
        SELECT id FROM fiscal_years WHERE name LIKE '${E2E_PREFIX}%'
      );
     DELETE FROM fiscal_years WHERE name LIKE '${E2E_PREFIX}%';
+    DELETE FROM tax_codes WHERE code LIKE '${E2E_PREFIX}%';
+    DELETE FROM warehouses WHERE code LIKE '${E2E_PREFIX}%';
     DELETE FROM users WHERE email = '${E2E_EMAIL}';
   `
   try {

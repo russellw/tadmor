@@ -231,12 +231,49 @@ export interface Warehouse {
   is_active: boolean
 }
 
+/** The writable fields of a warehouse (Warehouse without its id), mirroring
+ *  master.WarehouseInput. PUT is a full replace. */
+export interface WarehouseInput {
+  code: string
+  name: string
+  address_id: number | null
+  is_active: boolean
+}
+
 export function listWarehouses(): Promise<Warehouse[]> {
   return get<Warehouse[]>("/warehouses")
 }
 
-/** A tax code (natural key: code), mirroring master.TaxCode. */
+export function getWarehouse(id: number): Promise<Warehouse> {
+  return get<Warehouse>(`/warehouses/${id}`)
+}
+
+export function createWarehouse(
+  input: WarehouseInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/warehouses", input)
+}
+
+export function updateWarehouse(
+  id: number,
+  input: WarehouseInput,
+): Promise<void> {
+  return send("PUT", `/warehouses/${id}`, input)
+}
+
+/** A tax code (natural key: code), mirroring master.TaxCode. rate is a percent
+ *  as an exact decimal string, e.g. "8.2500". */
 export interface TaxCode {
+  code: string
+  name: string
+  rate: string
+  tax_account_id: number | null
+  is_active: boolean
+}
+
+/** The writable fields of a tax code, mirroring master.TaxCodeInput. The code
+ *  is the identity (natural key): sent on create, fixed thereafter. */
+export interface TaxCodeInput {
   code: string
   name: string
   rate: string
@@ -246,6 +283,21 @@ export interface TaxCode {
 
 export function listTaxCodes(): Promise<TaxCode[]> {
   return get<TaxCode[]>("/tax-codes")
+}
+
+export function getTaxCode(code: string): Promise<TaxCode> {
+  return get<TaxCode>(`/tax-codes/${encodeURIComponent(code)}`)
+}
+
+export function createTaxCode(input: TaxCodeInput): Promise<{ code: string }> {
+  return post<{ code: string }>("/tax-codes", input)
+}
+
+export function updateTaxCode(
+  code: string,
+  input: TaxCodeInput,
+): Promise<void> {
+  return send("PUT", `/tax-codes/${encodeURIComponent(code)}`, input)
 }
 
 /** A fiscal year, mirroring master.FiscalYear. Dates are YYYY-MM-DD strings. */

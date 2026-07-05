@@ -38,7 +38,11 @@ import { ProductForm } from "@/components/product-form"
 import { Products } from "@/components/products"
 import { SupplierForm } from "@/components/supplier-form"
 import { Suppliers } from "@/components/suppliers"
+import { TaxCodeForm } from "@/components/tax-code-form"
+import { TaxCodes } from "@/components/tax-codes"
 import { TrialBalance } from "@/components/trial-balance"
+import { WarehouseForm } from "@/components/warehouse-form"
+import { Warehouses } from "@/components/warehouses"
 import { cn } from "@/lib/utils"
 
 // URL routing via react-router-dom (v7). The Go backend's spaHandler falls back
@@ -50,6 +54,8 @@ const masterNavItems = [
   { to: "/customers", label: "Customers" },
   { to: "/suppliers", label: "Suppliers" },
   { to: "/products", label: "Products" },
+  { to: "/tax-codes", label: "Tax Codes" },
+  { to: "/warehouses", label: "Warehouses" },
   { to: "/periods", label: "Periods" },
 ]
 
@@ -164,6 +170,21 @@ export default function App() {
           <Route path="/products" element={<Products />} />
           <Route path="/products/new" element={<ProductForm mode="create" />} />
           <Route path="/products/:id" element={<ProductForm mode="edit" />} />
+          <Route path="/tax-codes" element={<TaxCodes />} />
+          <Route path="/tax-codes/new" element={<TaxCodeForm mode="create" />} />
+          <Route
+            path="/tax-codes/:code"
+            element={<TaxCodeForm mode="edit" />}
+          />
+          <Route path="/warehouses" element={<Warehouses />} />
+          <Route
+            path="/warehouses/new"
+            element={<WarehouseForm mode="create" />}
+          />
+          <Route
+            path="/warehouses/:id"
+            element={<WarehouseForm mode="edit" />}
+          />
           <Route path="/periods" element={<Periods />} />
           <Route path="/periods/new" element={<PeriodForm mode="create" />} />
           <Route path="/periods/:id" element={<PeriodForm mode="edit" />} />

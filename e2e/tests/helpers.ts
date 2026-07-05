@@ -78,6 +78,47 @@ export async function createPeriod(
   return ((await res.json()) as { id: number }).id
 }
 
+/** A unique E2E-prefixed code for natural-key rows (tax codes, warehouses).
+ *  Uppercase because the forms normalize codes to uppercase. */
+export function uniqueCode(): string {
+  return `${E2E_PREFIX}${Date.now().toString(36)}${Math.random()
+    .toString(36)
+    .slice(2, 5)}`.toUpperCase()
+}
+
+/** Create a throwaway tax code via the API and return its code. */
+export async function createTaxCode(
+  request: APIRequestContext,
+  code: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const res = await request.post("/api/tax-codes", {
+    data: {
+      code,
+      name: `${code} tax`,
+      rate: "0",
+      tax_account_id: null,
+      is_active: true,
+      ...overrides,
+    },
+  })
+  expect(res.ok(), `create tax code failed (${res.status()})`).toBeTruthy()
+  return code
+}
+
+/** Create a throwaway warehouse via the API and return its id. */
+export async function createWarehouse(
+  request: APIRequestContext,
+  code: string,
+  name: string,
+): Promise<number> {
+  const res = await request.post("/api/warehouses", {
+    data: { code, name, address_id: null, is_active: true },
+  })
+  expect(res.ok(), `create warehouse failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
 /** Create a customer on an organization via the API and return its id. Used to
  *  set up the edit/deactivate tests without driving the create form each time. */
 export async function createCustomer(
