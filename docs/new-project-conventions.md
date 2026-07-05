@@ -155,7 +155,7 @@ ratified and carry over as-is:
   and was judged not worth the operational cost for a solo project. Clean
   upgrade path if that ever changes.
 
-### 5.2 Package manager: pnpm 10, corepack-pinned
+### 5.2 Package manager: pnpm 10+, corepack-pinned
 
 `packageManager: "pnpm@..."` in `package.json` makes every machine use the
 same integrity-verified pnpm binary — the `GOTOOLCHAIN=local` analog. pnpm
@@ -170,8 +170,13 @@ publish cooldown.
     the "compromised version published an hour ago" class. A fresh install
     refusing a week-old version is expected behavior, not a failure — pin
     older.
-  - `onlyBuiltDependencies` — minimal install-script allow-list (e.g. just
-    `esbuild`).
+  - `allowBuilds` — minimal install-script allow-list, a map of package name
+    to `true`/`false` (e.g. just `esbuild: true`). pnpm 11 renamed this from
+    `onlyBuiltDependencies` (a plain list), which remains the correct name on
+    pnpm 10 — tadmor (pnpm 10) uses the old key, temperature-convert
+    (pnpm 11) the new one. On pnpm 11, the old key is not honored: installs
+    report `ERR_PNPM_IGNORED_BUILDS` and pnpm injects an `allowBuilds` stub
+    into the yaml for you to fill in.
 - `.npmrc`: `frozen-lockfile`, `prefer-frozen-lockfile`,
   `auto-install-peers=false`, `strict-peer-dependencies=true`,
   `ignore-scripts=true`, `registry=` pinned to npmjs (dependency-confusion
