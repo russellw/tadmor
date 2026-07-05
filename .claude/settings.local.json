@@ -8,7 +8,8 @@
       "Bash(go build:*)",
       "Bash(docker build *)",
       "Bash(ssh *)",
-      "Bash(scp bin/server vps:/tmp/tadmor-server)"
+      "Bash(scp bin/server vps:/tmp/tadmor-server)",
+      "Bash(corepack pnpm *)"
     ]
   }
 }
