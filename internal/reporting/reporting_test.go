@@ -96,6 +96,41 @@ func TestReportingQueries(t *testing.T) {
 		}
 	})
 
+	t.Run("invoice list", func(t *testing.T) {
+		invs, err := reporting.SalesInvoiceBalances(ctx, tx)
+		if err != nil {
+			t.Fatalf("invoice list: %v", err)
+		}
+		if len(invs) != 1 {
+			t.Fatalf("invoice rows = %d, want 1", len(invs))
+		}
+		inv := invs[0]
+		if inv.ID != invID || inv.Number != "INV-1" || inv.Status != "posted" || inv.Total != "100.0000" {
+			t.Errorf("invoice = %+v, want INV-1 posted total 100.0000", inv)
+		}
+	})
+
+	t.Run("invoice lines", func(t *testing.T) {
+		lines, err := reporting.SalesInvoiceLines(ctx, tx, invID)
+		if err != nil {
+			t.Fatalf("invoice lines: %v", err)
+		}
+		if len(lines) != 1 {
+			t.Fatalf("line rows = %d, want 1", len(lines))
+		}
+		l := lines[0]
+		if l.LineNo != 1 || l.Description != "Service" || l.Quantity != "100.0000" ||
+			l.UnitPrice != "1.0000" || l.LineSubtotal != "100.0000" || l.TaxAmount != "0.0000" || l.LineTotal != "100.0000" {
+			t.Errorf("line = %+v, want 100 x 1.0000 = 100.0000 untaxed", l)
+		}
+	})
+
+	t.Run("lines of missing invoice", func(t *testing.T) {
+		if _, err := reporting.SalesInvoiceLines(ctx, tx, 999999); !errors.Is(err, reporting.ErrNotFound) {
+			t.Errorf("error = %v, want ErrNotFound", err)
+		}
+	})
+
 	t.Run("AR aging", func(t *testing.T) {
 		aging, err := reporting.ARaging(ctx, tx)
 		if err != nil {

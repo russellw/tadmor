@@ -78,7 +78,9 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /ar-aging", s.getARaging)
 	api.HandleFunc("GET /ap-aging", s.getAPaging)
 	api.HandleFunc("GET /inventory/valuation", s.getInventoryValuation)
+	api.HandleFunc("GET /sales-invoices", s.listSalesInvoices)
 	api.HandleFunc("GET /sales-invoices/{id}", s.getSalesInvoice)
+	api.HandleFunc("GET /sales-invoices/{id}/lines", s.getSalesInvoiceLines)
 	api.HandleFunc("GET /purchase-bills/{id}", s.getPurchaseBill)
 
 	mux := http.NewServeMux()
@@ -140,6 +142,28 @@ func (s *Server) getInventoryValuation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) listSalesInvoices(w http.ResponseWriter, r *http.Request) {
+	rows, err := reporting.SalesInvoiceBalances(r.Context(), s.pool)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) getSalesInvoiceLines(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	lines, err := reporting.SalesInvoiceLines(r.Context(), s.pool, id)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, lines)
 }
 
 func (s *Server) getSalesInvoice(w http.ResponseWriter, r *http.Request) {

@@ -69,6 +69,78 @@ type DocumentBalance struct {
 	PaymentStatus string  `json:"payment_status"`
 }
 
+// SalesInvoiceBalances returns the balance view of every invoice, newest first.
+func SalesInvoiceBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
+	rows, err := q.Query(ctx,
+		`SELECT invoice_id, invoice_number, customer_id, currency_code,
+		        invoice_date::text, due_date::text, status,
+		        total::numeric(19,4)::text, amount_applied::numeric(19,4)::text, balance::numeric(19,4)::text, payment_status
+		 FROM sales_invoice_balances ORDER BY invoice_date DESC, invoice_id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []DocumentBalance{}
+	for rows.Next() {
+		var d DocumentBalance
+		if err := rows.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
+			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// SalesInvoiceLine is one invoice line with its database-computed money.
+type SalesInvoiceLine struct {
+	LineNo       int     `json:"line_no"`
+	ProductID    *int    `json:"product_id"`
+	Description  string  `json:"description"`
+	Quantity     string  `json:"quantity"`
+	UnitPrice    string  `json:"unit_price"`
+	TaxCode      *string `json:"tax_code"`
+	TaxRate      string  `json:"tax_rate"`
+	LineSubtotal string  `json:"line_subtotal"`
+	TaxAmount    string  `json:"tax_amount"`
+	LineTotal    string  `json:"line_total"`
+}
+
+// SalesInvoiceLines returns an invoice's lines in order, or ErrNotFound when
+// the invoice itself does not exist.
+func SalesInvoiceLines(ctx context.Context, q Querier, invoiceID int) ([]SalesInvoiceLine, error) {
+	var exists bool
+	if err := q.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM sales_invoices WHERE id = $1)`, invoiceID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
+	rows, err := q.Query(ctx,
+		`SELECT line_no, product_id, description,
+		        quantity::numeric(19,4)::text, unit_price::numeric(19,4)::text, tax_code, tax_rate::numeric(7,4)::text,
+		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text
+		 FROM sales_invoice_lines WHERE invoice_id = $1 ORDER BY line_no`, invoiceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []SalesInvoiceLine{}
+	for rows.Next() {
+		var l SalesInvoiceLine
+		if err := rows.Scan(&l.LineNo, &l.ProductID, &l.Description,
+			&l.Quantity, &l.UnitPrice, &l.TaxCode, &l.TaxRate,
+			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
 // SalesInvoiceBalance returns the balance view of a single invoice.
 func SalesInvoiceBalance(ctx context.Context, q Querier, invoiceID int) (DocumentBalance, error) {
 	return scanDocumentBalance(q.QueryRow(ctx,

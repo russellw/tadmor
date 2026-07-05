@@ -6,6 +6,9 @@ import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
 import { InventoryValuation } from "@/components/inventory-valuation"
+import { InvoiceDetail } from "@/components/invoice-detail"
+import { InvoiceForm } from "@/components/invoice-form"
+import { Invoices } from "@/components/invoices"
 import { OrganizationForm } from "@/components/organization-form"
 import { Organizations } from "@/components/organizations"
 import { ProductForm } from "@/components/product-form"
@@ -25,6 +28,8 @@ const masterNavItems = [
   { to: "/suppliers", label: "Suppliers" },
   { to: "/products", label: "Products" },
 ]
+
+const documentNavItems = [{ to: "/invoices", label: "Invoices" }]
 
 const reportNavItems = [
   { to: "/reports/trial-balance", label: "Trial Balance" },
@@ -59,6 +64,8 @@ export default function App() {
         <nav className="mx-auto flex w-full max-w-5xl flex-wrap gap-1 p-3">
           <NavItems items={masterNavItems} />
           <span aria-hidden className="mx-1 my-auto h-4 w-px bg-border" />
+          <NavItems items={documentNavItems} />
+          <span aria-hidden className="mx-1 my-auto h-4 w-px bg-border" />
           <NavItems items={reportNavItems} />
         </nav>
       </header>
@@ -86,6 +93,9 @@ export default function App() {
           <Route path="/products" element={<Products />} />
           <Route path="/products/new" element={<ProductForm mode="create" />} />
           <Route path="/products/:id" element={<ProductForm mode="edit" />} />
+          <Route path="/invoices" element={<Invoices />} />
+          <Route path="/invoices/new" element={<InvoiceForm />} />
+          <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/reports/trial-balance" element={<TrialBalance />} />
           <Route path="/reports/ar-aging" element={<ARAging />} />
           <Route path="/reports/ap-aging" element={<APAging />} />

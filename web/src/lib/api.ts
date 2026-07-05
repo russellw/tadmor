@@ -294,6 +294,94 @@ export function updateProduct(id: number, input: ProductInput): Promise<void> {
   return send("PUT", `/products/${id}`, input)
 }
 
+// Subledger documents. Creation makes a draft; posting to the GL and
+// unposting (reversal back to draft) are separate lifecycle calls.
+
+/** An invoice's or bill's balance view, mirroring reporting.DocumentBalance.
+ *  Monetary values are exact decimal strings. */
+export interface DocumentBalance {
+  id: number
+  number: string
+  party_id: number
+  currency_code: string
+  date: string
+  due_date: string | null
+  status: string
+  total: string
+  amount_applied: string
+  balance: string
+  payment_status: string
+}
+
+/** One invoice line with its database-computed money, mirroring
+ *  reporting.SalesInvoiceLine. */
+export interface SalesInvoiceLine {
+  line_no: number
+  product_id: number | null
+  description: string
+  quantity: string
+  unit_price: string
+  tax_code: string | null
+  tax_rate: string
+  line_subtotal: string
+  tax_amount: string
+  line_total: string
+}
+
+/** Input for one draft invoice line, mirroring documents.SalesInvoiceLineInput.
+ *  Empty quantity/unit_price/tax_rate default server-side to 1/0/0. */
+export interface SalesInvoiceLineInput {
+  product_id: number | null
+  description: string
+  quantity: string
+  unit_price: string
+  revenue_account_id: number | null
+  tax_code: string | null
+  tax_rate: string
+}
+
+/** Input for a draft invoice, mirroring documents.SalesInvoiceInput. */
+export interface SalesInvoiceInput {
+  invoice_number: string
+  customer_id: number
+  invoice_date: string
+  due_date: string | null
+  currency_code: string
+  reference: string | null
+  memo: string | null
+  lines: SalesInvoiceLineInput[]
+}
+
+export function listSalesInvoices(): Promise<DocumentBalance[]> {
+  return get<DocumentBalance[]>("/sales-invoices")
+}
+
+export function getSalesInvoice(id: number): Promise<DocumentBalance> {
+  return get<DocumentBalance>(`/sales-invoices/${id}`)
+}
+
+export function getSalesInvoiceLines(id: number): Promise<SalesInvoiceLine[]> {
+  return get<SalesInvoiceLine[]>(`/sales-invoices/${id}/lines`)
+}
+
+export function createSalesInvoice(
+  input: SalesInvoiceInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/sales-invoices", input)
+}
+
+export function postSalesInvoice(
+  id: number,
+): Promise<{ journal_entry_id: number }> {
+  return post<{ journal_entry_id: number }>(`/sales-invoices/${id}/post`, {})
+}
+
+export function unpostSalesInvoice(
+  id: number,
+): Promise<{ reversal_entry_id: number }> {
+  return post<{ reversal_entry_id: number }>(`/sales-invoices/${id}/unpost`, {})
+}
+
 // Reporting endpoints are read-only views over posted journal entries. All
 // monetary values are exact decimal strings (see reporting.go); render them
 // with the helpers in @/lib/amount, never through Number.

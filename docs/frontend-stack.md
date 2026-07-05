@@ -589,6 +589,27 @@ headlessly (Playwright driving the embedded build): nav click + deep links on
 all four screens, footer totals cross-checked against API sums, catch-all route
 on an unknown `/reports/*` path.
 
+The **sales-invoice document flow** followed — the first document lifecycle in
+the UI. The backend gained `GET /sales-invoices` (list over the
+`sales_invoice_balances` view, newest first) and `GET /sales-invoices/{id}/lines`
+(404 when the invoice doesn't exist), both in `internal/reporting`. The UI adds
+a nav "documents" group with three screens: a list (`invoices.tsx`, status +
+payment badges, customer names joined client-side), a create form
+(`invoice-form.tsx` — dynamic lines; picking a product prefills
+description/price/revenue-account/tax from the catalog but everything stays
+editable since lines snapshot their values; free-form lines take an explicit
+revenue account, product lines fall back to the product's), and a detail screen
+(`invoice-detail.tsx` — DB-computed lines, subtotal/tax/total/applied/balance
+footer, and Post/Unpost lifecycle buttons that surface posting errors inline,
+e.g. "no open accounting period for the document date"). The form previews line
+and invoice totals with `lineAmounts` in `lib/amount.ts`, which mirrors the
+database's generated columns exactly (scaled-BigInt multiply, round half away
+from zero at scale 4) — the preview always equals what Postgres will compute.
+Verified end-to-end headlessly: form → draft → post → trial balance and AR
+aging reflect it (285.00 A/R, 235.00 in the 1–30 bucket) → unpost → draft;
+probes: duplicate invoice number (409 shown inline), posting with no open
+period (422 shown inline), missing-invoice deep link.
+
 Next: tighten the CSP off `'unsafe-inline'` styles before launch; and (when
 reference data needs managing) add org/payment-terms/currency screens so those FK
 fields can become dropdowns instead of free text.

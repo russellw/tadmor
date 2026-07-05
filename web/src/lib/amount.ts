@@ -27,6 +27,41 @@ export function isZeroAmount(value: string): boolean {
   return toUnits(value) === 0n
 }
 
+// Round n/d to the nearest integer, half away from zero (matching Postgres
+// round(numeric)). BigInt division truncates toward zero, so the remainder
+// carries n's sign.
+function roundDiv(n: bigint, d: bigint): bigint {
+  const q = n / d
+  const r = (n % d) * 2n
+  if (r >= d) return q + 1n
+  if (-r >= d) return q - 1n
+  return q
+}
+
+const AMOUNT_RE = /^-?(\d+(\.\d*)?|\.\d+)$/
+
+/** Preview of one invoice/bill line's money, mirroring the database's
+ *  generated columns: subtotal = round(qty·price, 4) and
+ *  tax = round(qty·price·rate/100, 4). Returns null while any input is not a
+ *  parseable decimal (e.g. mid-typing). */
+export function lineAmounts(
+  quantity: string,
+  unitPrice: string,
+  taxRate: string,
+): { subtotal: string; tax: string; total: string } | null {
+  if (![quantity, unitPrice, taxRate].every((v) => AMOUNT_RE.test(v))) {
+    return null
+  }
+  const qp = toUnits(quantity) * toUnits(unitPrice) // scale 8
+  const subtotal = roundDiv(qp, 10_000n) // scale 4
+  const tax = roundDiv(qp * toUnits(taxRate), 10_000_000_000n) // ·rate → scale 12, ÷100 → 4
+  return {
+    subtotal: fromUnits(subtotal),
+    tax: fromUnits(tax),
+    total: fromUnits(subtotal + tax),
+  }
+}
+
 /** Format an amount string for display: thousands separators, trailing zeros
  *  trimmed but at least two decimals kept ("1234.5000" → "1,234.50"). */
 export function formatAmount(value: string): string {
