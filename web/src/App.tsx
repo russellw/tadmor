@@ -10,6 +10,7 @@ import { BillForm } from "@/components/bill-form"
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
+import { FiscalYearForm } from "@/components/fiscal-year-form"
 import { BillDetail, InvoiceDetail } from "@/components/document-detail"
 import { Bills, Invoices } from "@/components/document-list"
 import { InventoryValuation } from "@/components/inventory-valuation"
@@ -26,6 +27,8 @@ import {
   CustomerPayments,
   SupplierPayments,
 } from "@/components/payment-list"
+import { PeriodForm } from "@/components/period-form"
+import { Periods } from "@/components/periods"
 import { StockMovementDetail } from "@/components/stock-movement-detail"
 import { StockMovementForm } from "@/components/stock-movement-form"
 import { StockMovements } from "@/components/stock-movements"
@@ -47,6 +50,7 @@ const masterNavItems = [
   { to: "/customers", label: "Customers" },
   { to: "/suppliers", label: "Suppliers" },
   { to: "/products", label: "Products" },
+  { to: "/periods", label: "Periods" },
 ]
 
 const documentNavItems = [
@@ -160,6 +164,17 @@ export default function App() {
           <Route path="/products" element={<Products />} />
           <Route path="/products/new" element={<ProductForm mode="create" />} />
           <Route path="/products/:id" element={<ProductForm mode="edit" />} />
+          <Route path="/periods" element={<Periods />} />
+          <Route path="/periods/new" element={<PeriodForm mode="create" />} />
+          <Route path="/periods/:id" element={<PeriodForm mode="edit" />} />
+          <Route
+            path="/fiscal-years/new"
+            element={<FiscalYearForm mode="create" />}
+          />
+          <Route
+            path="/fiscal-years/:id"
+            element={<FiscalYearForm mode="edit" />}
+          />
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/new" element={<InvoiceForm />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />

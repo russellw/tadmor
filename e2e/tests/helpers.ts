@@ -35,6 +35,49 @@ export async function createOrganization(
   return ((await res.json()) as { id: number }).id
 }
 
+/** A random far-future year for fiscal-calendar tests. Accounting periods have
+ *  a global no-overlap constraint (not per fiscal year), so test periods must
+ *  sit in date ranges no other run — or the real seeded calendar — touches. */
+export function uniqueFarYear(): number {
+  return 2200 + Math.floor(Math.random() * 700)
+}
+
+/** Create a throwaway fiscal year via the API and return its id. Named with
+ *  E2E_PREFIX so global-teardown removes it (and its periods). */
+export async function createFiscalYear(
+  request: APIRequestContext,
+  name: string,
+  startDate: string,
+  endDate: string,
+): Promise<number> {
+  const res = await request.post("/api/fiscal-years", {
+    data: { name, start_date: startDate, end_date: endDate, status: "open" },
+  })
+  expect(res.ok(), `create fiscal year failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** Create an accounting period via the API and return its id. */
+export async function createPeriod(
+  request: APIRequestContext,
+  fiscalYearId: number,
+  name: string,
+  startDate: string,
+  endDate: string,
+): Promise<number> {
+  const res = await request.post("/api/accounting-periods", {
+    data: {
+      fiscal_year_id: fiscalYearId,
+      name,
+      start_date: startDate,
+      end_date: endDate,
+      status: "open",
+    },
+  })
+  expect(res.ok(), `create period failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
 /** Create a customer on an organization via the API and return its id. Used to
  *  set up the edit/deactivate tests without driving the create form each time. */
 export async function createCustomer(

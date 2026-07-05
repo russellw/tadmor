@@ -248,6 +248,89 @@ export function listTaxCodes(): Promise<TaxCode[]> {
   return get<TaxCode[]>("/tax-codes")
 }
 
+/** A fiscal year, mirroring master.FiscalYear. Dates are YYYY-MM-DD strings. */
+export interface FiscalYear {
+  id: number
+  name: string
+  start_date: string
+  end_date: string
+  status: string
+}
+
+/** The writable fields of a fiscal year (FiscalYear without its id), mirroring
+ *  master.FiscalYearInput. PUT is a full replace; status is open|closed and is
+ *  only honored on update (creates always start open). */
+export interface FiscalYearInput {
+  name: string
+  start_date: string
+  end_date: string
+  status: string
+}
+
+export function listFiscalYears(): Promise<FiscalYear[]> {
+  return get<FiscalYear[]>("/fiscal-years")
+}
+
+export function getFiscalYear(id: number): Promise<FiscalYear> {
+  return get<FiscalYear>(`/fiscal-years/${id}`)
+}
+
+export function createFiscalYear(
+  input: FiscalYearInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/fiscal-years", input)
+}
+
+export function updateFiscalYear(
+  id: number,
+  input: FiscalYearInput,
+): Promise<void> {
+  return send("PUT", `/fiscal-years/${id}`, input)
+}
+
+/** An accounting period (the unit that gates posting: documents can only post
+ *  into an open period), mirroring master.AccountingPeriod. */
+export interface AccountingPeriod {
+  id: number
+  fiscal_year_id: number
+  name: string
+  start_date: string
+  end_date: string
+  status: string
+}
+
+/** The writable fields of a period (AccountingPeriod without its id), mirroring
+ *  master.AccountingPeriodInput. PUT is a full replace; status is open|closed
+ *  and is only honored on update (creates always start open). */
+export interface AccountingPeriodInput {
+  fiscal_year_id: number
+  name: string
+  start_date: string
+  end_date: string
+  status: string
+}
+
+export function listAccountingPeriods(): Promise<AccountingPeriod[]> {
+  return get<AccountingPeriod[]>("/accounting-periods")
+}
+
+export function getAccountingPeriod(id: number): Promise<AccountingPeriod> {
+  return get<AccountingPeriod>(`/accounting-periods/${id}`)
+}
+
+export function createAccountingPeriod(
+  input: AccountingPeriodInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/accounting-periods", input)
+}
+
+export function updateAccountingPeriod(
+  id: number,
+  input: AccountingPeriodInput,
+): Promise<void> {
+  return send("PUT", `/accounting-periods/${id}`, input)
+}
+
 /** A supplier: a role on an organization, like Customer. The display name lives
  *  on the organization (join via organization_id), mirroring master.Supplier. */
 export interface Supplier {
