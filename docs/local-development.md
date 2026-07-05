@@ -131,6 +131,21 @@ make web-install     # corepack pnpm install --frozen-lockfile
 Requires the pinned Node 22 + corepack pnpm toolchain; fnm auto-switches from
 `web/.nvmrc` (see `docs/frontend-stack.md` §4.9).
 
+### 2.4 Create your login user
+
+The whole API (and therefore the app) sits behind session auth; there is no
+sign-up screen. Bootstrap (or reset the password of) a user with the server
+binary — the password is read from stdin:
+
+```bash
+make build
+echo 'your-password-here' | ./bin/server -adduser \
+    -email you@example.com -name 'Your Name'
+```
+
+Re-running with the same email resets that user's password. (The e2e suite
+manages its own throwaway login user; you don't need one for it.)
+
 ---
 
 ## 3. Migrations and seeding — automatic, no separate step
@@ -204,6 +219,8 @@ the role/DB exist you can run `make run` with no env var set at all.
   the password hash predates a method change (§2.2).
 - **Front end loads but API calls 404 / fail** — the Go backend on `:8080` isn't
   running; the Vite proxy has nothing to forward `/api` to.
+- **Stuck on the sign-in screen / everything is 401** — no login user exists
+  yet (§2.4), or the session expired: sessions last 30 days from login.
 - **`pnpm install` refuses a fresh version** — expected: the 7-day publish
   cooldown (`docs/frontend-stack.md` §4.4). Pin to a version older than the
   window.

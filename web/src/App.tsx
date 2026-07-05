@@ -1,5 +1,9 @@
+import { useEffect, useState } from "react"
 import { NavLink, Navigate, Route, Routes } from "react-router-dom"
 
+import { logout, me, UNAUTHORIZED_EVENT, type User } from "@/lib/api"
+import { LoginForm } from "@/components/login-form"
+import { Button } from "@/components/ui/button"
 import { AccountForm } from "@/components/account-form"
 import { APAging, ARAging } from "@/components/aging-report"
 import { BillForm } from "@/components/bill-form"
@@ -80,6 +84,39 @@ function NavItems({ items }: { items: { to: string; label: string }[] }) {
 }
 
 export default function App() {
+  // undefined = still probing the session, null = logged out.
+  const [user, setUser] = useState<User | null | undefined>(undefined)
+
+  useEffect(() => {
+    me()
+      .then(setUser)
+      .catch(() => setUser(null))
+  }, [])
+
+  // Any 401 (e.g. the session expiring mid-use) drops back to the login screen.
+  useEffect(() => {
+    const onUnauthorized = () => setUser(null)
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+  }, [])
+
+  function handleSignOut() {
+    // Even if the request fails the session cookie is gone client-side intent-
+    // wise; always fall back to the login screen.
+    void logout()
+      .catch(() => undefined)
+      .finally(() => setUser(null))
+  }
+
+  if (user === undefined) {
+    // Brief blank while the session probe runs; avoids flashing the login
+    // screen at already-signed-in users.
+    return null
+  }
+  if (user === null) {
+    return <LoginForm onLogin={setUser} />
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b">
@@ -89,6 +126,14 @@ export default function App() {
           <NavItems items={documentNavItems} />
           <span aria-hidden className="mx-1 my-auto h-4 w-px bg-border" />
           <NavItems items={reportNavItems} />
+          <span className="ml-auto flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {user.full_name}
+            </span>
+            <Button variant="outline" size="sm" onClick={handleSignOut}>
+              Sign out
+            </Button>
+          </span>
         </nav>
       </header>
       <main>

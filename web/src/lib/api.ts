@@ -15,8 +15,15 @@ export class ApiError extends Error {
   }
 }
 
+/** Fired on any 401 response so the app can drop back to the login screen when
+ *  the session expires mid-use. */
+export const UNAUTHORIZED_EVENT = "tadmor:unauthorized"
+
 // The backend reports errors as { "error": "..." }; fall back to the status.
 async function failure(res: Response): Promise<ApiError> {
+  if (res.status === 401) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+  }
   let message = `request failed (${res.status})`
   try {
     const body = (await res.json()) as { error?: string }
@@ -55,6 +62,30 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   })
   if (!res.ok) throw await failure(res)
   return (await res.json()) as T
+}
+
+// Authentication. The session rides in an HttpOnly cookie the browser attaches
+// automatically (fetch sends cookies on same-origin requests by default), so
+// no token handling happens in JS.
+
+/** The logged-in user, mirroring auth.User on the backend. */
+export interface User {
+  id: number
+  email: string
+  full_name: string
+}
+
+export function login(email: string, password: string): Promise<User> {
+  return post<User>("/auth/login", { email, password })
+}
+
+export function logout(): Promise<void> {
+  return send("POST", "/auth/logout", {})
+}
+
+/** The session probe the app runs on load; 401 means "show the login screen". */
+export function me(): Promise<User> {
+  return get<User>("/auth/me")
 }
 
 /** A general-ledger account, mirroring master.Account on the backend. */

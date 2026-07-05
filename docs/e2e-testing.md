@@ -138,7 +138,7 @@ The dev environment is WSL2 (Ubuntu 24.04), which shaped a couple of details:
 
 ## 6. Test structure and the "no hard-delete" finding
 
-Tests live in `e2e/tests/`. Two files today:
+Tests live in `e2e/tests/`. Three files today:
 
 - **`smoke.spec.ts`** — the app boots and a representative screen renders (the
   Chart of Accounts heading + the five primary nav links). No data assertions;
@@ -147,6 +147,21 @@ Tests live in `e2e/tests/`. Two files today:
   (pick a throwaway organization in the New Customer form, set fields, assert the
   new row lists), **edit** (change customer number + currency, assert the list
   updates), and **deactivate**.
+- **`auth.spec.ts`** — the login screen and session lifecycle: an
+  unauthenticated visit shows the sign-in form (never the app), a wrong
+  password is rejected, and a sign-in/sign-out round trip works.
+
+**Authentication.** The API requires a login session, so a `globalSetup`
+(`global-setup.ts`) runs before any test: it upserts a dedicated
+`e2e@tadmor.test` user via `psql` with a password that is random per run
+(hashed with Node's built-in `pbkdf2Sync` in exactly the format
+`internal/auth` verifies — no new dependency), logs in once over the API, and
+saves the session cookie as Playwright *storage state*
+(`e2e/.auth/state.json`, gitignored). Every browser context and API `request`
+fixture starts from that state, so the pre-auth specs are untouched.
+`auth.spec.ts` opts back out with an empty `storageState` to exercise the real
+form, using the run's password from `E2E_PASSWORD`. Teardown deletes the e2e
+user (its sessions cascade).
 
 **The "delete" finding.** The task was "create/edit/delete" specs, but there is
 **no hard-delete** anywhere: the backend `master.go` registers only GET/POST/PUT
@@ -187,13 +202,15 @@ tadmor/
     .nvmrc                  # Node 22
     .gitignore              # ignores node_modules/, test-results/, playwright-report/; keeps lockfile
     pnpm-lock.yaml          # committed (the integrity-pinned source of truth)
-    playwright.config.ts    # chromium-only, headless, BASE_URL-overridable, globalTeardown
-    global-teardown.ts      # psql cleanup of E2E- rows
+    playwright.config.ts    # chromium-only, headless, BASE_URL-overridable, globalSetup/Teardown, storageState
+    global-setup.ts         # seeds the e2e login user (psql) + saves the authenticated storage state
+    global-teardown.ts      # psql cleanup of E2E- rows and the e2e login user
     run-local.sh            # one-shot orchestrator for `make e2e` (build+run server, test, tear down)
     tests/
-      helpers.ts            # API setup helpers + E2E_PREFIX
+      helpers.ts            # API setup helpers + E2E_PREFIX + E2E_EMAIL
       smoke.spec.ts
       customers.spec.ts
+      auth.spec.ts
     README.md               # setup + run instructions
 ```
 

@@ -93,6 +93,16 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /purchase-bills/{id}", s.getPurchaseBill)
 	api.HandleFunc("GET /purchase-bills/{id}/lines", s.getPurchaseBillLines)
 
+	// Who am I (the SPA's session probe).
+	api.HandleFunc("GET /auth/me", s.me)
+
+	// Everything above requires a session. Login mints one; logout is public
+	// too so an expired session can still clear its cookie idempotently.
+	public := http.NewServeMux()
+	public.HandleFunc("POST /auth/login", s.login)
+	public.HandleFunc("POST /auth/logout", s.logout)
+	public.Handle("/", s.requireAuth(api))
+
 	mux := http.NewServeMux()
 
 	// Liveness/readiness probes stay at the root for load balancers/orchestrators.
@@ -110,7 +120,8 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	})
 
 	// JSON API under /api/; everything else falls through to the embedded SPA.
-	mux.Handle("/api/", http.StripPrefix("/api", api))
+	// (The SPA shell itself stays public — it renders the login screen.)
+	mux.Handle("/api/", http.StripPrefix("/api", public))
 	if distFS != nil {
 		mux.Handle("/", spaHandler(distFS))
 	}

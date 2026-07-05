@@ -61,3 +61,9 @@ BASE_URL=http://localhost:8080 corepack pnpm test
 
 Failure artifacts (screenshots, traces, HTML report) land in `test-results/` and
 `playwright-report/`, both gitignored.
+
+Authentication needs no manual setup: `global-setup.ts` creates a throwaway
+`e2e@tadmor.test` login user (random password per run) directly in the
+database via `psql`, signs in once, and shares the session with every test as
+Playwright storage state; `global-teardown.ts` removes the user again. It uses
+the same connection default / `E2E_DATABASE_URL` override as the teardown.

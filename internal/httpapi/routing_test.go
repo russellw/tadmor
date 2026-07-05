@@ -31,7 +31,10 @@ func TestRoutingSPAandAPI(t *testing.T) {
 		wantCSP    bool
 	}{
 		{"health at root", "/healthz", http.StatusOK, `"status":"ok"`, false},
-		{"unknown api path is 404, not SPA", "/api/does-not-exist", http.StatusNotFound, "", false},
+		// Auth wraps the whole API, so without a session an unknown API path
+		// is 401 (never the SPA fallback). requireAuth rejects cookie-less
+		// requests before touching the (nil) pool.
+		{"unknown api path is 401, not SPA", "/api/does-not-exist", http.StatusUnauthorized, "", false},
 		{"root serves index", "/", http.StatusOK, "<title>SPA</title>", true},
 		{"client route falls back to index", "/customers/42", http.StatusOK, "<title>SPA</title>", true},
 		{"static asset is served", "/assets/app.js", http.StatusOK, "console.log('app')", true},

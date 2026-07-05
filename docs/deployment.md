@@ -60,6 +60,21 @@ ssh vps 'systemctl status tadmor'
 ssh vps 'sudo journalctl -u tadmor -f'
 ```
 
+### 2.1 Creating login users
+
+The API sits behind session auth and there is no sign-up screen; create (or
+password-reset) users on the box with the deployed binary and the same
+`DATABASE_URL` the service uses:
+
+```bash
+ssh vps 'read -rs PW && echo "$PW" | sudo sh -c "export \
+  $(cat /etc/tadmor/env) && /opt/tadmor/server -adduser \
+  -email you@example.com -name \"Your Name\""'
+```
+
+(Type the password, press enter; it is read from stdin so it never lands in
+shell history or the process list.)
+
 ## 3. One-time box setup (already done; recorded for rebuild)
 
 The box-level hardening (ufw default-deny with only 22/80/443, SSH key-only,

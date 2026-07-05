@@ -11,9 +11,35 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"tadmor/internal/auth"
 	"tadmor/internal/dbtest"
 	"tadmor/internal/httpapi"
 )
+
+// testToken carries the seeded session for the request helpers below. The
+// API requires a login session on every route, and these tests run
+// sequentially within the package, so a single package-level token is safe.
+var testToken string
+
+// resetAuthed resets the schema like dbtest.Reset and then seeds a user with a
+// live session, so the helpers' requests pass the auth middleware.
+func resetAuthed(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	dbtest.Reset(ctx, t, pool)
+	var userID int
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO users (email, full_name, password_hash)
+		 VALUES ('test@example.com', 'Test User', 'unused') RETURNING id`).Scan(&userID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	token, err := auth.CreateSession(ctx, pool, userID)
+	if err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	testToken = token
+}
 
 func TestPostSalesInvoiceEndpoint(t *testing.T) {
 	ctx := context.Background()
@@ -21,7 +47,7 @@ func TestPostSalesInvoiceEndpoint(t *testing.T) {
 	defer cleanup()
 
 	// Start from a clean ledger (safe: the advisory lock serializes DB tests).
-	dbtest.Reset(ctx, t, pool)
+	resetAuthed(ctx, t, pool)
 
 	// A draft invoice the endpoint can post. Committed so the handler's own
 	// transaction sees it.
@@ -96,7 +122,7 @@ func TestPostStockMovementReceiptEndpoint(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := dbtest.Acquire(ctx, t)
 	defer cleanup()
-	dbtest.Reset(ctx, t, pool)
+	resetAuthed(ctx, t, pool)
 
 	exec := func(sql string, args ...any) {
 		t.Helper()
@@ -156,7 +182,7 @@ func TestUnpostSalesInvoiceEndpoint(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := dbtest.Acquire(ctx, t)
 	defer cleanup()
-	dbtest.Reset(ctx, t, pool)
+	resetAuthed(ctx, t, pool)
 
 	exec := func(sql string, args ...any) {
 		t.Helper()
@@ -216,7 +242,7 @@ func TestReadEndpoints(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := dbtest.Acquire(ctx, t)
 	defer cleanup()
-	dbtest.Reset(ctx, t, pool)
+	resetAuthed(ctx, t, pool)
 
 	exec := func(sql string, args ...any) {
 		t.Helper()
@@ -278,7 +304,7 @@ func TestCreateThenPostSalesInvoiceEndpoint(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := dbtest.Acquire(ctx, t)
 	defer cleanup()
-	dbtest.Reset(ctx, t, pool)
+	resetAuthed(ctx, t, pool)
 
 	exec := func(sql string, args ...any) {
 		t.Helper()
@@ -360,7 +386,7 @@ func TestFullFlowOverHTTP(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := dbtest.Acquire(ctx, t)
 	defer cleanup()
-	dbtest.Reset(ctx, t, pool)
+	resetAuthed(ctx, t, pool)
 
 	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler(nil))
 	defer srv.Close()
@@ -436,48 +462,46 @@ func itoa(n int) string { return strconv.Itoa(n) }
 // get issues a GET and returns the status and body.
 func get(t *testing.T, url string) (int, string) {
 	t.Helper()
-	resp, err := http.Get(url)
-	if err != nil {
-		t.Fatalf("GET %s: %v", url, err)
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, string(b)
+	return do(t, http.MethodGet, url, "")
 }
 
 // putJSON issues a PUT with the given JSON body and returns the status and body.
 func putJSON(t *testing.T, url, body string) (int, string) {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("new PUT %s: %v", url, err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("PUT %s: %v", url, err)
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, string(b)
+	return do(t, http.MethodPut, url, body)
 }
 
 // post issues a POST with an empty JSON body and returns the status and body.
 func post(t *testing.T, url string) (int, string) {
 	t.Helper()
-	return postJSON(t, url, "")
+	return do(t, http.MethodPost, url, "")
 }
 
 // postJSON issues a POST with the given JSON body and returns the status and body.
 func postJSON(t *testing.T, url, body string) (int, string) {
 	t.Helper()
+	return do(t, http.MethodPost, url, body)
+}
+
+// do issues a request carrying the seeded session cookie and returns the
+// status and body.
+func do(t *testing.T, method, url, body string) (int, string) {
+	t.Helper()
 	var r io.Reader
 	if body != "" {
 		r = strings.NewReader(body)
 	}
-	resp, err := http.Post(url, "application/json", r)
+	req, err := http.NewRequest(method, url, r)
 	if err != nil {
-		t.Fatalf("POST %s: %v", url, err)
+		t.Fatalf("new %s %s: %v", method, url, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if testToken != "" {
+		req.AddCookie(&http.Cookie{Name: "tadmor_session", Value: testToken})
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)

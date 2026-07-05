@@ -7,8 +7,11 @@ const baseURL = process.env.BASE_URL ?? "http://localhost:5173"
 
 export default defineConfig({
   testDir: "./tests",
+  // Seeds the e2e login user and saves an authenticated storage state before
+  // any test runs. See global-setup.ts.
+  globalSetup: "./global-setup.ts",
   // Removes the throwaway org/customer rows the tests create (the app has no
-  // hard-delete for master data). See global-teardown.ts.
+  // hard-delete for master data) and the e2e login user. See global-teardown.ts.
   globalTeardown: "./global-teardown.ts",
   fullyParallel: true,
   // Fail the build if a test was left focused with test.only (CI hygiene).
@@ -17,6 +20,9 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL,
+    // The session cookie global-setup saved; without it every screen is the
+    // login form. auth.spec.ts opts back out to test the form itself.
+    storageState: "./.auth/state.json",
     headless: true,
     // Artifacts only when something goes wrong — keeps runs cheap and lets us
     // actually see a failing screen.

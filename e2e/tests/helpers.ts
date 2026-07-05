@@ -5,6 +5,10 @@ import { expect, type APIRequestContext } from "@playwright/test"
 // for master data — see customers.spec.ts).
 export const E2E_PREFIX = "E2E-"
 
+/** The login user global-setup creates for the run (and teardown removes).
+ *  Its password is random per run and handed to tests via E2E_PASSWORD. */
+export const E2E_EMAIL = "e2e@tadmor.test"
+
 /** A unique organization name per test, so parallel workers never collide and
  *  the name is a reliable anchor for locating the row in the list. */
 export function uniqueOrgName(): string {

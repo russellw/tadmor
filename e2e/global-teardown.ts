@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
-import { E2E_PREFIX } from "./tests/helpers"
+import { E2E_EMAIL, E2E_PREFIX } from "./tests/helpers"
 
 const exec = promisify(execFile)
 
@@ -18,14 +18,16 @@ const DB =
   "postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable"
 
 export default async function globalTeardown(): Promise<void> {
-  // Delete customers first (FK to organizations), then the organizations. The
-  // prefix is a fixed literal, not user input, so interpolation is safe here.
+  // Delete customers first (FK to organizations), then the organizations, then
+  // the run's login user (its sessions cascade). The prefix and email are fixed
+  // literals, not user input, so interpolation is safe here.
   const sql = `
     DELETE FROM customers
      WHERE organization_id IN (
        SELECT id FROM organizations WHERE name LIKE '${E2E_PREFIX}%'
      );
     DELETE FROM organizations WHERE name LIKE '${E2E_PREFIX}%';
+    DELETE FROM users WHERE email = '${E2E_EMAIL}';
   `
   try {
     await exec("psql", [DB, "-v", "ON_ERROR_STOP=1", "-q", "-c", sql])
