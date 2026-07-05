@@ -293,3 +293,59 @@ export function createProduct(input: ProductInput): Promise<{ id: number }> {
 export function updateProduct(id: number, input: ProductInput): Promise<void> {
   return send("PUT", `/products/${id}`, input)
 }
+
+// Reporting endpoints are read-only views over posted journal entries. All
+// monetary values are exact decimal strings (see reporting.go); render them
+// with the helpers in @/lib/amount, never through Number.
+
+/** One account's posted totals in the trial balance, mirroring
+ *  reporting.TrialBalanceRow. */
+export interface TrialBalanceRow {
+  account_id: number
+  code: string
+  name: string
+  account_type: string
+  total_debit: string
+  total_credit: string
+  balance: string
+}
+
+export function getTrialBalance(): Promise<TrialBalanceRow[]> {
+  return get<TrialBalanceRow[]>("/trial-balance")
+}
+
+/** One party's outstanding balance bucketed by days overdue, mirroring
+ *  reporting.AgingRow. Serves both AR (customer) and AP (supplier) aging. */
+export interface AgingRow {
+  party_id: number
+  party_name: string
+  total_outstanding: string
+  not_yet_due: string
+  days_1_30: string
+  days_31_60: string
+  days_61_90: string
+  days_over_90: string
+}
+
+export function getARAging(): Promise<AgingRow[]> {
+  return get<AgingRow[]>("/ar-aging")
+}
+
+export function getAPAging(): Promise<AgingRow[]> {
+  return get<AgingRow[]>("/ap-aging")
+}
+
+/** A product's stock on hand across warehouses, mirroring
+ *  reporting.StockValuationRow. */
+export interface StockValuationRow {
+  product_id: number
+  sku: string
+  name: string
+  qty_on_hand: string
+  value_on_hand: string
+  avg_unit_cost: string
+}
+
+export function getInventoryValuation(): Promise<StockValuationRow[]> {
+  return get<StockValuationRow[]>("/inventory/valuation")
+}

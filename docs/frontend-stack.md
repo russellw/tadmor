@@ -575,6 +575,20 @@ self-referencing account dropdown that excludes the account itself in edit mode
 All four master-data entities (accounts, customers, suppliers, products) now have
 full list + create + edit screens.
 
+The four **reporting screens** followed — the first UI over the accounting core:
+Trial Balance (`trial-balance.tsx`, with a footer row showing debits = credits),
+AR/AP Aging (one parameterized `aging-report.tsx`; the two reports share
+`reporting.AgingRow`), and Inventory Valuation (`inventory-valuation.tsx`),
+under `/reports/*` routes with a nav divider separating them from master data.
+The reporting endpoints return exact decimal strings (Postgres `numeric(19,4)`
+selected `::text`), so `lib/amount.ts` sums them with scaled-BigInt arithmetic
+and formats them purely as strings — report values never pass through binary
+floating point, matching the backend's discipline. A shared `AmountCell`
+(right-aligned, tabular numerals, zeros muted) renders every figure. Verified
+headlessly (Playwright driving the embedded build): nav click + deep links on
+all four screens, footer totals cross-checked against API sums, catch-all route
+on an unknown `/reports/*` path.
+
 Next: tighten the CSP off `'unsafe-inline'` styles before launch; and (when
 reference data needs managing) add org/payment-terms/currency screens so those FK
 fields can become dropdowns instead of free text.
