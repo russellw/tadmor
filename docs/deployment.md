@@ -67,13 +67,16 @@ password-reset) users on the box with the deployed binary and the same
 `DATABASE_URL` the service uses:
 
 ```bash
-ssh vps 'read -rs PW && echo "$PW" | sudo sh -c "export \
-  $(cat /etc/tadmor/env) && /opt/tadmor/server -adduser \
-  -email you@example.com -name \"Your Name\""'
+read -rsp 'Password: ' PW && echo && printf '%s\n' "$PW" | \
+  ssh vps 'sudo sh -c '\''export $(cat /etc/tadmor/env) && \
+    /opt/tadmor/server -adduser -email you@example.com -name "Your Name"'\'''
 ```
 
-(Type the password, press enter; it is read from stdin so it never lands in
-shell history or the process list.)
+(The password is read locally without echo and piped over stdin, so it never
+lands in shell history or the process list. The `$(cat /etc/tadmor/env)` must
+sit inside the *single*-quoted `sh -c` string: root has to expand it — the
+env file is mode 600 root:root, so a double-quoted version fails with
+"Permission denied" because the unprivileged login shell expands it first.)
 
 ## 3. One-time box setup (already done; recorded for rebuild)
 
