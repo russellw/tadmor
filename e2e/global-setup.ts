@@ -37,10 +37,10 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   // The email is a fixed literal and the hash is base64 (no quotes), so
   // interpolation is safe here.
   const sql = `
-    INSERT INTO users (email, full_name, password_hash)
-    VALUES ('${E2E_EMAIL}', 'E2E Test User', '${hash}')
+    INSERT INTO users (email, full_name, password_hash, is_admin)
+    VALUES ('${E2E_EMAIL}', 'E2E Test User', '${hash}', true)
     ON CONFLICT (email) DO UPDATE
-      SET password_hash = EXCLUDED.password_hash, is_active = true;
+      SET password_hash = EXCLUDED.password_hash, is_active = true, is_admin = true;
   `
   await exec("psql", [DB, "-v", "ON_ERROR_STOP=1", "-q", "-c", sql])
 

@@ -8,9 +8,9 @@ import (
 	"tadmor/internal/auth"
 )
 
-// User administration. The auth model is flat — any signed-in user may manage
-// users — matching the rest of the API. Password hashes never leave the auth
-// package; passwords arrive only over dedicated create/reset requests.
+// User administration, reachable only through the admin wrapper (see
+// server.go). Password hashes never leave the auth package; passwords arrive
+// only over dedicated create/reset requests.
 
 const minPasswordLen = 8 // matches the CLI's -adduser rule
 
@@ -51,6 +51,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		FullName string `json:"full_name"`
 		Password string `json:"password"`
+		IsAdmin  bool   `json:"is_admin"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -71,7 +72,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	id, err := auth.CreateUser(r.Context(), s.pool, in.Email, in.FullName, hash)
+	id, err := auth.CreateUser(r.Context(), s.pool, in.Email, in.FullName, hash, in.IsAdmin)
 	s.created(w, id, err)
 }
 
@@ -84,6 +85,7 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		FullName string `json:"full_name"`
 		IsActive bool   `json:"is_active"`
+		IsAdmin  bool   `json:"is_admin"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -94,13 +96,19 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
-	// Refuse self-deactivation: with a flat auth model this is the one
-	// guardrail against locking every admin out one click at a time.
-	if me, ok := requestUser(r.Context()); ok && me.ID == id && !in.IsActive {
-		writeError(w, http.StatusBadRequest, "you cannot deactivate your own account")
-		return
+	// Refuse self-deactivation and self-demotion: the guardrails against
+	// locking every administrator out one click at a time.
+	if me, ok := requestUser(r.Context()); ok && me.ID == id {
+		if !in.IsActive {
+			writeError(w, http.StatusBadRequest, "you cannot deactivate your own account")
+			return
+		}
+		if !in.IsAdmin {
+			writeError(w, http.StatusBadRequest, "you cannot remove your own administrator access")
+			return
+		}
 	}
-	if err := auth.UpdateUser(r.Context(), s.pool, id, in.Email, in.FullName, in.IsActive); err != nil {
+	if err := auth.UpdateUser(r.Context(), s.pool, id, in.Email, in.FullName, in.IsActive, in.IsAdmin); err != nil {
 		s.writeUserError(w, err)
 		return
 	}

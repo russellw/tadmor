@@ -13,8 +13,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-// Login users from GET /api/users, ordered by email. The auth model is flat:
-// any signed-in user may manage users. Deactivation replaces deletion.
+// Login users from GET /api/users, ordered by email. Admin-only: the nav
+// entry is hidden from non-administrators and the API returns 403 to them.
+// Deactivation replaces deletion.
 export function Users() {
   const [users, setUsers] = useState<UserRecord[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -70,6 +71,7 @@ export function Users() {
             <TableRow>
               <TableHead>Email</TableHead>
               <TableHead>Name</TableHead>
+              <TableHead>Role</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-0"></TableHead>
             </TableRow>
@@ -79,6 +81,13 @@ export function Users() {
               <TableRow key={u.id}>
                 <TableCell className="font-mono">{u.email}</TableCell>
                 <TableCell className="font-medium">{u.full_name}</TableCell>
+                <TableCell>
+                  {u.is_admin ? (
+                    <Badge variant="secondary">Admin</Badge>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">User</span>
+                  )}
+                </TableCell>
                 <TableCell>
                   <Badge variant={u.is_active ? "default" : "outline"}>
                     {u.is_active ? "Active" : "Inactive"}

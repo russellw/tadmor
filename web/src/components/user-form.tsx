@@ -20,6 +20,7 @@ interface FormState {
   fullName: string
   password: string // create mode only
   isActive: boolean
+  isAdmin: boolean
 }
 
 const blankForm: FormState = {
@@ -27,6 +28,7 @@ const blankForm: FormState = {
   fullName: "",
   password: "",
   isActive: true,
+  isAdmin: false,
 }
 
 const MIN_PASSWORD = 8
@@ -64,6 +66,7 @@ export function UserForm({ mode }: { mode: Mode }) {
             fullName: u.full_name,
             password: "",
             isActive: u.is_active,
+            isAdmin: u.is_admin,
           })
         } else {
           setForm(blankForm)
@@ -102,11 +105,13 @@ export function UserForm({ mode }: { mode: Mode }) {
             email,
             full_name: fullName,
             password: form.password,
+            is_admin: form.isAdmin,
           }).then(() => undefined)
         : updateUser(userId, {
             email,
             full_name: fullName,
             is_active: form.isActive,
+            is_admin: form.isAdmin,
           })
     action
       .then(() => navigate("/users"))
@@ -208,6 +213,20 @@ export function UserForm({ mode }: { mode: Mode }) {
                 </p>
               </div>
             )}
+
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="is_admin"
+                checked={form.isAdmin}
+                onCheckedChange={(c) =>
+                  setForm({ ...form, isAdmin: c === true })
+                }
+              />
+              <Label htmlFor="is_admin">Administrator</Label>
+              <span className="text-xs text-muted-foreground">
+                Can manage users and unpost documents.
+              </span>
+            </div>
 
             {!creating && (
               <div className="flex items-center gap-2">

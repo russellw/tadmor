@@ -1,8 +1,8 @@
 // Command server runs the tadmor backend: it connects to Postgres, applies any
 // pending schema migrations, and serves the HTTP API until interrupted.
 //
-// With -adduser it instead creates (or resets the password of) a login user
-// and exits; use this to bootstrap the first account:
+// With -adduser it instead creates (or resets the password of) an
+// administrator login and exits; use this to bootstrap the first account:
 //
 //	echo 'the-password' | server -adduser -email you@example.com -name 'Your Name'
 package main

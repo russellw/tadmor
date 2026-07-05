@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import { sumAmounts } from "@/lib/amount"
+import { useCurrentUser } from "@/lib/current-user"
 import {
   ApiError,
   getPurchaseBill,
@@ -121,6 +122,7 @@ function DocumentDetail({
   const [partyName, setPartyName] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [acting, setActing] = useState(false)
+  const currentUser = useCurrentUser()
   const [actionError, setActionError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -224,7 +226,7 @@ function DocumentDetail({
                   {acting ? "Posting…" : "Post to ledger"}
                 </Button>
               )}
-              {document.status === "posted" && (
+              {document.status === "posted" && currentUser.is_admin && (
                 <Button
                   variant="outline"
                   disabled={acting}

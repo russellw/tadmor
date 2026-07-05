@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import { formatAmount } from "@/lib/amount"
+import { useCurrentUser } from "@/lib/current-user"
 import {
   ApiError,
   getStockMovement,
@@ -50,6 +51,7 @@ export function StockMovementDetail() {
   const [currency, setCurrency] = useState("")
   const [creditAccountId, setCreditAccountId] = useState(NONE)
   const [acting, setActing] = useState(false)
+  const currentUser = useCurrentUser()
   const [actionError, setActionError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -264,7 +266,7 @@ export function StockMovementDetail() {
             </div>
           )}
 
-          {posted && (
+          {posted && currentUser.is_admin && (
             <Button variant="outline" disabled={acting} onClick={handleUnpost}>
               {acting ? "Unposting…" : "Unpost"}
             </Button>

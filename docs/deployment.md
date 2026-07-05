@@ -62,9 +62,10 @@ ssh vps 'sudo journalctl -u tadmor -f'
 
 ### 2.1 Creating login users
 
-The API sits behind session auth and there is no sign-up screen; create (or
-password-reset) users on the box with the deployed binary and the same
-`DATABASE_URL` the service uses:
+The API sits behind session auth and there is no sign-up screen; bootstrap the
+first user on the box with the deployed binary and the same `DATABASE_URL` the
+service uses (users created this way are administrators — day-to-day accounts
+are better created from the app's Users screen):
 
 ```bash
 read -rsp 'Password: ' PW && echo && printf '%s\n' "$PW" | \

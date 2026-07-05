@@ -73,6 +73,7 @@ export interface User {
   id: number
   email: string
   full_name: string
+  is_admin: boolean
 }
 
 export function login(email: string, password: string): Promise<User> {
@@ -95,6 +96,7 @@ export interface UserRecord {
   email: string
   full_name: string
   is_active: boolean
+  is_admin: boolean
 }
 
 export function listUsers(): Promise<UserRecord[]> {
@@ -109,13 +111,19 @@ export function createUser(input: {
   email: string
   full_name: string
   password: string
+  is_admin: boolean
 }): Promise<{ id: number }> {
   return post<{ id: number }>("/users", input)
 }
 
 export function updateUser(
   id: number,
-  input: { email: string; full_name: string; is_active: boolean },
+  input: {
+    email: string
+    full_name: string
+    is_active: boolean
+    is_admin: boolean
+  },
 ): Promise<void> {
   return send("PUT", `/users/${id}`, input)
 }

@@ -64,11 +64,12 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("POST /supplier-payments/{id}/apply", s.applySupplierPayment)
 
 	// Unpost a document: reverse its journal entry and return it to draft.
-	api.HandleFunc("POST /sales-invoices/{id}/unpost", s.unpostSalesInvoice)
-	api.HandleFunc("POST /purchase-bills/{id}/unpost", s.unpostPurchaseBill)
-	api.HandleFunc("POST /customer-payments/{id}/unpost", s.unpostCustomerPayment)
-	api.HandleFunc("POST /supplier-payments/{id}/unpost", s.unpostSupplierPayment)
-	api.HandleFunc("POST /stock-movements/{id}/unpost", s.unpostStockMovement)
+	// Admin-only — it is the escape hatch that rewrites posted history.
+	api.HandleFunc("POST /sales-invoices/{id}/unpost", s.admin(s.unpostSalesInvoice))
+	api.HandleFunc("POST /purchase-bills/{id}/unpost", s.admin(s.unpostPurchaseBill))
+	api.HandleFunc("POST /customer-payments/{id}/unpost", s.admin(s.unpostCustomerPayment))
+	api.HandleFunc("POST /supplier-payments/{id}/unpost", s.admin(s.unpostSupplierPayment))
+	api.HandleFunc("POST /stock-movements/{id}/unpost", s.admin(s.unpostStockMovement))
 
 	// Master data CRUD.
 	s.registerMasterRoutes(api)
@@ -97,12 +98,12 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /purchase-bills/{id}", s.getPurchaseBill)
 	api.HandleFunc("GET /purchase-bills/{id}/lines", s.getPurchaseBillLines)
 
-	// User administration (flat auth model: any signed-in user).
-	api.HandleFunc("GET /users", s.listUsers)
-	api.HandleFunc("POST /users", s.createUser)
-	api.HandleFunc("GET /users/{id}", s.getUser)
-	api.HandleFunc("PUT /users/{id}", s.updateUser)
-	api.HandleFunc("POST /users/{id}/password", s.setUserPassword)
+	// User administration (admins only).
+	api.HandleFunc("GET /users", s.admin(s.listUsers))
+	api.HandleFunc("POST /users", s.admin(s.createUser))
+	api.HandleFunc("GET /users/{id}", s.admin(s.getUser))
+	api.HandleFunc("PUT /users/{id}", s.admin(s.updateUser))
+	api.HandleFunc("POST /users/{id}/password", s.admin(s.setUserPassword))
 
 	// Who am I (the SPA's session probe).
 	api.HandleFunc("GET /auth/me", s.me)

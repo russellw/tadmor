@@ -49,6 +49,20 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// admin wraps a handler so only administrators may call it. It runs inside
+// requireAuth, so a user is always attached; the check is fresh per request
+// because requireAuth rereads the user row, so demotion takes effect
+// immediately.
+func (s *Server) admin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if u, ok := requestUser(r.Context()); !ok || !u.IsAdmin {
+			writeError(w, http.StatusForbidden, "administrator access required")
+			return
+		}
+		next(w, r)
+	}
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email    string `json:"email"`

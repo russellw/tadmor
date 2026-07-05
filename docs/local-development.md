@@ -143,8 +143,10 @@ echo 'your-password-here' | ./bin/server -adduser \
     -email you@example.com -name 'Your Name'
 ```
 
-Re-running with the same email resets that user's password. (The e2e suite
-manages its own throwaway login user; you don't need one for it.)
+Re-running with the same email resets that user's password. Users created this
+way are administrators (they can manage users and unpost documents); create
+regular users from the app's Users screen. (The e2e suite manages its own
+throwaway login user; you don't need one for it.)
 
 ---
 

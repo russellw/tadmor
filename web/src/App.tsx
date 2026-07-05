@@ -51,6 +51,7 @@ import { UserForm } from "@/components/user-form"
 import { Users } from "@/components/users"
 import { WarehouseForm } from "@/components/warehouse-form"
 import { Warehouses } from "@/components/warehouses"
+import { CurrentUserContext } from "@/lib/current-user"
 import { cn } from "@/lib/utils"
 
 // URL routing via react-router-dom (v7). The Go backend's spaHandler falls back
@@ -66,8 +67,11 @@ const masterNavItems = [
   { to: "/payment-terms", label: "Payment Terms" },
   { to: "/warehouses", label: "Warehouses" },
   { to: "/periods", label: "Periods" },
-  { to: "/users", label: "Users" },
+  // Users is appended for administrators only; the backend enforces the same
+  // rule on the /users endpoints.
 ]
+
+const adminNavItems = [{ to: "/users", label: "Users" }]
 
 const documentNavItems = [
   { to: "/invoices", label: "Invoices" },
@@ -140,10 +144,17 @@ export default function App() {
   }
 
   return (
+    <CurrentUserContext.Provider value={user}>
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b">
         <nav className="mx-auto flex w-full max-w-5xl flex-wrap gap-1 p-3">
-          <NavItems items={masterNavItems} />
+          <NavItems
+            items={
+              user.is_admin
+                ? [...masterNavItems, ...adminNavItems]
+                : masterNavItems
+            }
+          />
           <span aria-hidden className="mx-1 my-auto h-4 w-px bg-border" />
           <NavItems items={documentNavItems} />
           <span aria-hidden className="mx-1 my-auto h-4 w-px bg-border" />
@@ -278,5 +289,6 @@ export default function App() {
         </Routes>
       </main>
     </div>
+    </CurrentUserContext.Provider>
   )
 }

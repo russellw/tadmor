@@ -34,6 +34,7 @@ type User struct {
 	ID       int    `json:"id"`
 	Email    string `json:"email"`
 	FullName string `json:"full_name"`
+	IsAdmin  bool   `json:"is_admin"`
 }
 
 // Credentials returns the active user for the email along with the stored
@@ -43,8 +44,8 @@ func Credentials(ctx context.Context, db DB, email string) (User, string, error)
 	var u User
 	var hash string
 	err := db.QueryRow(ctx,
-		`SELECT id, email, full_name, password_hash FROM users WHERE email = $1 AND is_active`,
-		email).Scan(&u.ID, &u.Email, &u.FullName, &hash)
+		`SELECT id, email, full_name, is_admin, password_hash FROM users WHERE email = $1 AND is_active`,
+		email).Scan(&u.ID, &u.Email, &u.FullName, &u.IsAdmin, &hash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, "", ErrNoUser
 	}
@@ -55,13 +56,16 @@ func Credentials(ctx context.Context, db DB, email string) (User, string, error)
 }
 
 // UpsertUser creates a user or, when the email already exists, resets its name
-// and password and reactivates it. Returns the user id.
+// and password and reactivates it. Returns the user id. The user is always an
+// administrator: this is the CLI bootstrap path, and whoever runs it on the
+// server can already do anything to the database.
 func UpsertUser(ctx context.Context, db DB, email, fullName, passwordHash string) (int, error) {
 	var id int
 	err := db.QueryRow(ctx,
-		`INSERT INTO users (email, full_name, password_hash) VALUES ($1, $2, $3)
+		`INSERT INTO users (email, full_name, password_hash, is_admin) VALUES ($1, $2, $3, true)
 		 ON CONFLICT (email) DO UPDATE
-		 SET full_name = EXCLUDED.full_name, password_hash = EXCLUDED.password_hash, is_active = true
+		 SET full_name = EXCLUDED.full_name, password_hash = EXCLUDED.password_hash,
+		     is_active = true, is_admin = true
 		 RETURNING id`,
 		email, fullName, passwordHash).Scan(&id)
 	return id, err
@@ -95,10 +99,10 @@ func SessionUser(ctx context.Context, db DB, token string) (User, error) {
 	h := sha256.Sum256([]byte(token))
 	var u User
 	err := db.QueryRow(ctx,
-		`SELECT u.id, u.email, u.full_name
+		`SELECT u.id, u.email, u.full_name, u.is_admin
 		 FROM sessions s JOIN users u ON u.id = s.user_id
 		 WHERE s.token_hash = $1 AND s.expires_at > now() AND u.is_active`,
-		h[:]).Scan(&u.ID, &u.Email, &u.FullName)
+		h[:]).Scan(&u.ID, &u.Email, &u.FullName, &u.IsAdmin)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrNoSession
 	}

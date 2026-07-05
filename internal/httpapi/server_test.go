@@ -23,15 +23,16 @@ import (
 // sequentially within the package, so a single package-level token is safe.
 var testToken string
 
-// resetAuthed resets the schema like dbtest.Reset and then seeds a user with a
-// live session, so the helpers' requests pass the auth middleware.
+// resetAuthed resets the schema like dbtest.Reset and then seeds an
+// administrator with a live session, so the helpers' requests pass the auth
+// middleware and the admin-only routes alike.
 func resetAuthed(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	dbtest.Reset(ctx, t, pool)
 	var userID int
 	if err := pool.QueryRow(ctx,
-		`INSERT INTO users (email, full_name, password_hash)
-		 VALUES ('test@example.com', 'Test User', 'unused') RETURNING id`).Scan(&userID); err != nil {
+		`INSERT INTO users (email, full_name, password_hash, is_admin)
+		 VALUES ('test@example.com', 'Test User', 'unused', true) RETURNING id`).Scan(&userID); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 	token, err := auth.CreateSession(ctx, pool, userID)
