@@ -35,7 +35,7 @@ export default async function globalTeardown(): Promise<void> {
     DELETE FROM tax_codes WHERE code LIKE '${E2E_PREFIX}%';
     DELETE FROM payment_terms WHERE code LIKE '${E2E_PREFIX}%';
     DELETE FROM warehouses WHERE code LIKE '${E2E_PREFIX}%';
-    DELETE FROM users WHERE email = '${E2E_EMAIL}';
+    DELETE FROM users WHERE email = '${E2E_EMAIL}' OR email LIKE 'e2e-%@tadmor.test';
   `
   try {
     await exec("psql", [DB, "-v", "ON_ERROR_STOP=1", "-q", "-c", sql])

@@ -88,6 +88,43 @@ export function me(): Promise<User> {
   return get<User>("/auth/me")
 }
 
+/** A user row as the admin screen sees it, mirroring auth.UserRecord (the
+ *  password hash never leaves the backend). */
+export interface UserRecord {
+  id: number
+  email: string
+  full_name: string
+  is_active: boolean
+}
+
+export function listUsers(): Promise<UserRecord[]> {
+  return get<UserRecord[]>("/users")
+}
+
+export function getUser(id: number): Promise<UserRecord> {
+  return get<UserRecord>(`/users/${id}`)
+}
+
+export function createUser(input: {
+  email: string
+  full_name: string
+  password: string
+}): Promise<{ id: number }> {
+  return post<{ id: number }>("/users", input)
+}
+
+export function updateUser(
+  id: number,
+  input: { email: string; full_name: string; is_active: boolean },
+): Promise<void> {
+  return send("PUT", `/users/${id}`, input)
+}
+
+/** Set a new password for the user, revoking all of their sessions. */
+export function setUserPassword(id: number, password: string): Promise<void> {
+  return send("POST", `/users/${id}/password`, { password })
+}
+
 /** A general-ledger account, mirroring master.Account on the backend. */
 export interface Account {
   id: number

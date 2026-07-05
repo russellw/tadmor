@@ -47,6 +47,8 @@ import { Suppliers } from "@/components/suppliers"
 import { TaxCodeForm } from "@/components/tax-code-form"
 import { TaxCodes } from "@/components/tax-codes"
 import { TrialBalance } from "@/components/trial-balance"
+import { UserForm } from "@/components/user-form"
+import { Users } from "@/components/users"
 import { WarehouseForm } from "@/components/warehouse-form"
 import { Warehouses } from "@/components/warehouses"
 import { cn } from "@/lib/utils"
@@ -64,6 +66,7 @@ const masterNavItems = [
   { to: "/payment-terms", label: "Payment Terms" },
   { to: "/warehouses", label: "Warehouses" },
   { to: "/periods", label: "Periods" },
+  { to: "/users", label: "Users" },
 ]
 
 const documentNavItems = [
@@ -219,6 +222,9 @@ export default function App() {
             path="/fiscal-years/:id"
             element={<FiscalYearForm mode="edit" />}
           />
+          <Route path="/users" element={<Users />} />
+          <Route path="/users/new" element={<UserForm mode="create" />} />
+          <Route path="/users/:id" element={<UserForm mode="edit" />} />
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/new" element={<InvoiceForm />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />

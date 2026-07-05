@@ -97,6 +97,13 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /purchase-bills/{id}", s.getPurchaseBill)
 	api.HandleFunc("GET /purchase-bills/{id}/lines", s.getPurchaseBillLines)
 
+	// User administration (flat auth model: any signed-in user).
+	api.HandleFunc("GET /users", s.listUsers)
+	api.HandleFunc("POST /users", s.createUser)
+	api.HandleFunc("GET /users/{id}", s.getUser)
+	api.HandleFunc("PUT /users/{id}", s.updateUser)
+	api.HandleFunc("POST /users/{id}/password", s.setUserPassword)
+
 	// Who am I (the SPA's session probe).
 	api.HandleFunc("GET /auth/me", s.me)
 

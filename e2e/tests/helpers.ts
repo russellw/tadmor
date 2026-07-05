@@ -106,6 +106,26 @@ export async function createTaxCode(
   return code
 }
 
+/** A unique E2E-prefixed email for user-admin tests, lowercase to match how
+ *  emails are usually typed (the users table is citext). */
+export function uniqueEmail(): string {
+  return `e2e-${Date.now().toString(36)}${Math.random()
+    .toString(36)
+    .slice(2, 5)}@tadmor.test`
+}
+
+/** Create a throwaway login user via the API and return its id. */
+export async function createUser(
+  request: APIRequestContext,
+  email: string,
+): Promise<number> {
+  const res = await request.post("/api/users", {
+    data: { email, full_name: "E2E Throwaway", password: "e2e-password" },
+  })
+  expect(res.ok(), `create user failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
 /** Create a throwaway payment term via the API and return its code. */
 export async function createPaymentTerm(
   request: APIRequestContext,
