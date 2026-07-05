@@ -294,6 +294,29 @@ func TestReadEndpoints(t *testing.T) {
 		t.Fatalf("trial-balance: status = %d, body = %s", status, body)
 	}
 
+	// GET the P&L: the posted invoice's revenue shows in range, not out of it.
+	if status, body := get(t, srv.URL+"/api/profit-and-loss?from=2026-06-01&to=2026-06-30"); status != http.StatusOK ||
+		!strings.Contains(body, `"amount":"50.0000"`) {
+		t.Fatalf("profit-and-loss: status = %d, body = %s", status, body)
+	}
+	if status, body := get(t, srv.URL+"/api/profit-and-loss?to=2026-05-31"); status != http.StatusOK || body != "[]\n" {
+		t.Fatalf("out-of-range profit-and-loss: status = %d, body = %s", status, body)
+	}
+
+	// GET the balance sheet: A/R and the matching current earnings.
+	if status, body := get(t, srv.URL+"/api/balance-sheet?as_of=2026-06-30"); status != http.StatusOK ||
+		!strings.Contains(body, `"code":"1100"`) || !strings.Contains(body, `"current_earnings":"50.0000"`) {
+		t.Fatalf("balance-sheet: status = %d, body = %s", status, body)
+	}
+
+	// Malformed date parameters -> 400.
+	if status, body := get(t, srv.URL+"/api/profit-and-loss?from=June"); status != http.StatusBadRequest {
+		t.Fatalf("bad from: status = %d, want 400 (body: %s)", status, body)
+	}
+	if status, body := get(t, srv.URL+"/api/balance-sheet?as_of=2026-13-01"); status != http.StatusBadRequest {
+		t.Fatalf("bad as_of: status = %d, want 400 (body: %s)", status, body)
+	}
+
 	// Unknown invoice -> 404.
 	if status, body := get(t, srv.URL+"/api/sales-invoices/999999"); status != http.StatusNotFound {
 		t.Fatalf("missing invoice: status = %d, want 404 (body: %s)", status, body)

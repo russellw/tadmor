@@ -27,6 +27,12 @@ export function isZeroAmount(value: string): boolean {
   return toUnits(value) === 0n
 }
 
+/** Negate an amount string exactly, normalizing to the 4-decimal scale
+ *  (so "0.0000" never becomes "-0.0000"). */
+export function negateAmount(value: string): string {
+  return fromUnits(-toUnits(value))
+}
+
 // Round n/d to the nearest integer, half away from zero (matching Postgres
 // round(numeric)). BigInt division truncates toward zero, so the remainder
 // carries n's sign.

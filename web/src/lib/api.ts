@@ -901,6 +901,48 @@ export function getTrialBalance(): Promise<TrialBalanceRow[]> {
   return get<TrialBalanceRow[]>("/trial-balance")
 }
 
+/** One account's amount on a financial statement, mirroring
+ *  reporting.AccountActivityRow. Amounts carry the account's natural sign:
+ *  debit-positive for assets and expenses, credit-positive for liabilities,
+ *  equity, and revenue. Accounts without activity in range are omitted. */
+export interface AccountActivityRow {
+  account_id: number
+  code: string
+  name: string
+  account_type: string
+  amount: string
+}
+
+/** The balance sheet, mirroring reporting.BalanceSheet. current_earnings is
+ *  credit-positive net income to date — the figure that balances the sheet
+ *  until a year-end close moves it into retained earnings. */
+export interface BalanceSheet {
+  rows: AccountActivityRow[]
+  current_earnings: string
+}
+
+/** Revenue and expense activity over the inclusive [from, to] entry-date
+ *  range; an empty bound is unbounded. */
+export function getProfitAndLoss(
+  from: string,
+  to: string,
+): Promise<AccountActivityRow[]> {
+  const params = new URLSearchParams()
+  if (from !== "") params.set("from", from)
+  if (to !== "") params.set("to", to)
+  const qs = params.toString()
+  return get<AccountActivityRow[]>(
+    `/profit-and-loss${qs === "" ? "" : `?${qs}`}`,
+  )
+}
+
+/** Balances from posted entries dated on or before asOf ("" = all). */
+export function getBalanceSheet(asOf: string): Promise<BalanceSheet> {
+  return get<BalanceSheet>(
+    asOf === "" ? "/balance-sheet" : `/balance-sheet?as_of=${asOf}`,
+  )
+}
+
 /** One party's outstanding balance bucketed by days overdue, mirroring
  *  reporting.AgingRow. Serves both AR (customer) and AP (supplier) aging. */
 export interface AgingRow {

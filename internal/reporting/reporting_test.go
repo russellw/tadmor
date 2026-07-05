@@ -95,6 +95,69 @@ func TestReportingQueries(t *testing.T) {
 		}
 	})
 
+	t.Run("profit and loss", func(t *testing.T) {
+		strPtr := func(s string) *string { return &s }
+		rows, err := reporting.ProfitAndLoss(ctx, tx, nil, nil)
+		if err != nil {
+			t.Fatalf("profit and loss: %v", err)
+		}
+		amounts := map[string]reporting.AccountActivityRow{}
+		for _, r := range rows {
+			amounts[r.Code] = r
+		}
+		// Natural sign: revenue credit-positive, expenses debit-positive.
+		if r := amounts["4000"]; r.AccountType != "revenue" || r.Amount != "100.0000" {
+			t.Errorf("revenue row = %+v, want revenue 100.0000", r)
+		}
+		if r := amounts["6000"]; r.AccountType != "expense" || r.Amount != "40.0000" {
+			t.Errorf("expense row = %+v, want expense 40.0000", r)
+		}
+		// Accounts with no P&L activity are omitted entirely.
+		if _, found := amounts["1000"]; found {
+			t.Error("cash appeared on the P&L")
+		}
+		// A range before all activity yields no rows.
+		if rows, err := reporting.ProfitAndLoss(ctx, tx, strPtr("1990-01-01"), strPtr("1990-12-31")); err != nil || len(rows) != 0 {
+			t.Errorf("out-of-range P&L = %+v, %v, want empty", rows, err)
+		}
+		// A range covering the postings yields both rows again.
+		if rows, err := reporting.ProfitAndLoss(ctx, tx, strPtr("1990-01-01"), nil); err != nil || len(rows) != 2 {
+			t.Errorf("open-ended P&L rows = %d, %v, want 2", len(rows), err)
+		}
+	})
+
+	t.Run("balance sheet", func(t *testing.T) {
+		bs, err := reporting.BalanceSheetAsOf(ctx, tx, nil)
+		if err != nil {
+			t.Fatalf("balance sheet: %v", err)
+		}
+		amounts := map[string]reporting.AccountActivityRow{}
+		for _, r := range bs.Rows {
+			amounts[r.Code] = r
+		}
+		// A/R debit-positive, A/P credit-positive.
+		if r := amounts["1100"]; r.AccountType != "asset" || r.Amount != "100.0000" {
+			t.Errorf("A/R row = %+v, want asset 100.0000", r)
+		}
+		if r := amounts["2000"]; r.AccountType != "liability" || r.Amount != "40.0000" {
+			t.Errorf("A/P row = %+v, want liability 40.0000", r)
+		}
+		// Revenue/expense accounts never appear as rows; their net is the
+		// current-earnings figure that balances the sheet (100 - 40).
+		if _, found := amounts["4000"]; found {
+			t.Error("revenue appeared on the balance sheet")
+		}
+		if bs.CurrentEarnings != "60.0000" {
+			t.Errorf("current earnings = %s, want 60.0000", bs.CurrentEarnings)
+		}
+		// As of a date before all activity: no rows, zero earnings.
+		early := "1990-01-01"
+		if bs, err := reporting.BalanceSheetAsOf(ctx, tx, &early); err != nil ||
+			len(bs.Rows) != 0 || bs.CurrentEarnings != "0.0000" {
+			t.Errorf("early balance sheet = %+v, %v, want empty and 0.0000", bs, err)
+		}
+	})
+
 	t.Run("single invoice", func(t *testing.T) {
 		inv, err := reporting.SalesInvoiceBalance(ctx, tx, invID)
 		if err != nil {

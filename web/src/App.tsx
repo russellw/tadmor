@@ -6,6 +6,7 @@ import { LoginForm } from "@/components/login-form"
 import { Button } from "@/components/ui/button"
 import { AccountForm } from "@/components/account-form"
 import { APAging, ARAging } from "@/components/aging-report"
+import { BalanceSheetReport } from "@/components/balance-sheet"
 import { BillForm } from "@/components/bill-form"
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
@@ -38,6 +39,7 @@ import { OrganizationForm } from "@/components/organization-form"
 import { Organizations } from "@/components/organizations"
 import { ProductForm } from "@/components/product-form"
 import { Products } from "@/components/products"
+import { ProfitAndLoss } from "@/components/profit-and-loss"
 import { SupplierForm } from "@/components/supplier-form"
 import { Suppliers } from "@/components/suppliers"
 import { TaxCodeForm } from "@/components/tax-code-form"
@@ -71,6 +73,8 @@ const documentNavItems = [
 ]
 
 const reportNavItems = [
+  { to: "/reports/profit-and-loss", label: "P&L" },
+  { to: "/reports/balance-sheet", label: "Balance Sheet" },
   { to: "/reports/trial-balance", label: "Trial Balance" },
   { to: "/reports/ar-aging", label: "AR Aging" },
   { to: "/reports/ap-aging", label: "AP Aging" },
@@ -237,6 +241,14 @@ export default function App() {
           <Route
             path="/stock-movements/:id"
             element={<StockMovementDetail />}
+          />
+          <Route
+            path="/reports/profit-and-loss"
+            element={<ProfitAndLoss />}
+          />
+          <Route
+            path="/reports/balance-sheet"
+            element={<BalanceSheetReport />}
           />
           <Route path="/reports/trial-balance" element={<TrialBalance />} />
           <Route path="/reports/ar-aging" element={<ARAging />} />

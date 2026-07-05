@@ -77,6 +77,8 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /stock-movements", s.listStockMovements)
 	api.HandleFunc("GET /stock-movements/{id}", s.getStockMovement)
 	api.HandleFunc("GET /trial-balance", s.getTrialBalance)
+	api.HandleFunc("GET /profit-and-loss", s.getProfitAndLoss)
+	api.HandleFunc("GET /balance-sheet", s.getBalanceSheet)
 	api.HandleFunc("GET /ar-aging", s.getARaging)
 	api.HandleFunc("GET /ap-aging", s.getAPaging)
 	api.HandleFunc("GET /inventory/valuation", s.getInventoryValuation)
@@ -158,6 +160,50 @@ func (s *Server) getTrialBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rows)
+}
+
+// dateParam reads an optional YYYY-MM-DD query parameter. nil means the
+// parameter was absent; ok=false means it was malformed and a 400 was written.
+func dateParam(w http.ResponseWriter, r *http.Request, name string) (value *string, ok bool) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return nil, true
+	}
+	if _, err := time.Parse("2006-01-02", v); err != nil {
+		writeError(w, http.StatusBadRequest, name+" must be a YYYY-MM-DD date")
+		return nil, false
+	}
+	return &v, true
+}
+
+func (s *Server) getProfitAndLoss(w http.ResponseWriter, r *http.Request) {
+	from, ok := dateParam(w, r, "from")
+	if !ok {
+		return
+	}
+	to, ok := dateParam(w, r, "to")
+	if !ok {
+		return
+	}
+	rows, err := reporting.ProfitAndLoss(r.Context(), s.pool, from, to)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) getBalanceSheet(w http.ResponseWriter, r *http.Request) {
+	asOf, ok := dateParam(w, r, "as_of")
+	if !ok {
+		return
+	}
+	bs, err := reporting.BalanceSheetAsOf(r.Context(), s.pool, asOf)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, bs)
 }
 
 func (s *Server) getARaging(w http.ResponseWriter, r *http.Request) {

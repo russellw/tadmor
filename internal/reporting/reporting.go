@@ -54,6 +54,95 @@ func TrialBalance(ctx context.Context, q Querier) ([]TrialBalanceRow, error) {
 	return out, rows.Err()
 }
 
+// AccountActivityRow is one account's amount on a financial statement, in the
+// account's natural sign: debit-positive for assets and expenses,
+// credit-positive for liabilities, equity, and revenue. Accounts with no
+// posted activity in the report's range are omitted; offsetting activity
+// shows as 0.0000.
+type AccountActivityRow struct {
+	AccountID   int    `json:"account_id"`
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	AccountType string `json:"account_type"`
+	Amount      string `json:"amount"`
+}
+
+// ProfitAndLoss returns revenue and expense accounts with posted activity in
+// the inclusive [from, to] entry-date range. A nil bound is unbounded.
+func ProfitAndLoss(ctx context.Context, q Querier, from, to *string) ([]AccountActivityRow, error) {
+	return accountActivityRows(ctx, q,
+		`SELECT a.id, a.code, a.name, a.account_type,
+		        sum(CASE WHEN a.account_type = 'revenue' THEN jl.credit - jl.debit
+		                 ELSE jl.debit - jl.credit END)::numeric(19,4)::text
+		 FROM journal_lines jl
+		 JOIN journal_entries je ON je.id = jl.journal_entry_id
+		 JOIN accounts a ON a.id = jl.account_id
+		 WHERE je.status = 'posted'
+		   AND a.account_type IN ('revenue', 'expense')
+		   AND ($1::date IS NULL OR je.entry_date >= $1::date)
+		   AND ($2::date IS NULL OR je.entry_date <= $2::date)
+		 GROUP BY a.id, a.code, a.name, a.account_type
+		 ORDER BY a.code`, from, to)
+}
+
+// BalanceSheet is the statement of financial position as of a date.
+// CurrentEarnings is credit-positive net income (revenue minus expenses) over
+// all posted entries up to the same date; until a year-end close moves it
+// into retained earnings it is what makes the sheet balance:
+// assets = liabilities + equity + current earnings.
+type BalanceSheet struct {
+	Rows            []AccountActivityRow `json:"rows"`
+	CurrentEarnings string               `json:"current_earnings"`
+}
+
+// BalanceSheetAsOf returns asset, liability, and equity balances from posted
+// entries dated on or before asOf (nil = all posted entries).
+func BalanceSheetAsOf(ctx context.Context, q Querier, asOf *string) (BalanceSheet, error) {
+	rows, err := accountActivityRows(ctx, q,
+		`SELECT a.id, a.code, a.name, a.account_type,
+		        sum(CASE WHEN a.account_type = 'asset' THEN jl.debit - jl.credit
+		                 ELSE jl.credit - jl.debit END)::numeric(19,4)::text
+		 FROM journal_lines jl
+		 JOIN journal_entries je ON je.id = jl.journal_entry_id
+		 JOIN accounts a ON a.id = jl.account_id
+		 WHERE je.status = 'posted'
+		   AND a.account_type IN ('asset', 'liability', 'equity')
+		   AND ($1::date IS NULL OR je.entry_date <= $1::date)
+		 GROUP BY a.id, a.code, a.name, a.account_type
+		 ORDER BY a.code`, asOf)
+	if err != nil {
+		return BalanceSheet{}, err
+	}
+	bs := BalanceSheet{Rows: rows}
+	err = q.QueryRow(ctx,
+		`SELECT COALESCE(sum(jl.credit - jl.debit), 0)::numeric(19,4)::text
+		 FROM journal_lines jl
+		 JOIN journal_entries je ON je.id = jl.journal_entry_id
+		 JOIN accounts a ON a.id = jl.account_id
+		 WHERE je.status = 'posted'
+		   AND a.account_type IN ('revenue', 'expense')
+		   AND ($1::date IS NULL OR je.entry_date <= $1::date)`, asOf).Scan(&bs.CurrentEarnings)
+	return bs, err
+}
+
+func accountActivityRows(ctx context.Context, q Querier, sql string, args ...any) ([]AccountActivityRow, error) {
+	rows, err := q.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []AccountActivityRow{}
+	for rows.Next() {
+		var r AccountActivityRow
+		if err := rows.Scan(&r.AccountID, &r.Code, &r.Name, &r.AccountType, &r.Amount); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // DocumentBalance is the outstanding-balance view of an invoice or bill.
 type DocumentBalance struct {
 	ID            int     `json:"id"`
