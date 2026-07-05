@@ -7,7 +7,8 @@
       "Bash(go mod:*)",
       "Bash(go build:*)",
       "Bash(docker build *)",
-      "Bash(ssh *)"
+      "Bash(ssh *)",
+      "Bash(scp bin/server vps:/tmp/tadmor-server)"
     ]
   }
 }
