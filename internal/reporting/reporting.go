@@ -439,6 +439,61 @@ func agingRows(ctx context.Context, q Querier, sql string) ([]AgingRow, error) {
 	return out, rows.Err()
 }
 
+// StockMovement is one inventory movement. There is no status column in the
+// schema: a movement is posted iff JournalEntryID is set, and only receipts
+// and issues ever post.
+type StockMovement struct {
+	ID             int     `json:"id"`
+	ProductID      int     `json:"product_id"`
+	WarehouseID    int     `json:"warehouse_id"`
+	Date           string  `json:"date"`
+	Type           string  `json:"movement_type"`
+	Quantity       string  `json:"quantity"`
+	UnitCost       string  `json:"unit_cost"`
+	TotalCost      string  `json:"total_cost"`
+	Reference      *string `json:"reference"`
+	Notes          *string `json:"notes"`
+	JournalEntryID *int    `json:"journal_entry_id"`
+}
+
+const stockMovementsSQL = `
+	SELECT id, product_id, warehouse_id, movement_date::text, movement_type,
+	       quantity::numeric(19,4)::text, unit_cost::numeric(19,4)::text, total_cost::numeric(19,4)::text,
+	       reference, notes, journal_entry_id
+	FROM stock_movements`
+
+// StockMovements returns every stock movement, newest first.
+func StockMovements(ctx context.Context, q Querier) ([]StockMovement, error) {
+	rows, err := q.Query(ctx, stockMovementsSQL+` ORDER BY movement_date DESC, id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []StockMovement{}
+	for rows.Next() {
+		var m StockMovement
+		if err := rows.Scan(&m.ID, &m.ProductID, &m.WarehouseID, &m.Date, &m.Type,
+			&m.Quantity, &m.UnitCost, &m.TotalCost, &m.Reference, &m.Notes, &m.JournalEntryID); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// StockMovementByID returns a single stock movement, or ErrNotFound.
+func StockMovementByID(ctx context.Context, q Querier, movementID int) (StockMovement, error) {
+	var m StockMovement
+	err := q.QueryRow(ctx, stockMovementsSQL+` WHERE id = $1`, movementID).Scan(
+		&m.ID, &m.ProductID, &m.WarehouseID, &m.Date, &m.Type,
+		&m.Quantity, &m.UnitCost, &m.TotalCost, &m.Reference, &m.Notes, &m.JournalEntryID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return m, ErrNotFound
+	}
+	return m, err
+}
+
 // StockValuationRow is a product's quantity and value on hand.
 type StockValuationRow struct {
 	ProductID   int    `json:"product_id"`

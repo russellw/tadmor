@@ -74,6 +74,8 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	s.registerMasterRoutes(api)
 
 	// Read / reporting.
+	api.HandleFunc("GET /stock-movements", s.listStockMovements)
+	api.HandleFunc("GET /stock-movements/{id}", s.getStockMovement)
 	api.HandleFunc("GET /trial-balance", s.getTrialBalance)
 	api.HandleFunc("GET /ar-aging", s.getARaging)
 	api.HandleFunc("GET /ap-aging", s.getAPaging)
@@ -114,6 +116,28 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	}
 
 	return mux
+}
+
+func (s *Server) listStockMovements(w http.ResponseWriter, r *http.Request) {
+	rows, err := reporting.StockMovements(r.Context(), s.pool)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) getStockMovement(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	m, err := reporting.StockMovementByID(r.Context(), s.pool, id)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
 }
 
 func (s *Server) getTrialBalance(w http.ResponseWriter, r *http.Request) {

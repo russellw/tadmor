@@ -650,6 +650,25 @@ invoice flips to "paid" → unpost → invoice back to "unpaid"; supplier mirror
 checked; probes: posting without a deposit account (422 inline), missing
 payment deep link.
 
+The **stock-movement flow** finished the document UI — every backend flow now
+has a screen. Backend: `reporting.StockMovement` (list + single; movements
+have no status column, so "posted" is `journal_entry_id IS NOT NULL`, and only
+receipts/issues ever post) behind `GET /stock-movements{,/{id}}`. Frontend:
+`stock-movements.tsx` (list with a GL badge that shows "—" for the
+never-postable types), `stock-movement-form.tsx` (products filtered to
+inventory-tracked; the quantity field takes a magnitude and signs it from the
+movement type to satisfy the sign CHECK — adjustments pass through signed),
+and `stock-movement-detail.tsx` (facts plus a post section: a currency input —
+movements carry no currency of their own — and, for receipts only, the
+clearing credit-account select, defaulting the description to the GRNI
+pattern; issues post COGS with no extra account). `lib/api.ts` gained
+`Warehouse`/`listWarehouses` (first consumer) and a mirrored `MOVEMENT_TYPES`
+closed set. Verified end-to-end headlessly: receipt → post against GRNI →
+valuation moves (15 on hand @ avg 13.00) → issue (signed automatically) →
+post → COGS 39.00 in the trial balance, still balanced; probes: posting a
+receipt without a credit account (clean 422 inline), adjustment showing "does
+not post to the ledger", missing-movement deep link.
+
 Next: tighten the CSP off `'unsafe-inline'` styles before launch; and (when
 reference data needs managing) add org/payment-terms/currency screens so those FK
 fields can become dropdowns instead of free text.

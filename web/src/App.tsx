@@ -22,6 +22,9 @@ import {
   CustomerPayments,
   SupplierPayments,
 } from "@/components/payment-list"
+import { StockMovementDetail } from "@/components/stock-movement-detail"
+import { StockMovementForm } from "@/components/stock-movement-form"
+import { StockMovements } from "@/components/stock-movements"
 import { OrganizationForm } from "@/components/organization-form"
 import { Organizations } from "@/components/organizations"
 import { ProductForm } from "@/components/product-form"
@@ -47,6 +50,7 @@ const documentNavItems = [
   { to: "/bills", label: "Bills" },
   { to: "/customer-payments", label: "Customer Payments" },
   { to: "/supplier-payments", label: "Supplier Payments" },
+  { to: "/stock-movements", label: "Stock" },
 ]
 
 const reportNavItems = [
@@ -134,6 +138,12 @@ export default function App() {
           <Route
             path="/supplier-payments/:id"
             element={<SupplierPaymentDetail />}
+          />
+          <Route path="/stock-movements" element={<StockMovements />} />
+          <Route path="/stock-movements/new" element={<StockMovementForm />} />
+          <Route
+            path="/stock-movements/:id"
+            element={<StockMovementDetail />}
           />
           <Route path="/reports/trial-balance" element={<TrialBalance />} />
           <Route path="/reports/ar-aging" element={<ARAging />} />

@@ -191,6 +191,19 @@ export function updateCustomer(id: number, input: CustomerInput): Promise<void> 
   return send("PUT", `/customers/${id}`, input)
 }
 
+/** A warehouse, mirroring master.Warehouse. */
+export interface Warehouse {
+  id: number
+  code: string
+  name: string
+  address_id: number | null
+  is_active: boolean
+}
+
+export function listWarehouses(): Promise<Warehouse[]> {
+  return get<Warehouse[]>("/warehouses")
+}
+
 /** A tax code (natural key: code), mirroring master.TaxCode. */
 export interface TaxCode {
   code: string
@@ -586,6 +599,83 @@ export function applySupplierPayment(
   id: number,
 ): Promise<{ applications: { document_id: number; amount: string }[] }> {
   return post(`/supplier-payments/${id}/apply`, {})
+}
+
+/** One inventory movement, mirroring reporting.StockMovement. There is no
+ *  status column: a movement is posted iff journal_entry_id is set, and only
+ *  receipts and issues ever post. */
+export interface StockMovement {
+  id: number
+  product_id: number
+  warehouse_id: number
+  date: string
+  movement_type: string
+  quantity: string
+  unit_cost: string
+  total_cost: string
+  reference: string | null
+  notes: string | null
+  journal_entry_id: number | null
+}
+
+/** Input for a stock movement, mirroring documents.StockMovementInput.
+ *  Quantity is signed: the CHECK constraint requires receipt/transfer_in
+ *  positive and issue/transfer_out negative; adjustments go either way. */
+export interface StockMovementInput {
+  product_id: number
+  warehouse_id: number
+  movement_type: string
+  movement_date: string | null
+  quantity: string
+  unit_cost: string
+  reference: string | null
+  notes: string | null
+}
+
+// The movement-type CHECK constraint's closed set (db/migrations/000007),
+// mirrored here rather than fetched. Only receipt and issue post to the GL.
+export const MOVEMENT_TYPES = [
+  "receipt",
+  "issue",
+  "adjustment",
+  "transfer_in",
+  "transfer_out",
+] as const
+
+export function listStockMovements(): Promise<StockMovement[]> {
+  return get<StockMovement[]>("/stock-movements")
+}
+
+export function getStockMovement(id: number): Promise<StockMovement> {
+  return get<StockMovement>(`/stock-movements/${id}`)
+}
+
+export function createStockMovement(
+  input: StockMovementInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/stock-movements", input)
+}
+
+/** Post a movement to the GL. currency is required; credit_account_id is the
+ *  clearing account a receipt credits (ignored for issues). */
+export function postStockMovement(
+  id: number,
+  currency: string,
+  creditAccountId: number | null,
+): Promise<{ journal_entry_id: number }> {
+  return post<{ journal_entry_id: number }>(`/stock-movements/${id}/post`, {
+    currency,
+    credit_account_id: creditAccountId ?? 0,
+  })
+}
+
+export function unpostStockMovement(
+  id: number,
+): Promise<{ reversal_entry_id: number }> {
+  return post<{ reversal_entry_id: number }>(
+    `/stock-movements/${id}/unpost`,
+    {},
+  )
 }
 
 // Reporting endpoints are read-only views over posted journal entries. All

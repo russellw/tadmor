@@ -221,6 +221,44 @@ func TestReportingQueries(t *testing.T) {
 			t.Errorf("error = %v, want ErrNotFound", err)
 		}
 	})
+
+	t.Run("stock movement list", func(t *testing.T) {
+		ms, err := reporting.StockMovements(ctx, tx)
+		if err != nil {
+			t.Fatalf("stock movements: %v", err)
+		}
+		if len(ms) != 1 {
+			t.Fatalf("movement rows = %d, want 1", len(ms))
+		}
+		m := ms[0]
+		if m.ProductID != invProd || m.WarehouseID != whID || m.Type != "receipt" ||
+			m.Quantity != "10.0000" || m.UnitCost != "7.0000" || m.TotalCost != "70.0000" {
+			t.Errorf("movement = %+v, want receipt 10 x 7.0000", m)
+		}
+		if m.JournalEntryID != nil {
+			t.Errorf("journal_entry_id = %v, want nil (unposted)", m.JournalEntryID)
+		}
+	})
+
+	t.Run("stock movement single", func(t *testing.T) {
+		ms, err := reporting.StockMovements(ctx, tx)
+		if err != nil || len(ms) == 0 {
+			t.Fatalf("stock movements: %v", err)
+		}
+		m, err := reporting.StockMovementByID(ctx, tx, ms[0].ID)
+		if err != nil {
+			t.Fatalf("single movement: %v", err)
+		}
+		if m.ID != ms[0].ID || m.TotalCost != "70.0000" {
+			t.Errorf("movement = %+v, want id %d total 70.0000", m, ms[0].ID)
+		}
+	})
+
+	t.Run("missing stock movement", func(t *testing.T) {
+		if _, err := reporting.StockMovementByID(ctx, tx, 999999); !errors.Is(err, reporting.ErrNotFound) {
+			t.Errorf("error = %v, want ErrNotFound", err)
+		}
+	})
 }
 
 // TestPaymentQueries exercises the payment list/single/applications queries in
