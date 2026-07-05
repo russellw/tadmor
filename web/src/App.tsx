@@ -10,6 +10,18 @@ import { BillDetail, InvoiceDetail } from "@/components/document-detail"
 import { Bills, Invoices } from "@/components/document-list"
 import { InventoryValuation } from "@/components/inventory-valuation"
 import { InvoiceForm } from "@/components/invoice-form"
+import {
+  CustomerPaymentDetail,
+  SupplierPaymentDetail,
+} from "@/components/payment-detail"
+import {
+  CustomerPaymentForm,
+  SupplierPaymentForm,
+} from "@/components/payment-form"
+import {
+  CustomerPayments,
+  SupplierPayments,
+} from "@/components/payment-list"
 import { OrganizationForm } from "@/components/organization-form"
 import { Organizations } from "@/components/organizations"
 import { ProductForm } from "@/components/product-form"
@@ -33,6 +45,8 @@ const masterNavItems = [
 const documentNavItems = [
   { to: "/invoices", label: "Invoices" },
   { to: "/bills", label: "Bills" },
+  { to: "/customer-payments", label: "Customer Payments" },
+  { to: "/supplier-payments", label: "Supplier Payments" },
 ]
 
 const reportNavItems = [
@@ -103,6 +117,24 @@ export default function App() {
           <Route path="/bills" element={<Bills />} />
           <Route path="/bills/new" element={<BillForm />} />
           <Route path="/bills/:id" element={<BillDetail />} />
+          <Route path="/customer-payments" element={<CustomerPayments />} />
+          <Route
+            path="/customer-payments/new"
+            element={<CustomerPaymentForm />}
+          />
+          <Route
+            path="/customer-payments/:id"
+            element={<CustomerPaymentDetail />}
+          />
+          <Route path="/supplier-payments" element={<SupplierPayments />} />
+          <Route
+            path="/supplier-payments/new"
+            element={<SupplierPaymentForm />}
+          />
+          <Route
+            path="/supplier-payments/:id"
+            element={<SupplierPaymentDetail />}
+          />
           <Route path="/reports/trial-balance" element={<TrialBalance />} />
           <Route path="/reports/ar-aging" element={<ARAging />} />
           <Route path="/reports/ap-aging" element={<APAging />} />

@@ -222,3 +222,134 @@ func TestReportingQueries(t *testing.T) {
 		}
 	})
 }
+
+// TestPaymentQueries exercises the payment list/single/applications queries in
+// their own reset so the GL totals asserted above stay undisturbed.
+func TestPaymentQueries(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+	dbtest.Reset(ctx, t, pool)
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := tx.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("setup exec: %v\nsql: %s", err, sql)
+		}
+	}
+	queryID := func(sql string, args ...any) int {
+		t.Helper()
+		var id int
+		if err := tx.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
+			t.Fatalf("setup query: %v\nsql: %s", err, sql)
+		}
+		return id
+	}
+
+	exec(`INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY', current_date - 400, current_date + 400)`)
+	exec(`INSERT INTO accounting_periods (fiscal_year_id, name, start_date, end_date)
+	      SELECT id,'P', current_date - 400, current_date + 400 FROM fiscal_years WHERE name='FY'`)
+
+	// A posted 100.0000 invoice and a posted 130.0000 receipt: auto-apply
+	// covers the invoice in full and leaves 30.0000 unapplied.
+	custID := queryID(`WITH o AS (INSERT INTO organizations (name) VALUES ('Acme') RETURNING id)
+	      INSERT INTO customers (organization_id, ar_account_id)
+	      SELECT o.id,(SELECT id FROM accounts WHERE code='1100') FROM o RETURNING id`)
+	invID := queryID(`INSERT INTO sales_invoices (invoice_number, customer_id, invoice_date, currency_code)
+	      VALUES ('INV-1',$1, current_date - 10, 'USD') RETURNING id`, custID)
+	exec(`INSERT INTO sales_invoice_lines (invoice_id, line_no, description, quantity, unit_price, revenue_account_id)
+	      VALUES ($1,1,'Service',100,1,(SELECT id FROM accounts WHERE code='4000'))`, invID)
+	if _, err := posting.PostSalesInvoice(ctx, tx, invID); err != nil {
+		t.Fatalf("post invoice: %v", err)
+	}
+	cpID := queryID(`INSERT INTO customer_payments (customer_id, payment_date, currency_code, amount, method, deposit_account_id)
+	      VALUES ($1, current_date - 5, 'USD', 130, 'transfer', (SELECT id FROM accounts WHERE code='1000')) RETURNING id`, custID)
+	if _, err := posting.PostCustomerPayment(ctx, tx, cpID); err != nil {
+		t.Fatalf("post payment: %v", err)
+	}
+	if _, err := posting.AutoApplyCustomerPayment(ctx, tx, cpID); err != nil {
+		t.Fatalf("apply payment: %v", err)
+	}
+
+	// Supplier side: a posted 40.0000 bill and a fully-applied 15.0000 payment.
+	suppID := queryID(`WITH o AS (INSERT INTO organizations (name) VALUES ('Globex') RETURNING id)
+	      INSERT INTO suppliers (organization_id, ap_account_id)
+	      SELECT o.id,(SELECT id FROM accounts WHERE code='2000') FROM o RETURNING id`)
+	billID := queryID(`INSERT INTO purchase_bills (bill_number, supplier_id, bill_date, currency_code)
+	      VALUES ('BILL-1',$1, current_date - 10, 'USD') RETURNING id`, suppID)
+	exec(`INSERT INTO purchase_bill_lines (bill_id, line_no, description, quantity, unit_cost, expense_account_id)
+	      VALUES ($1,1,'Rent',1,40,(SELECT id FROM accounts WHERE code='6000'))`, billID)
+	if _, err := posting.PostPurchaseBill(ctx, tx, billID); err != nil {
+		t.Fatalf("post bill: %v", err)
+	}
+	spID := queryID(`INSERT INTO supplier_payments (supplier_id, payment_date, currency_code, amount, payment_account_id)
+	      VALUES ($1, current_date - 3, 'USD', 15, (SELECT id FROM accounts WHERE code='1000')) RETURNING id`, suppID)
+	if _, err := posting.PostSupplierPayment(ctx, tx, spID); err != nil {
+		t.Fatalf("post supplier payment: %v", err)
+	}
+	if _, err := posting.AutoApplySupplierPayment(ctx, tx, spID); err != nil {
+		t.Fatalf("apply supplier payment: %v", err)
+	}
+
+	t.Run("customer payment list", func(t *testing.T) {
+		ps, err := reporting.CustomerPayments(ctx, tx)
+		if err != nil {
+			t.Fatalf("customer payments: %v", err)
+		}
+		if len(ps) != 1 {
+			t.Fatalf("payment rows = %d, want 1", len(ps))
+		}
+		p := ps[0]
+		if p.ID != cpID || p.PartyID != custID || p.Status != "posted" ||
+			p.Amount != "130.0000" || p.AmountApplied != "100.0000" || p.Unapplied != "30.0000" {
+			t.Errorf("payment = %+v, want posted 130.0000 with 100.0000 applied", p)
+		}
+	})
+
+	t.Run("customer payment applications", func(t *testing.T) {
+		apps, err := reporting.CustomerPaymentApplications(ctx, tx, cpID)
+		if err != nil {
+			t.Fatalf("applications: %v", err)
+		}
+		if len(apps) != 1 || apps[0].DocumentID != invID ||
+			apps[0].DocumentNumber != "INV-1" || apps[0].AmountApplied != "100.0000" {
+			t.Errorf("applications = %+v, want INV-1 100.0000", apps)
+		}
+	})
+
+	t.Run("supplier payment single", func(t *testing.T) {
+		p, err := reporting.SupplierPayment(ctx, tx, spID)
+		if err != nil {
+			t.Fatalf("supplier payment: %v", err)
+		}
+		if p.PartyID != suppID || p.Amount != "15.0000" || p.AmountApplied != "15.0000" || p.Unapplied != "0.0000" {
+			t.Errorf("payment = %+v, want 15.0000 fully applied", p)
+		}
+	})
+
+	t.Run("supplier payment applications", func(t *testing.T) {
+		apps, err := reporting.SupplierPaymentApplications(ctx, tx, spID)
+		if err != nil {
+			t.Fatalf("applications: %v", err)
+		}
+		if len(apps) != 1 || apps[0].DocumentID != billID ||
+			apps[0].DocumentNumber != "BILL-1" || apps[0].AmountApplied != "15.0000" {
+			t.Errorf("applications = %+v, want BILL-1 15.0000", apps)
+		}
+	})
+
+	t.Run("missing payment", func(t *testing.T) {
+		if _, err := reporting.CustomerPayment(ctx, tx, 999999); !errors.Is(err, reporting.ErrNotFound) {
+			t.Errorf("single: error = %v, want ErrNotFound", err)
+		}
+		if _, err := reporting.SupplierPaymentApplications(ctx, tx, 999999); !errors.Is(err, reporting.ErrNotFound) {
+			t.Errorf("applications: error = %v, want ErrNotFound", err)
+		}
+	})
+}

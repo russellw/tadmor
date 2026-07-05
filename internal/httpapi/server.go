@@ -81,6 +81,12 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /sales-invoices", s.listSalesInvoices)
 	api.HandleFunc("GET /sales-invoices/{id}", s.getSalesInvoice)
 	api.HandleFunc("GET /sales-invoices/{id}/lines", s.getSalesInvoiceLines)
+	api.HandleFunc("GET /customer-payments", s.listCustomerPayments)
+	api.HandleFunc("GET /customer-payments/{id}", s.getCustomerPayment)
+	api.HandleFunc("GET /customer-payments/{id}/applications", s.getCustomerPaymentApplications)
+	api.HandleFunc("GET /supplier-payments", s.listSupplierPayments)
+	api.HandleFunc("GET /supplier-payments/{id}", s.getSupplierPayment)
+	api.HandleFunc("GET /supplier-payments/{id}/applications", s.getSupplierPaymentApplications)
 	api.HandleFunc("GET /purchase-bills", s.listPurchaseBills)
 	api.HandleFunc("GET /purchase-bills/{id}", s.getPurchaseBill)
 	api.HandleFunc("GET /purchase-bills/{id}/lines", s.getPurchaseBillLines)
@@ -179,6 +185,76 @@ func (s *Server) getSalesInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, inv)
+}
+
+func (s *Server) listCustomerPayments(w http.ResponseWriter, r *http.Request) {
+	rows, err := reporting.CustomerPayments(r.Context(), s.pool)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) getCustomerPayment(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	p, err := reporting.CustomerPayment(r.Context(), s.pool, id)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (s *Server) getCustomerPaymentApplications(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	apps, err := reporting.CustomerPaymentApplications(r.Context(), s.pool, id)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, apps)
+}
+
+func (s *Server) listSupplierPayments(w http.ResponseWriter, r *http.Request) {
+	rows, err := reporting.SupplierPayments(r.Context(), s.pool)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) getSupplierPayment(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	p, err := reporting.SupplierPayment(r.Context(), s.pool, id)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (s *Server) getSupplierPaymentApplications(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	apps, err := reporting.SupplierPaymentApplications(r.Context(), s.pool, id)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, apps)
 }
 
 func (s *Server) listPurchaseBills(w http.ResponseWriter, r *http.Request) {

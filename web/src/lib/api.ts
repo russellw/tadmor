@@ -451,6 +451,143 @@ export function unpostPurchaseBill(
   return post<{ reversal_entry_id: number }>(`/purchase-bills/${id}/unpost`, {})
 }
 
+/** A customer or supplier payment with its applied/unapplied split, mirroring
+ *  reporting.Payment. */
+export interface Payment {
+  id: number
+  party_id: number
+  date: string
+  currency_code: string
+  amount: string
+  method: string | null
+  reference: string | null
+  status: string
+  amount_applied: string
+  unapplied: string
+}
+
+/** One allocation of a payment to an invoice or bill, mirroring
+ *  reporting.PaymentApplication. */
+export interface PaymentApplication {
+  document_id: number
+  document_number: string
+  amount_applied: string
+}
+
+/** Input for a draft customer payment, mirroring documents.CustomerPaymentInput. */
+export interface CustomerPaymentInput {
+  customer_id: number
+  payment_date: string
+  currency_code: string
+  amount: string
+  method: string | null
+  reference: string | null
+  deposit_account_id: number | null
+}
+
+/** Input for a draft supplier payment, mirroring documents.SupplierPaymentInput. */
+export interface SupplierPaymentInput {
+  supplier_id: number
+  payment_date: string
+  currency_code: string
+  amount: string
+  method: string | null
+  reference: string | null
+  payment_account_id: number | null
+}
+
+// The payment-method CHECK constraint's closed set (db/migrations/000005),
+// mirrored here rather than fetched.
+export const PAYMENT_METHODS = [
+  "cash",
+  "check",
+  "card",
+  "transfer",
+  "other",
+] as const
+
+export function listCustomerPayments(): Promise<Payment[]> {
+  return get<Payment[]>("/customer-payments")
+}
+
+export function getCustomerPayment(id: number): Promise<Payment> {
+  return get<Payment>(`/customer-payments/${id}`)
+}
+
+export function getCustomerPaymentApplications(
+  id: number,
+): Promise<PaymentApplication[]> {
+  return get<PaymentApplication[]>(`/customer-payments/${id}/applications`)
+}
+
+export function createCustomerPayment(
+  input: CustomerPaymentInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/customer-payments", input)
+}
+
+export function postCustomerPayment(
+  id: number,
+): Promise<{ journal_entry_id: number }> {
+  return post<{ journal_entry_id: number }>(`/customer-payments/${id}/post`, {})
+}
+
+export function unpostCustomerPayment(
+  id: number,
+): Promise<{ reversal_entry_id: number }> {
+  return post<{ reversal_entry_id: number }>(
+    `/customer-payments/${id}/unpost`,
+    {},
+  )
+}
+
+export function applyCustomerPayment(
+  id: number,
+): Promise<{ applications: { document_id: number; amount: string }[] }> {
+  return post(`/customer-payments/${id}/apply`, {})
+}
+
+export function listSupplierPayments(): Promise<Payment[]> {
+  return get<Payment[]>("/supplier-payments")
+}
+
+export function getSupplierPayment(id: number): Promise<Payment> {
+  return get<Payment>(`/supplier-payments/${id}`)
+}
+
+export function getSupplierPaymentApplications(
+  id: number,
+): Promise<PaymentApplication[]> {
+  return get<PaymentApplication[]>(`/supplier-payments/${id}/applications`)
+}
+
+export function createSupplierPayment(
+  input: SupplierPaymentInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/supplier-payments", input)
+}
+
+export function postSupplierPayment(
+  id: number,
+): Promise<{ journal_entry_id: number }> {
+  return post<{ journal_entry_id: number }>(`/supplier-payments/${id}/post`, {})
+}
+
+export function unpostSupplierPayment(
+  id: number,
+): Promise<{ reversal_entry_id: number }> {
+  return post<{ reversal_entry_id: number }>(
+    `/supplier-payments/${id}/unpost`,
+    {},
+  )
+}
+
+export function applySupplierPayment(
+  id: number,
+): Promise<{ applications: { document_id: number; amount: string }[] }> {
+  return post(`/supplier-payments/${id}/apply`, {})
+}
+
 // Reporting endpoints are read-only views over posted journal entries. All
 // monetary values are exact decimal strings (see reporting.go); render them
 // with the helpers in @/lib/amount, never through Number.

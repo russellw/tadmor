@@ -630,6 +630,26 @@ probes: supplier-currency prefill, cost not prefilled from product, duplicate
 bill number (409 inline), missing-bill deep link; invoice screens
 regression-checked after the refactor.
 
+The **payments flow** completed the AR/AP cycle in the UI. Backend: payments
+had no read endpoints at all, so `internal/reporting` gained `Payment` (with
+an applied/unapplied split computed from the application tables — no view
+exists in the schema) and `PaymentApplication` (application rows joined to
+their invoice/bill numbers), served as GET list/single/`{id}/applications` for
+both `customer-payments` and `supplier-payments` (six routes); tested in a
+separate `TestPaymentQueries` reset so the existing GL assertions stay
+undisturbed. Frontend: three parameterized components in the now-familiar
+pattern — `payment-list.tsx` (adds an `AppliedBadge`: unapplied/partial/applied,
+posted only), `payment-form.tsx` (party select with currency prefill, method
+from a mirrored `PAYMENT_METHODS` closed set, deposit/payment account select
+with a "required before posting" hint), and `payment-detail.tsx` (applications
+table linking to the paid documents, amount/applied/unapplied footer, and
+Post / Apply / Unpost actions — Apply allocates oldest-first server-side and
+hides once nothing is unapplied; Unpost deletes applications and reverses the
+entry). Verified end-to-end headlessly: receipt → post → apply → the paid
+invoice flips to "paid" → unpost → invoice back to "unpaid"; supplier mirror
+checked; probes: posting without a deposit account (422 inline), missing
+payment deep link.
+
 Next: tighten the CSP off `'unsafe-inline'` styles before launch; and (when
 reference data needs managing) add org/payment-terms/currency screens so those FK
 fields can become dropdowns instead of free text.

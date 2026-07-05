@@ -241,6 +241,145 @@ func scanDocumentBalance(row pgx.Row) (DocumentBalance, error) {
 	return d, err
 }
 
+// Payment is a customer or supplier payment with its applied/unapplied split.
+// There is no payment view in the schema; the split is computed here from the
+// application tables.
+type Payment struct {
+	ID            int     `json:"id"`
+	PartyID       int     `json:"party_id"`
+	Date          string  `json:"date"`
+	Currency      string  `json:"currency_code"`
+	Amount        string  `json:"amount"`
+	Method        *string `json:"method"`
+	Reference     *string `json:"reference"`
+	Status        string  `json:"status"`
+	AmountApplied string  `json:"amount_applied"`
+	Unapplied     string  `json:"unapplied"`
+}
+
+const customerPaymentsSQL = `
+	SELECT cp.id, cp.customer_id, cp.payment_date::text, cp.currency_code,
+	       cp.amount::numeric(19,4)::text, cp.method, cp.reference, cp.status,
+	       COALESCE(pa.applied, 0)::numeric(19,4)::text,
+	       (cp.amount - COALESCE(pa.applied, 0))::numeric(19,4)::text
+	FROM customer_payments cp
+	LEFT JOIN (
+	    SELECT payment_id, sum(amount_applied) AS applied
+	    FROM payment_applications GROUP BY payment_id
+	) pa ON pa.payment_id = cp.id`
+
+const supplierPaymentsSQL = `
+	SELECT sp.id, sp.supplier_id, sp.payment_date::text, sp.currency_code,
+	       sp.amount::numeric(19,4)::text, sp.method, sp.reference, sp.status,
+	       COALESCE(ba.applied, 0)::numeric(19,4)::text,
+	       (sp.amount - COALESCE(ba.applied, 0))::numeric(19,4)::text
+	FROM supplier_payments sp
+	LEFT JOIN (
+	    SELECT payment_id, sum(amount_applied) AS applied
+	    FROM bill_applications GROUP BY payment_id
+	) ba ON ba.payment_id = sp.id`
+
+// CustomerPayments returns every customer payment, newest first.
+func CustomerPayments(ctx context.Context, q Querier) ([]Payment, error) {
+	return paymentRows(ctx, q, customerPaymentsSQL+` ORDER BY cp.payment_date DESC, cp.id DESC`)
+}
+
+// SupplierPayments returns every supplier payment, newest first.
+func SupplierPayments(ctx context.Context, q Querier) ([]Payment, error) {
+	return paymentRows(ctx, q, supplierPaymentsSQL+` ORDER BY sp.payment_date DESC, sp.id DESC`)
+}
+
+// CustomerPayment returns a single customer payment, or ErrNotFound.
+func CustomerPayment(ctx context.Context, q Querier, paymentID int) (Payment, error) {
+	return scanPayment(q.QueryRow(ctx, customerPaymentsSQL+` WHERE cp.id = $1`, paymentID))
+}
+
+// SupplierPayment returns a single supplier payment, or ErrNotFound.
+func SupplierPayment(ctx context.Context, q Querier, paymentID int) (Payment, error) {
+	return scanPayment(q.QueryRow(ctx, supplierPaymentsSQL+` WHERE sp.id = $1`, paymentID))
+}
+
+func paymentRows(ctx context.Context, q Querier, sql string) ([]Payment, error) {
+	rows, err := q.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []Payment{}
+	for rows.Next() {
+		var p Payment
+		if err := rows.Scan(&p.ID, &p.PartyID, &p.Date, &p.Currency, &p.Amount,
+			&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func scanPayment(row pgx.Row) (Payment, error) {
+	var p Payment
+	err := row.Scan(&p.ID, &p.PartyID, &p.Date, &p.Currency, &p.Amount,
+		&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, ErrNotFound
+	}
+	return p, err
+}
+
+// PaymentApplication is one allocation of a payment to an invoice or bill.
+type PaymentApplication struct {
+	DocumentID     int    `json:"document_id"`
+	DocumentNumber string `json:"document_number"`
+	AmountApplied  string `json:"amount_applied"`
+}
+
+// CustomerPaymentApplications returns what a customer payment was applied to,
+// or ErrNotFound when the payment itself does not exist.
+func CustomerPaymentApplications(ctx context.Context, q Querier, paymentID int) ([]PaymentApplication, error) {
+	return applicationRows(ctx, q, paymentID,
+		`SELECT EXISTS (SELECT 1 FROM customer_payments WHERE id = $1)`,
+		`SELECT pa.invoice_id, si.invoice_number, pa.amount_applied::numeric(19,4)::text
+		 FROM payment_applications pa JOIN sales_invoices si ON si.id = pa.invoice_id
+		 WHERE pa.payment_id = $1 ORDER BY pa.id`)
+}
+
+// SupplierPaymentApplications returns what a supplier payment was applied to,
+// or ErrNotFound when the payment itself does not exist.
+func SupplierPaymentApplications(ctx context.Context, q Querier, paymentID int) ([]PaymentApplication, error) {
+	return applicationRows(ctx, q, paymentID,
+		`SELECT EXISTS (SELECT 1 FROM supplier_payments WHERE id = $1)`,
+		`SELECT ba.bill_id, pb.bill_number, ba.amount_applied::numeric(19,4)::text
+		 FROM bill_applications ba JOIN purchase_bills pb ON pb.id = ba.bill_id
+		 WHERE ba.payment_id = $1 ORDER BY ba.id`)
+}
+
+func applicationRows(ctx context.Context, q Querier, paymentID int, existsSQL, sql string) ([]PaymentApplication, error) {
+	var exists bool
+	if err := q.QueryRow(ctx, existsSQL, paymentID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
+	rows, err := q.Query(ctx, sql, paymentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []PaymentApplication{}
+	for rows.Next() {
+		var a PaymentApplication
+		if err := rows.Scan(&a.DocumentID, &a.DocumentNumber, &a.AmountApplied); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // AgingRow is one party's outstanding balance bucketed by age.
 type AgingRow struct {
 	PartyID          int    `json:"party_id"`
