@@ -527,6 +527,8 @@ export interface DocumentBalance {
   amount_applied: string
   balance: string
   payment_status: string
+  /** Set once the document has been posted. */
+  journal_entry_id: number | null
 }
 
 /** One invoice line with its database-computed money, mirroring
@@ -680,6 +682,8 @@ export interface Payment {
   status: string
   amount_applied: string
   unapplied: string
+  /** Set once the payment has been posted. */
+  journal_entry_id: number | null
 }
 
 /** One allocation of a payment to an invoice or bill, mirroring
@@ -941,6 +945,60 @@ export function getBalanceSheet(asOf: string): Promise<BalanceSheet> {
   return get<BalanceSheet>(
     asOf === "" ? "/balance-sheet" : `/balance-sheet?as_of=${asOf}`,
   )
+}
+
+/** One posted journal line on an account's ledger, mirroring
+ *  reporting.LedgerRow. memo prefers the line's own memo, falling back to
+ *  the entry's. */
+export interface LedgerRow {
+  journal_entry_id: number
+  entry_date: string
+  reference: string | null
+  memo: string | null
+  debit: string
+  credit: string
+}
+
+/** An account's posted journal lines in entry order over the inclusive
+ *  [from, to] entry-date range; an empty bound is unbounded. */
+export function getAccountLedger(
+  accountId: number,
+  from: string,
+  to: string,
+): Promise<LedgerRow[]> {
+  const params = new URLSearchParams()
+  if (from !== "") params.set("from", from)
+  if (to !== "") params.set("to", to)
+  const qs = params.toString()
+  return get<LedgerRow[]>(
+    `/accounts/${accountId}/ledger${qs === "" ? "" : `?${qs}`}`,
+  )
+}
+
+/** One line of a journal entry, mirroring reporting.JournalEntryLine. */
+export interface JournalEntryLine {
+  line_no: number
+  account_id: number
+  account_code: string
+  account_name: string
+  memo: string | null
+  debit: string
+  credit: string
+}
+
+/** A journal entry with all of its lines, mirroring reporting.JournalEntry. */
+export interface JournalEntry {
+  id: number
+  entry_date: string
+  currency_code: string
+  reference: string | null
+  memo: string | null
+  status: string
+  lines: JournalEntryLine[]
+}
+
+export function getJournalEntry(id: number): Promise<JournalEntry> {
+  return get<JournalEntry>(`/journal-entries/${id}`)
 }
 
 /** One party's outstanding balance bucketed by days overdue, mirroring

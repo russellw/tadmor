@@ -195,6 +195,17 @@ function PaymentDetail({
                 {payment.reference !== null && ` · ${payment.reference}`}
                 {" · "}
                 {payment.currency_code}
+                {payment.journal_entry_id !== null && (
+                  <>
+                    {" · "}
+                    <Link
+                      to={`/journal-entries/${payment.journal_entry_id}`}
+                      className="text-primary hover:underline"
+                    >
+                      journal entry #{payment.journal_entry_id}
+                    </Link>
+                  </>
+                )}
               </p>
             </div>
             <div className="flex gap-2">

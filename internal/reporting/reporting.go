@@ -143,28 +143,151 @@ func accountActivityRows(ctx context.Context, q Querier, sql string, args ...any
 	return out, rows.Err()
 }
 
-// DocumentBalance is the outstanding-balance view of an invoice or bill.
-type DocumentBalance struct {
-	ID            int     `json:"id"`
-	Number        string  `json:"number"`
-	PartyID       int     `json:"party_id"`
-	Currency      string  `json:"currency_code"`
-	Date          string  `json:"date"`
-	DueDate       *string `json:"due_date"`
-	Status        string  `json:"status"`
-	Total         string  `json:"total"`
-	AmountApplied string  `json:"amount_applied"`
-	Balance       string  `json:"balance"`
-	PaymentStatus string  `json:"payment_status"`
+// LedgerRow is one posted journal line on an account's ledger. Memo prefers
+// the line's own memo, falling back to the entry's.
+type LedgerRow struct {
+	JournalEntryID int     `json:"journal_entry_id"`
+	EntryDate      string  `json:"entry_date"`
+	Reference      *string `json:"reference"`
+	Memo           *string `json:"memo"`
+	Debit          string  `json:"debit"`
+	Credit         string  `json:"credit"`
 }
+
+// AccountLedger returns an account's posted journal lines in entry order over
+// the inclusive [from, to] entry-date range (nil = unbounded), or ErrNotFound
+// when the account itself does not exist.
+func AccountLedger(ctx context.Context, q Querier, accountID int, from, to *string) ([]LedgerRow, error) {
+	var exists bool
+	if err := q.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM accounts WHERE id = $1)`, accountID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
+	rows, err := q.Query(ctx,
+		`SELECT je.id, je.entry_date::text, je.reference, COALESCE(jl.memo, je.memo),
+		        jl.debit::numeric(19,4)::text, jl.credit::numeric(19,4)::text
+		 FROM journal_lines jl
+		 JOIN journal_entries je ON je.id = jl.journal_entry_id
+		 WHERE jl.account_id = $1
+		   AND je.status = 'posted'
+		   AND ($2::date IS NULL OR je.entry_date >= $2::date)
+		   AND ($3::date IS NULL OR je.entry_date <= $3::date)
+		 ORDER BY je.entry_date, je.id, jl.line_no`, accountID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []LedgerRow{}
+	for rows.Next() {
+		var r LedgerRow
+		if err := rows.Scan(&r.JournalEntryID, &r.EntryDate, &r.Reference, &r.Memo,
+			&r.Debit, &r.Credit); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// JournalEntryLine is one line of a journal entry with its account resolved.
+type JournalEntryLine struct {
+	LineNo      int     `json:"line_no"`
+	AccountID   int     `json:"account_id"`
+	AccountCode string  `json:"account_code"`
+	AccountName string  `json:"account_name"`
+	Memo        *string `json:"memo"`
+	Debit       string  `json:"debit"`
+	Credit      string  `json:"credit"`
+}
+
+// JournalEntry is one journal entry with all of its lines.
+type JournalEntry struct {
+	ID        int                `json:"id"`
+	EntryDate string             `json:"entry_date"`
+	Currency  string             `json:"currency_code"`
+	Reference *string            `json:"reference"`
+	Memo      *string            `json:"memo"`
+	Status    string             `json:"status"`
+	Lines     []JournalEntryLine `json:"lines"`
+}
+
+// JournalEntryByID returns a journal entry and its lines, or ErrNotFound.
+func JournalEntryByID(ctx context.Context, q Querier, entryID int) (JournalEntry, error) {
+	var e JournalEntry
+	err := q.QueryRow(ctx,
+		`SELECT id, entry_date::text, currency_code, reference, memo, status
+		 FROM journal_entries WHERE id = $1`, entryID).Scan(
+		&e.ID, &e.EntryDate, &e.Currency, &e.Reference, &e.Memo, &e.Status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return e, ErrNotFound
+	}
+	if err != nil {
+		return e, err
+	}
+	rows, err := q.Query(ctx,
+		`SELECT jl.line_no, jl.account_id, a.code, a.name, jl.memo,
+		        jl.debit::numeric(19,4)::text, jl.credit::numeric(19,4)::text
+		 FROM journal_lines jl
+		 JOIN accounts a ON a.id = jl.account_id
+		 WHERE jl.journal_entry_id = $1
+		 ORDER BY jl.line_no`, entryID)
+	if err != nil {
+		return e, err
+	}
+	defer rows.Close()
+
+	e.Lines = []JournalEntryLine{}
+	for rows.Next() {
+		var l JournalEntryLine
+		if err := rows.Scan(&l.LineNo, &l.AccountID, &l.AccountCode, &l.AccountName,
+			&l.Memo, &l.Debit, &l.Credit); err != nil {
+			return e, err
+		}
+		e.Lines = append(e.Lines, l)
+	}
+	return e, rows.Err()
+}
+
+// DocumentBalance is the outstanding-balance view of an invoice or bill.
+// JournalEntryID is set once the document has been posted.
+type DocumentBalance struct {
+	ID             int     `json:"id"`
+	Number         string  `json:"number"`
+	PartyID        int     `json:"party_id"`
+	Currency       string  `json:"currency_code"`
+	Date           string  `json:"date"`
+	DueDate        *string `json:"due_date"`
+	Status         string  `json:"status"`
+	Total          string  `json:"total"`
+	AmountApplied  string  `json:"amount_applied"`
+	Balance        string  `json:"balance"`
+	PaymentStatus  string  `json:"payment_status"`
+	JournalEntryID *int    `json:"journal_entry_id"`
+}
+
+// The balance views predate the GL drill-down and do not expose
+// journal_entry_id, so the document queries join it in from the base table.
+const salesInvoiceBalancesSQL = `
+	SELECT b.invoice_id, b.invoice_number, b.customer_id, b.currency_code,
+	       b.invoice_date::text, b.due_date::text, b.status,
+	       b.total::numeric(19,4)::text, b.amount_applied::numeric(19,4)::text, b.balance::numeric(19,4)::text,
+	       b.payment_status, si.journal_entry_id
+	FROM sales_invoice_balances b JOIN sales_invoices si ON si.id = b.invoice_id`
+
+const purchaseBillBalancesSQL = `
+	SELECT b.bill_id, b.bill_number, b.supplier_id, b.currency_code,
+	       b.bill_date::text, b.due_date::text, b.status,
+	       b.total::numeric(19,4)::text, b.amount_applied::numeric(19,4)::text, b.balance::numeric(19,4)::text,
+	       b.payment_status, pb.journal_entry_id
+	FROM purchase_bill_balances b JOIN purchase_bills pb ON pb.id = b.bill_id`
 
 // SalesInvoiceBalances returns the balance view of every invoice, newest first.
 func SalesInvoiceBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
-	rows, err := q.Query(ctx,
-		`SELECT invoice_id, invoice_number, customer_id, currency_code,
-		        invoice_date::text, due_date::text, status,
-		        total::numeric(19,4)::text, amount_applied::numeric(19,4)::text, balance::numeric(19,4)::text, payment_status
-		 FROM sales_invoice_balances ORDER BY invoice_date DESC, invoice_id DESC`)
+	rows, err := q.Query(ctx, salesInvoiceBalancesSQL+` ORDER BY b.invoice_date DESC, b.invoice_id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +297,7 @@ func SalesInvoiceBalances(ctx context.Context, q Querier) ([]DocumentBalance, er
 	for rows.Next() {
 		var d DocumentBalance
 		if err := rows.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
-			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus); err != nil {
+			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -233,19 +356,12 @@ func SalesInvoiceLines(ctx context.Context, q Querier, invoiceID int) ([]SalesIn
 // SalesInvoiceBalance returns the balance view of a single invoice.
 func SalesInvoiceBalance(ctx context.Context, q Querier, invoiceID int) (DocumentBalance, error) {
 	return scanDocumentBalance(q.QueryRow(ctx,
-		`SELECT invoice_id, invoice_number, customer_id, currency_code,
-		        invoice_date::text, due_date::text, status,
-		        total::numeric(19,4)::text, amount_applied::numeric(19,4)::text, balance::numeric(19,4)::text, payment_status
-		 FROM sales_invoice_balances WHERE invoice_id = $1`, invoiceID))
+		salesInvoiceBalancesSQL+` WHERE b.invoice_id = $1`, invoiceID))
 }
 
 // PurchaseBillBalances returns the balance view of every bill, newest first.
 func PurchaseBillBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
-	rows, err := q.Query(ctx,
-		`SELECT bill_id, bill_number, supplier_id, currency_code,
-		        bill_date::text, due_date::text, status,
-		        total::numeric(19,4)::text, amount_applied::numeric(19,4)::text, balance::numeric(19,4)::text, payment_status
-		 FROM purchase_bill_balances ORDER BY bill_date DESC, bill_id DESC`)
+	rows, err := q.Query(ctx, purchaseBillBalancesSQL+` ORDER BY b.bill_date DESC, b.bill_id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +371,7 @@ func PurchaseBillBalances(ctx context.Context, q Querier) ([]DocumentBalance, er
 	for rows.Next() {
 		var d DocumentBalance
 		if err := rows.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
-			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus); err != nil {
+			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -314,16 +430,13 @@ func PurchaseBillLines(ctx context.Context, q Querier, billID int) ([]PurchaseBi
 // PurchaseBillBalance returns the balance view of a single bill.
 func PurchaseBillBalance(ctx context.Context, q Querier, billID int) (DocumentBalance, error) {
 	return scanDocumentBalance(q.QueryRow(ctx,
-		`SELECT bill_id, bill_number, supplier_id, currency_code,
-		        bill_date::text, due_date::text, status,
-		        total::numeric(19,4)::text, amount_applied::numeric(19,4)::text, balance::numeric(19,4)::text, payment_status
-		 FROM purchase_bill_balances WHERE bill_id = $1`, billID))
+		purchaseBillBalancesSQL+` WHERE b.bill_id = $1`, billID))
 }
 
 func scanDocumentBalance(row pgx.Row) (DocumentBalance, error) {
 	var d DocumentBalance
 	err := row.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
-		&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus)
+		&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return d, ErrNotFound
 	}
@@ -332,25 +445,27 @@ func scanDocumentBalance(row pgx.Row) (DocumentBalance, error) {
 
 // Payment is a customer or supplier payment with its applied/unapplied split.
 // There is no payment view in the schema; the split is computed here from the
-// application tables.
+// application tables. JournalEntryID is set once the payment has been posted.
 type Payment struct {
-	ID            int     `json:"id"`
-	PartyID       int     `json:"party_id"`
-	Date          string  `json:"date"`
-	Currency      string  `json:"currency_code"`
-	Amount        string  `json:"amount"`
-	Method        *string `json:"method"`
-	Reference     *string `json:"reference"`
-	Status        string  `json:"status"`
-	AmountApplied string  `json:"amount_applied"`
-	Unapplied     string  `json:"unapplied"`
+	ID             int     `json:"id"`
+	PartyID        int     `json:"party_id"`
+	Date           string  `json:"date"`
+	Currency       string  `json:"currency_code"`
+	Amount         string  `json:"amount"`
+	Method         *string `json:"method"`
+	Reference      *string `json:"reference"`
+	Status         string  `json:"status"`
+	AmountApplied  string  `json:"amount_applied"`
+	Unapplied      string  `json:"unapplied"`
+	JournalEntryID *int    `json:"journal_entry_id"`
 }
 
 const customerPaymentsSQL = `
 	SELECT cp.id, cp.customer_id, cp.payment_date::text, cp.currency_code,
 	       cp.amount::numeric(19,4)::text, cp.method, cp.reference, cp.status,
 	       COALESCE(pa.applied, 0)::numeric(19,4)::text,
-	       (cp.amount - COALESCE(pa.applied, 0))::numeric(19,4)::text
+	       (cp.amount - COALESCE(pa.applied, 0))::numeric(19,4)::text,
+	       cp.journal_entry_id
 	FROM customer_payments cp
 	LEFT JOIN (
 	    SELECT payment_id, sum(amount_applied) AS applied
@@ -361,7 +476,8 @@ const supplierPaymentsSQL = `
 	SELECT sp.id, sp.supplier_id, sp.payment_date::text, sp.currency_code,
 	       sp.amount::numeric(19,4)::text, sp.method, sp.reference, sp.status,
 	       COALESCE(ba.applied, 0)::numeric(19,4)::text,
-	       (sp.amount - COALESCE(ba.applied, 0))::numeric(19,4)::text
+	       (sp.amount - COALESCE(ba.applied, 0))::numeric(19,4)::text,
+	       sp.journal_entry_id
 	FROM supplier_payments sp
 	LEFT JOIN (
 	    SELECT payment_id, sum(amount_applied) AS applied
@@ -399,7 +515,7 @@ func paymentRows(ctx context.Context, q Querier, sql string) ([]Payment, error) 
 	for rows.Next() {
 		var p Payment
 		if err := rows.Scan(&p.ID, &p.PartyID, &p.Date, &p.Currency, &p.Amount,
-			&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied); err != nil {
+			&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied, &p.JournalEntryID); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -410,7 +526,7 @@ func paymentRows(ctx context.Context, q Querier, sql string) ([]Payment, error) 
 func scanPayment(row pgx.Row) (Payment, error) {
 	var p Payment
 	err := row.Scan(&p.ID, &p.PartyID, &p.Date, &p.Currency, &p.Amount,
-		&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied)
+		&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied, &p.JournalEntryID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}

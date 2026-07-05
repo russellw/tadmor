@@ -158,6 +158,60 @@ func TestReportingQueries(t *testing.T) {
 		}
 	})
 
+	t.Run("account ledger", func(t *testing.T) {
+		arID := queryID(`SELECT id FROM accounts WHERE code='1100'`)
+		rows, err := reporting.AccountLedger(ctx, tx, arID, nil, nil)
+		if err != nil {
+			t.Fatalf("account ledger: %v", err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("ledger rows = %d, want 1 (the posted invoice's A/R debit)", len(rows))
+		}
+		r := rows[0]
+		if r.Debit != "100.0000" || r.Credit != "0.0000" || r.JournalEntryID <= 0 {
+			t.Errorf("ledger row = %+v, want debit 100.0000 with an entry id", r)
+		}
+		// A range before the posting excludes it.
+		early, earlier := "1990-01-01", "1990-12-31"
+		if rows, err := reporting.AccountLedger(ctx, tx, arID, &early, &earlier); err != nil || len(rows) != 0 {
+			t.Errorf("out-of-range ledger = %+v, %v, want empty", rows, err)
+		}
+		// Missing account -> ErrNotFound.
+		if _, err := reporting.AccountLedger(ctx, tx, 999999, nil, nil); !errors.Is(err, reporting.ErrNotFound) {
+			t.Errorf("missing account err = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("journal entry", func(t *testing.T) {
+		// The invoice's balance view now carries the posted entry's id.
+		inv, err := reporting.SalesInvoiceBalance(ctx, tx, invID)
+		if err != nil || inv.JournalEntryID == nil {
+			t.Fatalf("invoice = %+v, %v, want a journal_entry_id", inv, err)
+		}
+		e, err := reporting.JournalEntryByID(ctx, tx, *inv.JournalEntryID)
+		if err != nil {
+			t.Fatalf("journal entry: %v", err)
+		}
+		if e.Status != "posted" || len(e.Lines) != 2 {
+			t.Fatalf("entry = %+v, want posted with 2 lines", e)
+		}
+		// Dr A/R 100 / Cr revenue 100, with accounts resolved.
+		byCode := map[string]reporting.JournalEntryLine{}
+		for _, l := range e.Lines {
+			byCode[l.AccountCode] = l
+		}
+		if l := byCode["1100"]; l.Debit != "100.0000" || l.AccountName != "Accounts Receivable" {
+			t.Errorf("A/R line = %+v, want debit 100.0000", l)
+		}
+		if l := byCode["4000"]; l.Credit != "100.0000" {
+			t.Errorf("revenue line = %+v, want credit 100.0000", l)
+		}
+		// Missing entry -> ErrNotFound.
+		if _, err := reporting.JournalEntryByID(ctx, tx, 999999); !errors.Is(err, reporting.ErrNotFound) {
+			t.Errorf("missing entry err = %v, want ErrNotFound", err)
+		}
+	})
+
 	t.Run("single invoice", func(t *testing.T) {
 		inv, err := reporting.SalesInvoiceBalance(ctx, tx, invID)
 		if err != nil {

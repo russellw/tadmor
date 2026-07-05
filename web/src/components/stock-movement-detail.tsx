@@ -168,6 +168,17 @@ export function StockMovementDetail() {
               <p className="text-sm text-muted-foreground">
                 {productName} · {warehouseName} · {movement.date}
                 {movement.reference !== null && ` · ${movement.reference}`}
+                {movement.journal_entry_id !== null && (
+                  <>
+                    {" · "}
+                    <Link
+                      to={`/journal-entries/${movement.journal_entry_id}`}
+                      className="text-primary hover:underline"
+                    >
+                      journal entry #{movement.journal_entry_id}
+                    </Link>
+                  </>
+                )}
               </p>
             </div>
             <Button variant="outline" asChild>

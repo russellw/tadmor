@@ -205,6 +205,17 @@ function DocumentDetail({
                 {document.due_date !== null && ` · due ${document.due_date}`}
                 {" · "}
                 {document.currency_code}
+                {document.journal_entry_id !== null && (
+                  <>
+                    {" · "}
+                    <Link
+                      to={`/journal-entries/${document.journal_entry_id}`}
+                      className="text-primary hover:underline"
+                    >
+                      journal entry #{document.journal_entry_id}
+                    </Link>
+                  </>
+                )}
               </p>
             </div>
             <div className="flex gap-2">

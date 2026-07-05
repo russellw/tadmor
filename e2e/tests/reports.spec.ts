@@ -29,4 +29,21 @@ test.describe("financial statements", () => {
       page.getByText("Nothing posted on or before this date."),
     ).toBeVisible()
   })
+
+  test("trial balance drills down to an account ledger", async ({ page }) => {
+    await page.goto("/reports/trial-balance")
+    // The seeded chart of accounts guarantees a Cash row; its name links to
+    // the account's ledger.
+    await page.getByRole("link", { name: "Cash", exact: true }).click()
+    await expect(
+      page.getByRole("heading", { name: /1000 — Cash/ }),
+    ).toBeVisible()
+
+    // The date filter round-trips: a range in the far past is always empty.
+    await page.getByLabel("From").fill("1990-01-01")
+    await page.getByLabel("To").fill("1990-01-31")
+    await expect(
+      page.getByText("No posted activity in this range."),
+    ).toBeVisible()
+  })
 })

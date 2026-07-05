@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 
 import { sumAmounts } from "@/lib/amount"
 import { getTrialBalance, type TrialBalanceRow } from "@/lib/api"
@@ -77,7 +78,14 @@ export function TrialBalance() {
             {rows.map((r) => (
               <TableRow key={r.account_id}>
                 <TableCell className="font-mono">{r.code}</TableCell>
-                <TableCell className="font-medium">{r.name}</TableCell>
+                <TableCell>
+                  <Link
+                    to={`/accounts/${r.account_id}/ledger`}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {r.name}
+                  </Link>
+                </TableCell>
                 <TableCell>
                   <Badge variant="secondary">{r.account_type}</Badge>
                 </TableCell>

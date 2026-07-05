@@ -5,6 +5,7 @@ import { logout, me, UNAUTHORIZED_EVENT, type User } from "@/lib/api"
 import { LoginForm } from "@/components/login-form"
 import { Button } from "@/components/ui/button"
 import { AccountForm } from "@/components/account-form"
+import { AccountLedger } from "@/components/account-ledger"
 import { APAging, ARAging } from "@/components/aging-report"
 import { BalanceSheetReport } from "@/components/balance-sheet"
 import { BillForm } from "@/components/bill-form"
@@ -16,6 +17,7 @@ import { BillDetail, InvoiceDetail } from "@/components/document-detail"
 import { Bills, Invoices } from "@/components/document-list"
 import { InventoryValuation } from "@/components/inventory-valuation"
 import { InvoiceForm } from "@/components/invoice-form"
+import { JournalEntryDetail } from "@/components/journal-entry"
 import {
   CustomerPaymentDetail,
   SupplierPaymentDetail,
@@ -159,6 +161,11 @@ export default function App() {
           <Route path="/accounts" element={<ChartOfAccounts />} />
           <Route path="/accounts/new" element={<AccountForm mode="create" />} />
           <Route path="/accounts/:id" element={<AccountForm mode="edit" />} />
+          <Route path="/accounts/:id/ledger" element={<AccountLedger />} />
+          <Route
+            path="/journal-entries/:id"
+            element={<JournalEntryDetail />}
+          />
           <Route path="/organizations" element={<Organizations />} />
           <Route
             path="/organizations/new"

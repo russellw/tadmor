@@ -309,6 +309,31 @@ func TestReadEndpoints(t *testing.T) {
 		t.Fatalf("balance-sheet: status = %d, body = %s", status, body)
 	}
 
+	// GL drill-down: the invoice carries its journal entry id; the entry
+	// endpoint resolves lines to accounts, and the A/R ledger shows the debit.
+	var invWithEntry struct {
+		JournalEntryID *int `json:"journal_entry_id"`
+	}
+	_, body = get(t, srv.URL+"/api/sales-invoices/"+strconv.Itoa(invID))
+	if err := json.Unmarshal([]byte(body), &invWithEntry); err != nil || invWithEntry.JournalEntryID == nil {
+		t.Fatalf("invoice journal_entry_id missing: %v (body: %s)", err, body)
+	}
+	if status, body := get(t, srv.URL+"/api/journal-entries/"+strconv.Itoa(*invWithEntry.JournalEntryID)); status != http.StatusOK ||
+		!strings.Contains(body, `"account_code":"1100"`) || !strings.Contains(body, `"credit":"50.0000"`) {
+		t.Fatalf("journal entry: status = %d, body = %s", status, body)
+	}
+	var arID int
+	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE code='1100'`).Scan(&arID); err != nil {
+		t.Fatalf("A/R account id: %v", err)
+	}
+	if status, body := get(t, srv.URL+"/api/accounts/"+strconv.Itoa(arID)+"/ledger"); status != http.StatusOK ||
+		!strings.Contains(body, `"debit":"50.0000"`) {
+		t.Fatalf("account ledger: status = %d, body = %s", status, body)
+	}
+	if status, body := get(t, srv.URL+"/api/accounts/999999/ledger"); status != http.StatusNotFound {
+		t.Fatalf("missing account ledger: status = %d, want 404 (body: %s)", status, body)
+	}
+
 	// Malformed date parameters -> 400.
 	if status, body := get(t, srv.URL+"/api/profit-and-loss?from=June"); status != http.StatusBadRequest {
 		t.Fatalf("bad from: status = %d, want 400 (body: %s)", status, body)
