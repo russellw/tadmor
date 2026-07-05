@@ -55,6 +55,18 @@ func TestReportingQueries(t *testing.T) {
 		t.Fatalf("post invoice: %v", err)
 	}
 
+	// A bill overdue by ~5 days lands in the 1-30 AP aging bucket.
+	suppID := queryID(`WITH o AS (INSERT INTO organizations (name) VALUES ('Globex') RETURNING id)
+	      INSERT INTO suppliers (organization_id, ap_account_id)
+	      SELECT o.id,(SELECT id FROM accounts WHERE code='2000') FROM o RETURNING id`)
+	billID := queryID(`INSERT INTO purchase_bills (bill_number, supplier_id, bill_date, due_date, currency_code)
+	      VALUES ('BILL-1',$1, current_date - 10, current_date - 5, 'USD') RETURNING id`, suppID)
+	exec(`INSERT INTO purchase_bill_lines (bill_id, line_no, description, quantity, unit_cost, expense_account_id)
+	      VALUES ($1,1,'Rent',1,40,(SELECT id FROM accounts WHERE code='6000'))`, billID)
+	if _, err := posting.PostPurchaseBill(ctx, tx, billID); err != nil {
+		t.Fatalf("post bill: %v", err)
+	}
+
 	// Stock for valuation (the valuation view sums movements; no GL posting needed).
 	invProd := queryID(`INSERT INTO products (sku, name, track_inventory, inventory_account_id, cogs_account_id)
 	      VALUES ('P-INV','Widget',true,(SELECT id FROM accounts WHERE code='1200'),(SELECT id FROM accounts WHERE code='5000')) RETURNING id`)
@@ -142,6 +154,55 @@ func TestReportingQueries(t *testing.T) {
 		a := aging[0]
 		if a.PartyID != custID || a.TotalOutstanding != "100.0000" || a.Days1To30 != "100.0000" || a.NotYetDue != "0.0000" {
 			t.Errorf("aging = %+v, want party %d, 100.0000 in days_1_30", a, custID)
+		}
+	})
+
+	t.Run("bill list", func(t *testing.T) {
+		bills, err := reporting.PurchaseBillBalances(ctx, tx)
+		if err != nil {
+			t.Fatalf("bill list: %v", err)
+		}
+		if len(bills) != 1 {
+			t.Fatalf("bill rows = %d, want 1", len(bills))
+		}
+		b := bills[0]
+		if b.ID != billID || b.Number != "BILL-1" || b.Status != "posted" || b.Total != "40.0000" {
+			t.Errorf("bill = %+v, want BILL-1 posted total 40.0000", b)
+		}
+	})
+
+	t.Run("bill lines", func(t *testing.T) {
+		lines, err := reporting.PurchaseBillLines(ctx, tx, billID)
+		if err != nil {
+			t.Fatalf("bill lines: %v", err)
+		}
+		if len(lines) != 1 {
+			t.Fatalf("line rows = %d, want 1", len(lines))
+		}
+		l := lines[0]
+		if l.LineNo != 1 || l.Description != "Rent" || l.Quantity != "1.0000" ||
+			l.UnitCost != "40.0000" || l.LineSubtotal != "40.0000" || l.TaxAmount != "0.0000" || l.LineTotal != "40.0000" {
+			t.Errorf("line = %+v, want 1 x 40.0000 = 40.0000 untaxed", l)
+		}
+	})
+
+	t.Run("lines of missing bill", func(t *testing.T) {
+		if _, err := reporting.PurchaseBillLines(ctx, tx, 999999); !errors.Is(err, reporting.ErrNotFound) {
+			t.Errorf("error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("AP aging", func(t *testing.T) {
+		aging, err := reporting.APaging(ctx, tx)
+		if err != nil {
+			t.Fatalf("ap aging: %v", err)
+		}
+		if len(aging) != 1 {
+			t.Fatalf("aging rows = %d, want 1", len(aging))
+		}
+		a := aging[0]
+		if a.PartyID != suppID || a.TotalOutstanding != "40.0000" || a.Days1To30 != "40.0000" || a.NotYetDue != "0.0000" {
+			t.Errorf("aging = %+v, want party %d, 40.0000 in days_1_30", a, suppID)
 		}
 	})
 

@@ -2,13 +2,14 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom"
 
 import { AccountForm } from "@/components/account-form"
 import { APAging, ARAging } from "@/components/aging-report"
+import { BillForm } from "@/components/bill-form"
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
+import { BillDetail, InvoiceDetail } from "@/components/document-detail"
+import { Bills, Invoices } from "@/components/document-list"
 import { InventoryValuation } from "@/components/inventory-valuation"
-import { InvoiceDetail } from "@/components/invoice-detail"
 import { InvoiceForm } from "@/components/invoice-form"
-import { Invoices } from "@/components/invoices"
 import { OrganizationForm } from "@/components/organization-form"
 import { Organizations } from "@/components/organizations"
 import { ProductForm } from "@/components/product-form"
@@ -29,7 +30,10 @@ const masterNavItems = [
   { to: "/products", label: "Products" },
 ]
 
-const documentNavItems = [{ to: "/invoices", label: "Invoices" }]
+const documentNavItems = [
+  { to: "/invoices", label: "Invoices" },
+  { to: "/bills", label: "Bills" },
+]
 
 const reportNavItems = [
   { to: "/reports/trial-balance", label: "Trial Balance" },
@@ -96,6 +100,9 @@ export default function App() {
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/new" element={<InvoiceForm />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
+          <Route path="/bills" element={<Bills />} />
+          <Route path="/bills/new" element={<BillForm />} />
+          <Route path="/bills/:id" element={<BillDetail />} />
           <Route path="/reports/trial-balance" element={<TrialBalance />} />
           <Route path="/reports/ar-aging" element={<ARAging />} />
           <Route path="/reports/ap-aging" element={<APAging />} />

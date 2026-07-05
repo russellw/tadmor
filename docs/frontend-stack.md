@@ -610,6 +610,26 @@ aging reflect it (285.00 A/R, 235.00 in the 1–30 bucket) → unpost → draft;
 probes: duplicate invoice number (409 shown inline), posting with no open
 period (422 shown inline), missing-invoice deep link.
 
+The **purchase-bill flow** mirrored the invoice flow on the purchasing side.
+Backend: `GET /purchase-bills` and `GET /purchase-bills/{id}/lines` in
+`internal/reporting` (tests extended with a posted bill + an AP-aging check).
+Since invoices and bills share the balance-view shape (`DocumentBalance`), the
+invoice list and detail screens were refactored into parameterized components —
+`document-list.tsx` (exports `Invoices` + `Bills`, plus the status/payment
+badges and the client-side party-name join helpers) and `document-detail.tsx`
+(exports `InvoiceDetail` + `BillDetail`; lines are normalized to a common view
+over `unit_price`/`unit_cost`) — following the `aging-report.tsx` precedent;
+`invoices.tsx` and `invoice-detail.tsx` were deleted. Only the form is a true
+mirror (`bill-form.tsx`): supplier instead of customer, unit cost instead of
+price, and an Expense Account select whose "Product's" default leans on
+posting's `COALESCE(l.expense_account_id, p.inventory_account_id)` fallback;
+picking a product prefills description/tax but deliberately not the cost (a
+product's `unit_price` is its sales price). Verified end-to-end headlessly:
+bill form → draft → post → AP aging and trial balance reflect it → unpost;
+probes: supplier-currency prefill, cost not prefilled from product, duplicate
+bill number (409 inline), missing-bill deep link; invoice screens
+regression-checked after the refactor.
+
 Next: tighten the CSP off `'unsafe-inline'` styles before launch; and (when
 reference data needs managing) add org/payment-terms/currency screens so those FK
 fields can become dropdowns instead of free text.

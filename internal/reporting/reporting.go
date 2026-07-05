@@ -150,6 +150,78 @@ func SalesInvoiceBalance(ctx context.Context, q Querier, invoiceID int) (Documen
 		 FROM sales_invoice_balances WHERE invoice_id = $1`, invoiceID))
 }
 
+// PurchaseBillBalances returns the balance view of every bill, newest first.
+func PurchaseBillBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
+	rows, err := q.Query(ctx,
+		`SELECT bill_id, bill_number, supplier_id, currency_code,
+		        bill_date::text, due_date::text, status,
+		        total::numeric(19,4)::text, amount_applied::numeric(19,4)::text, balance::numeric(19,4)::text, payment_status
+		 FROM purchase_bill_balances ORDER BY bill_date DESC, bill_id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []DocumentBalance{}
+	for rows.Next() {
+		var d DocumentBalance
+		if err := rows.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
+			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// PurchaseBillLine is one bill line with its database-computed money.
+type PurchaseBillLine struct {
+	LineNo       int     `json:"line_no"`
+	ProductID    *int    `json:"product_id"`
+	Description  string  `json:"description"`
+	Quantity     string  `json:"quantity"`
+	UnitCost     string  `json:"unit_cost"`
+	TaxCode      *string `json:"tax_code"`
+	TaxRate      string  `json:"tax_rate"`
+	LineSubtotal string  `json:"line_subtotal"`
+	TaxAmount    string  `json:"tax_amount"`
+	LineTotal    string  `json:"line_total"`
+}
+
+// PurchaseBillLines returns a bill's lines in order, or ErrNotFound when the
+// bill itself does not exist.
+func PurchaseBillLines(ctx context.Context, q Querier, billID int) ([]PurchaseBillLine, error) {
+	var exists bool
+	if err := q.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM purchase_bills WHERE id = $1)`, billID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
+	rows, err := q.Query(ctx,
+		`SELECT line_no, product_id, description,
+		        quantity::numeric(19,4)::text, unit_cost::numeric(19,4)::text, tax_code, tax_rate::numeric(7,4)::text,
+		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text
+		 FROM purchase_bill_lines WHERE bill_id = $1 ORDER BY line_no`, billID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []PurchaseBillLine{}
+	for rows.Next() {
+		var l PurchaseBillLine
+		if err := rows.Scan(&l.LineNo, &l.ProductID, &l.Description,
+			&l.Quantity, &l.UnitCost, &l.TaxCode, &l.TaxRate,
+			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
 // PurchaseBillBalance returns the balance view of a single bill.
 func PurchaseBillBalance(ctx context.Context, q Querier, billID int) (DocumentBalance, error) {
 	return scanDocumentBalance(q.QueryRow(ctx,

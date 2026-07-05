@@ -382,6 +382,75 @@ export function unpostSalesInvoice(
   return post<{ reversal_entry_id: number }>(`/sales-invoices/${id}/unpost`, {})
 }
 
+/** One bill line with its database-computed money, mirroring
+ *  reporting.PurchaseBillLine. */
+export interface PurchaseBillLine {
+  line_no: number
+  product_id: number | null
+  description: string
+  quantity: string
+  unit_cost: string
+  tax_code: string | null
+  tax_rate: string
+  line_subtotal: string
+  tax_amount: string
+  line_total: string
+}
+
+/** Input for one draft bill line, mirroring documents.PurchaseBillLineInput.
+ *  Empty quantity/unit_cost/tax_rate default server-side to 1/0/0. */
+export interface PurchaseBillLineInput {
+  product_id: number | null
+  description: string
+  quantity: string
+  unit_cost: string
+  expense_account_id: number | null
+  tax_code: string | null
+  tax_rate: string
+}
+
+/** Input for a draft bill, mirroring documents.PurchaseBillInput. */
+export interface PurchaseBillInput {
+  bill_number: string
+  supplier_id: number
+  bill_date: string
+  due_date: string | null
+  currency_code: string
+  reference: string | null
+  memo: string | null
+  lines: PurchaseBillLineInput[]
+}
+
+export function listPurchaseBills(): Promise<DocumentBalance[]> {
+  return get<DocumentBalance[]>("/purchase-bills")
+}
+
+export function getPurchaseBill(id: number): Promise<DocumentBalance> {
+  return get<DocumentBalance>(`/purchase-bills/${id}`)
+}
+
+export function getPurchaseBillLines(id: number): Promise<PurchaseBillLine[]> {
+  return get<PurchaseBillLine[]>(`/purchase-bills/${id}/lines`)
+}
+
+export function createPurchaseBill(
+  input: PurchaseBillInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/purchase-bills", input)
+}
+
+export function postPurchaseBill(
+  id: number,
+): Promise<{ journal_entry_id: number }> {
+  return post<{ journal_entry_id: number }>(`/purchase-bills/${id}/post`, {})
+}
+
+export function unpostPurchaseBill(
+  id: number,
+): Promise<{ reversal_entry_id: number }> {
+  return post<{ reversal_entry_id: number }>(`/purchase-bills/${id}/unpost`, {})
+}
+
 // Reporting endpoints are read-only views over posted journal entries. All
 // monetary values are exact decimal strings (see reporting.go); render them
 // with the helpers in @/lib/amount, never through Number.
