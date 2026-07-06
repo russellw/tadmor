@@ -13,8 +13,19 @@ import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
 import { FiscalYearForm } from "@/components/fiscal-year-form"
-import { BillDetail, InvoiceDetail } from "@/components/document-detail"
-import { Bills, Invoices } from "@/components/document-list"
+import { CreditNoteForm, SupplierCreditForm } from "@/components/credit-note-form"
+import {
+  BillDetail,
+  CreditNoteDetail,
+  InvoiceDetail,
+  SupplierCreditDetail,
+} from "@/components/document-detail"
+import {
+  Bills,
+  CreditNotes,
+  Invoices,
+  SupplierCredits,
+} from "@/components/document-list"
 import { InventoryValuation } from "@/components/inventory-valuation"
 import { InvoiceForm } from "@/components/invoice-form"
 import { JournalEntryDetail } from "@/components/journal-entry"
@@ -76,6 +87,8 @@ const adminNavItems = [{ to: "/users", label: "Users" }]
 const documentNavItems = [
   { to: "/invoices", label: "Invoices" },
   { to: "/bills", label: "Bills" },
+  { to: "/credit-notes", label: "Credit Notes" },
+  { to: "/supplier-credits", label: "Supplier Credits" },
   { to: "/customer-payments", label: "Customer Payments" },
   { to: "/supplier-payments", label: "Supplier Payments" },
   { to: "/stock-movements", label: "Stock" },
@@ -242,6 +255,18 @@ export default function App() {
           <Route path="/bills" element={<Bills />} />
           <Route path="/bills/new" element={<BillForm />} />
           <Route path="/bills/:id" element={<BillDetail />} />
+          <Route path="/credit-notes" element={<CreditNotes />} />
+          <Route path="/credit-notes/new" element={<CreditNoteForm />} />
+          <Route path="/credit-notes/:id" element={<CreditNoteDetail />} />
+          <Route path="/supplier-credits" element={<SupplierCredits />} />
+          <Route
+            path="/supplier-credits/new"
+            element={<SupplierCreditForm />}
+          />
+          <Route
+            path="/supplier-credits/:id"
+            element={<SupplierCreditDetail />}
+          />
           <Route path="/customer-payments" element={<CustomerPayments />} />
           <Route
             path="/customer-payments/new"

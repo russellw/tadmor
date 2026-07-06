@@ -1,19 +1,32 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
-import { sumAmounts } from "@/lib/amount"
+import { isZeroAmount, sumAmounts } from "@/lib/amount"
 import { useCurrentUser } from "@/lib/current-user"
 import {
   ApiError,
+  applyPurchaseCreditNote,
+  applySalesCreditNote,
   getPurchaseBill,
   getPurchaseBillLines,
+  getPurchaseCreditNote,
+  getPurchaseCreditNoteApplications,
+  getPurchaseCreditNoteLines,
+  getSalesCreditNote,
+  getSalesCreditNoteApplications,
+  getSalesCreditNoteLines,
   getSalesInvoice,
   getSalesInvoiceLines,
   postPurchaseBill,
+  postPurchaseCreditNote,
+  postSalesCreditNote,
   postSalesInvoice,
   unpostPurchaseBill,
+  unpostPurchaseCreditNote,
+  unpostSalesCreditNote,
   unpostSalesInvoice,
   type DocumentBalance,
+  type PaymentApplication,
 } from "@/lib/api"
 import { AmountCell } from "@/components/amount-cell"
 import {
@@ -62,6 +75,20 @@ async function fetchBillLines(id: number): Promise<LineView[]> {
   }))
 }
 
+async function fetchCreditNoteLines(id: number): Promise<LineView[]> {
+  return (await getSalesCreditNoteLines(id)).map((l) => ({
+    ...l,
+    unit_amount: l.unit_price,
+  }))
+}
+
+async function fetchSupplierCreditLines(id: number): Promise<LineView[]> {
+  return (await getPurchaseCreditNoteLines(id)).map((l) => ({
+    ...l,
+    unit_amount: l.unit_cost,
+  }))
+}
+
 export function InvoiceDetail() {
   return (
     <DocumentDetail
@@ -92,33 +119,90 @@ export function BillDetail() {
   )
 }
 
+export function CreditNoteDetail() {
+  return (
+    <DocumentDetail
+      titlePrefix="Credit Note"
+      backPath="/credit-notes"
+      unitLabel="Unit Price"
+      balanceLabel="Unapplied"
+      fetchDocument={getSalesCreditNote}
+      fetchLines={fetchCreditNoteLines}
+      fetchPartyNames={fetchCustomerNames}
+      post={postSalesCreditNote}
+      unpost={unpostSalesCreditNote}
+      apply={applySalesCreditNote}
+      fetchApplications={getSalesCreditNoteApplications}
+      appliedDocLabel="Invoice"
+      appliedDocBasePath="/invoices"
+      applyHint="Apply allocates the unapplied credit to the customer's open invoices, oldest first."
+    />
+  )
+}
+
+export function SupplierCreditDetail() {
+  return (
+    <DocumentDetail
+      titlePrefix="Supplier Credit"
+      backPath="/supplier-credits"
+      unitLabel="Unit Cost"
+      balanceLabel="Unapplied"
+      fetchDocument={getPurchaseCreditNote}
+      fetchLines={fetchSupplierCreditLines}
+      fetchPartyNames={fetchSupplierNames}
+      post={postPurchaseCreditNote}
+      unpost={unpostPurchaseCreditNote}
+      apply={applyPurchaseCreditNote}
+      fetchApplications={getPurchaseCreditNoteApplications}
+      appliedDocLabel="Bill"
+      appliedDocBasePath="/bills"
+      applyHint="Apply allocates the unapplied credit to the supplier's open bills, oldest first."
+    />
+  )
+}
+
 // One document: header, database-computed lines, and the lifecycle actions.
 // Post writes the journal entry; Unpost reverses it and returns the document
-// to draft.
+// to draft. Credit notes additionally pass apply/fetchApplications: Apply
+// allocates the unapplied credit to open documents oldest-first, and the
+// allocations render in an "Applied to" table.
 function DocumentDetail({
   titlePrefix,
   backPath,
   unitLabel,
+  balanceLabel = "Balance due",
   fetchDocument,
   fetchLines,
   fetchPartyNames,
   post,
   unpost,
+  apply,
+  fetchApplications,
+  appliedDocLabel = "",
+  appliedDocBasePath = "",
+  applyHint = "",
 }: {
   titlePrefix: string
   backPath: string
   unitLabel: string
+  balanceLabel?: string
   fetchDocument: (id: number) => Promise<DocumentBalance>
   fetchLines: (id: number) => Promise<LineView[]>
   fetchPartyNames: () => Promise<Map<number, string>>
   post: (id: number) => Promise<unknown>
   unpost: (id: number) => Promise<unknown>
+  apply?: (id: number) => Promise<unknown>
+  fetchApplications?: (id: number) => Promise<PaymentApplication[]>
+  appliedDocLabel?: string
+  appliedDocBasePath?: string
+  applyHint?: string
 }) {
   const { id } = useParams()
   const documentId = Number(id)
 
   const [document, setDocument] = useState<DocumentBalance | null>(null)
   const [lines, setLines] = useState<LineView[] | null>(null)
+  const [applications, setApplications] = useState<PaymentApplication[]>([])
   const [partyName, setPartyName] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [acting, setActing] = useState(false)
@@ -126,13 +210,19 @@ function DocumentDetail({
   const [actionError, setActionError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const [doc, lns, names] = await Promise.all([
+    const [doc, lns, apps, names] = await Promise.all([
       fetchDocument(documentId),
       fetchLines(documentId),
+      fetchApplications?.(documentId) ?? Promise.resolve([]),
       fetchPartyNames(),
     ])
-    return { doc, lns, name: names.get(doc.party_id) ?? `#${doc.party_id}` }
-  }, [documentId, fetchDocument, fetchLines, fetchPartyNames])
+    return {
+      doc,
+      lns,
+      apps,
+      name: names.get(doc.party_id) ?? `#${doc.party_id}`,
+    }
+  }, [documentId, fetchDocument, fetchLines, fetchApplications, fetchPartyNames])
 
   useEffect(() => {
     if (!Number.isInteger(documentId) || documentId <= 0) {
@@ -141,10 +231,11 @@ function DocumentDetail({
     }
     let cancelled = false
     load()
-      .then(({ doc, lns, name }) => {
+      .then(({ doc, lns, apps, name }) => {
         if (cancelled) return
         setDocument(doc)
         setLines(lns)
+        setApplications(apps)
         setPartyName(name)
       })
       .catch((err: unknown) => {
@@ -162,9 +253,10 @@ function DocumentDetail({
     setActionError(null)
     action(documentId)
       .then(load)
-      .then(({ doc, lns, name }) => {
+      .then(({ doc, lns, apps, name }) => {
         setDocument(doc)
         setLines(lns)
+        setApplications(apps)
         setPartyName(name)
         setActing(false)
       })
@@ -226,6 +318,13 @@ function DocumentDetail({
                   {acting ? "Posting…" : "Post to ledger"}
                 </Button>
               )}
+              {apply !== undefined &&
+                document.status === "posted" &&
+                !isZeroAmount(document.balance) && (
+                  <Button disabled={acting} onClick={() => runAction(apply)}>
+                    {acting ? "Applying…" : "Apply"}
+                  </Button>
+                )}
               {document.status === "posted" && currentUser.is_admin && (
                 <Button
                   variant="outline"
@@ -307,11 +406,50 @@ function DocumentDetail({
                   <AmountCell value={document.amount_applied} />
                 </TableRow>
                 <TableRow>
-                  <TableCell colSpan={6}>Balance due</TableCell>
+                  <TableCell colSpan={6}>{balanceLabel}</TableCell>
                   <AmountCell value={document.balance} />
                 </TableRow>
               </TableFooter>
             </Table>
+          )}
+
+          {fetchApplications !== undefined && (
+            <div className="mt-8">
+              <h2 className="mb-3 text-sm font-semibold">Applied to</h2>
+              {applications.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Not applied to any {appliedDocLabel.toLowerCase()} yet.
+                  {document.status === "posted" && ` ${applyHint}`}
+                </p>
+              )}
+              {applications.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{appliedDocLabel}</TableHead>
+                      <TableHead className="text-right">
+                        Amount Applied
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {applications.map((a) => (
+                      <TableRow key={a.document_id}>
+                        <TableCell className="font-mono">
+                          <Link
+                            to={`${appliedDocBasePath}/${a.document_id}`}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            {a.document_number}
+                          </Link>
+                        </TableCell>
+                        <AmountCell value={a.amount_applied} />
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
           )}
         </>
       )}

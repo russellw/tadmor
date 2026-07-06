@@ -5,6 +5,8 @@ import {
   listCustomers,
   listOrganizations,
   listPurchaseBills,
+  listPurchaseCreditNotes,
+  listSalesCreditNotes,
   listSalesInvoices,
   listSuppliers,
   type DocumentBalance,
@@ -55,6 +57,44 @@ export function Bills() {
   )
 }
 
+// Credit notes share the DocumentBalance row shape too: due date is always
+// null (credits do not age) and payment_status carries the application
+// status (open/partial/applied/void).
+
+export function CreditNotes() {
+  return (
+    <DocumentList
+      title="Credit Notes"
+      description="Credit issued to customers, newest first."
+      partyLabel="Customer"
+      paymentLabel="Applied"
+      showDue={false}
+      newLabel="New credit note"
+      basePath="/credit-notes"
+      emptyMessage="No credit notes yet."
+      fetchDocuments={listSalesCreditNotes}
+      fetchPartyNames={fetchCustomerNames}
+    />
+  )
+}
+
+export function SupplierCredits() {
+  return (
+    <DocumentList
+      title="Supplier Credits"
+      description="Credit received from suppliers, newest first."
+      partyLabel="Supplier"
+      paymentLabel="Applied"
+      showDue={false}
+      newLabel="New supplier credit"
+      basePath="/supplier-credits"
+      emptyMessage="No supplier credits yet."
+      fetchDocuments={listPurchaseCreditNotes}
+      fetchPartyNames={fetchSupplierNames}
+    />
+  )
+}
+
 // A document names its party only by id; the display name lives on the
 // organization behind the customer/supplier role, so join client-side.
 export async function fetchCustomerNames(): Promise<Map<number, string>> {
@@ -91,11 +131,12 @@ export function StatusBadge({ status }: { status: string }) {
   return <Badge variant={variant}>{status}</Badge>
 }
 
-// Payment progress badge (unpaid → partial → paid), shared with the detail
-// screen.
+// Payment/application progress badge (unpaid → partial → paid for invoices
+// and bills, open → partial → applied for credit notes), shared with the
+// detail screen.
 export function PaymentBadge({ status }: { status: string }) {
   const variant =
-    status === "paid"
+    status === "paid" || status === "applied"
       ? ("default" as const)
       : status === "partial"
         ? ("secondary" as const)
@@ -107,6 +148,8 @@ function DocumentList({
   title,
   description,
   partyLabel,
+  paymentLabel = "Payment",
+  showDue = true,
   newLabel,
   basePath,
   emptyMessage,
@@ -116,6 +159,8 @@ function DocumentList({
   title: string
   description: string
   partyLabel: string
+  paymentLabel?: string
+  showDue?: boolean
   newLabel: string
   basePath: string
   emptyMessage: string
@@ -177,9 +222,9 @@ function DocumentList({
               <TableHead>Number</TableHead>
               <TableHead>{partyLabel}</TableHead>
               <TableHead>Date</TableHead>
-              <TableHead>Due</TableHead>
+              {showDue && <TableHead>Due</TableHead>}
               <TableHead>Status</TableHead>
-              <TableHead>Payment</TableHead>
+              <TableHead>{paymentLabel}</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="text-right">Balance</TableHead>
             </TableRow>
@@ -201,9 +246,11 @@ function DocumentList({
                 <TableCell className="text-muted-foreground">
                   {doc.date}
                 </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {doc.due_date ?? "—"}
-                </TableCell>
+                {showDue && (
+                  <TableCell className="text-muted-foreground">
+                    {doc.due_date ?? "—"}
+                  </TableCell>
+                )}
                 <TableCell>
                   <StatusBadge status={doc.status} />
                 </TableCell>

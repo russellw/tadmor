@@ -714,6 +714,135 @@ export function unpostPurchaseBill(
   return post<{ reversal_entry_id: number }>(`/purchase-bills/${id}/unpost`, {})
 }
 
+// Credit notes reuse the invoice/bill shapes: DocumentBalance for the balance
+// views (due_date is always null — credits do not age — and payment_status
+// carries the application status: open/partial/applied/void), and the
+// invoice/bill line types for lines.
+
+/** Input for a draft sales credit note, mirroring
+ *  documents.SalesCreditNoteInput. Lines reuse the invoice line shape. */
+export interface SalesCreditNoteInput {
+  credit_note_number: string
+  customer_id: number
+  credit_note_date: string
+  currency_code: string
+  reference: string | null
+  memo: string | null
+  lines: SalesInvoiceLineInput[]
+}
+
+/** Input for a draft purchase credit note, mirroring
+ *  documents.PurchaseCreditNoteInput. Lines reuse the bill line shape. */
+export interface PurchaseCreditNoteInput {
+  credit_note_number: string
+  supplier_id: number
+  credit_note_date: string
+  currency_code: string
+  reference: string | null
+  memo: string | null
+  lines: PurchaseBillLineInput[]
+}
+
+export function listSalesCreditNotes(): Promise<DocumentBalance[]> {
+  return get<DocumentBalance[]>("/sales-credit-notes")
+}
+
+export function getSalesCreditNote(id: number): Promise<DocumentBalance> {
+  return get<DocumentBalance>(`/sales-credit-notes/${id}`)
+}
+
+export function getSalesCreditNoteLines(
+  id: number,
+): Promise<SalesInvoiceLine[]> {
+  return get<SalesInvoiceLine[]>(`/sales-credit-notes/${id}/lines`)
+}
+
+export function getSalesCreditNoteApplications(
+  id: number,
+): Promise<PaymentApplication[]> {
+  return get<PaymentApplication[]>(`/sales-credit-notes/${id}/applications`)
+}
+
+export function createSalesCreditNote(
+  input: SalesCreditNoteInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/sales-credit-notes", input)
+}
+
+export function postSalesCreditNote(
+  id: number,
+): Promise<{ journal_entry_id: number }> {
+  return post<{ journal_entry_id: number }>(
+    `/sales-credit-notes/${id}/post`,
+    {},
+  )
+}
+
+export function applySalesCreditNote(
+  id: number,
+): Promise<{ applications: { document_id: number; amount: string }[] }> {
+  return post(`/sales-credit-notes/${id}/apply`, {})
+}
+
+export function unpostSalesCreditNote(
+  id: number,
+): Promise<{ reversal_entry_id: number }> {
+  return post<{ reversal_entry_id: number }>(
+    `/sales-credit-notes/${id}/unpost`,
+    {},
+  )
+}
+
+export function listPurchaseCreditNotes(): Promise<DocumentBalance[]> {
+  return get<DocumentBalance[]>("/purchase-credit-notes")
+}
+
+export function getPurchaseCreditNote(id: number): Promise<DocumentBalance> {
+  return get<DocumentBalance>(`/purchase-credit-notes/${id}`)
+}
+
+export function getPurchaseCreditNoteLines(
+  id: number,
+): Promise<PurchaseBillLine[]> {
+  return get<PurchaseBillLine[]>(`/purchase-credit-notes/${id}/lines`)
+}
+
+export function getPurchaseCreditNoteApplications(
+  id: number,
+): Promise<PaymentApplication[]> {
+  return get<PaymentApplication[]>(`/purchase-credit-notes/${id}/applications`)
+}
+
+export function createPurchaseCreditNote(
+  input: PurchaseCreditNoteInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/purchase-credit-notes", input)
+}
+
+export function postPurchaseCreditNote(
+  id: number,
+): Promise<{ journal_entry_id: number }> {
+  return post<{ journal_entry_id: number }>(
+    `/purchase-credit-notes/${id}/post`,
+    {},
+  )
+}
+
+export function applyPurchaseCreditNote(
+  id: number,
+): Promise<{ applications: { document_id: number; amount: string }[] }> {
+  return post(`/purchase-credit-notes/${id}/apply`, {})
+}
+
+export function unpostPurchaseCreditNote(
+  id: number,
+): Promise<{ reversal_entry_id: number }> {
+  return post<{ reversal_entry_id: number }>(
+    `/purchase-credit-notes/${id}/unpost`,
+    {},
+  )
+}
+
 /** A customer or supplier payment with its applied/unapplied split, mirroring
  *  reporting.Payment. */
 export interface Payment {
