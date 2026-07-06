@@ -48,6 +48,8 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	// Create draft subledger documents.
 	api.HandleFunc("POST /sales-invoices", s.createSalesInvoice)
 	api.HandleFunc("POST /purchase-bills", s.createPurchaseBill)
+	api.HandleFunc("POST /sales-credit-notes", s.createSalesCreditNote)
+	api.HandleFunc("POST /purchase-credit-notes", s.createPurchaseCreditNote)
 	api.HandleFunc("POST /customer-payments", s.createCustomerPayment)
 	api.HandleFunc("POST /supplier-payments", s.createSupplierPayment)
 	api.HandleFunc("POST /stock-movements", s.createStockMovement)
@@ -55,18 +57,25 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	// Post a draft subledger document to the general ledger.
 	api.HandleFunc("POST /sales-invoices/{id}/post", s.postSalesInvoice)
 	api.HandleFunc("POST /purchase-bills/{id}/post", s.postPurchaseBill)
+	api.HandleFunc("POST /sales-credit-notes/{id}/post", s.postSalesCreditNote)
+	api.HandleFunc("POST /purchase-credit-notes/{id}/post", s.postPurchaseCreditNote)
 	api.HandleFunc("POST /customer-payments/{id}/post", s.postCustomerPayment)
 	api.HandleFunc("POST /supplier-payments/{id}/post", s.postSupplierPayment)
 	api.HandleFunc("POST /stock-movements/{id}/post", s.postStockMovement)
 
-	// Auto-apply a payment to the counterparty's open documents, oldest first.
+	// Auto-apply a payment or credit note to the counterparty's open
+	// documents, oldest first.
 	api.HandleFunc("POST /customer-payments/{id}/apply", s.applyCustomerPayment)
 	api.HandleFunc("POST /supplier-payments/{id}/apply", s.applySupplierPayment)
+	api.HandleFunc("POST /sales-credit-notes/{id}/apply", s.applySalesCreditNote)
+	api.HandleFunc("POST /purchase-credit-notes/{id}/apply", s.applyPurchaseCreditNote)
 
 	// Unpost a document: reverse its journal entry and return it to draft.
 	// Admin-only — it is the escape hatch that rewrites posted history.
 	api.HandleFunc("POST /sales-invoices/{id}/unpost", s.admin(s.unpostSalesInvoice))
 	api.HandleFunc("POST /purchase-bills/{id}/unpost", s.admin(s.unpostPurchaseBill))
+	api.HandleFunc("POST /sales-credit-notes/{id}/unpost", s.admin(s.unpostSalesCreditNote))
+	api.HandleFunc("POST /purchase-credit-notes/{id}/unpost", s.admin(s.unpostPurchaseCreditNote))
 	api.HandleFunc("POST /customer-payments/{id}/unpost", s.admin(s.unpostCustomerPayment))
 	api.HandleFunc("POST /supplier-payments/{id}/unpost", s.admin(s.unpostSupplierPayment))
 	api.HandleFunc("POST /stock-movements/{id}/unpost", s.admin(s.unpostStockMovement))
@@ -97,6 +106,14 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /purchase-bills", s.listPurchaseBills)
 	api.HandleFunc("GET /purchase-bills/{id}", s.getPurchaseBill)
 	api.HandleFunc("GET /purchase-bills/{id}/lines", s.getPurchaseBillLines)
+	api.HandleFunc("GET /sales-credit-notes", s.listSalesCreditNotes)
+	api.HandleFunc("GET /sales-credit-notes/{id}", s.getSalesCreditNote)
+	api.HandleFunc("GET /sales-credit-notes/{id}/lines", s.getSalesCreditNoteLines)
+	api.HandleFunc("GET /sales-credit-notes/{id}/applications", s.getSalesCreditNoteApplications)
+	api.HandleFunc("GET /purchase-credit-notes", s.listPurchaseCreditNotes)
+	api.HandleFunc("GET /purchase-credit-notes/{id}", s.getPurchaseCreditNote)
+	api.HandleFunc("GET /purchase-credit-notes/{id}/lines", s.getPurchaseCreditNoteLines)
+	api.HandleFunc("GET /purchase-credit-notes/{id}/applications", s.getPurchaseCreditNoteApplications)
 
 	// User administration (admins only).
 	api.HandleFunc("GET /users", s.admin(s.listUsers))

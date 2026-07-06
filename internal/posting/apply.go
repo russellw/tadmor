@@ -42,9 +42,9 @@ WITH p AS (
     FROM customer_payments cp WHERE cp.id = $1
 ),
 open_inv AS (
+    -- Availability counts payments and credit notes combined (000012).
     SELECT si.id AS invoice_id, si.invoice_date,
-           si.total - COALESCE((SELECT sum(amount_applied) FROM payment_applications
-                                WHERE invoice_id = si.id), 0) AS available
+           si.total - invoice_amount_settled(si.id) AS available
     FROM sales_invoices si JOIN p ON si.customer_id = p.customer_id
                                  AND si.currency_code = p.currency_code
     WHERE si.status = 'posted'
@@ -104,9 +104,9 @@ WITH p AS (
     FROM supplier_payments sp WHERE sp.id = $1
 ),
 open_bill AS (
+    -- Availability counts payments and credit notes combined (000012).
     SELECT pb.id AS bill_id, pb.bill_date,
-           pb.total - COALESCE((SELECT sum(amount_applied) FROM bill_applications
-                                WHERE bill_id = pb.id), 0) AS available
+           pb.total - bill_amount_settled(pb.id) AS available
     FROM purchase_bills pb JOIN p ON pb.supplier_id = p.supplier_id
                                  AND pb.currency_code = p.currency_code
     WHERE pb.status = 'posted'

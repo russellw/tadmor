@@ -287,22 +287,7 @@ const purchaseBillBalancesSQL = `
 
 // SalesInvoiceBalances returns the balance view of every invoice, newest first.
 func SalesInvoiceBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
-	rows, err := q.Query(ctx, salesInvoiceBalancesSQL+` ORDER BY b.invoice_date DESC, b.invoice_id DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := []DocumentBalance{}
-	for rows.Next() {
-		var d DocumentBalance
-		if err := rows.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
-			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID); err != nil {
-			return nil, err
-		}
-		out = append(out, d)
-	}
-	return out, rows.Err()
+	return documentBalanceRows(ctx, q, salesInvoiceBalancesSQL+` ORDER BY b.invoice_date DESC, b.invoice_id DESC`)
 }
 
 // SalesInvoiceLine is one invoice line with its database-computed money.
@@ -361,22 +346,7 @@ func SalesInvoiceBalance(ctx context.Context, q Querier, invoiceID int) (Documen
 
 // PurchaseBillBalances returns the balance view of every bill, newest first.
 func PurchaseBillBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
-	rows, err := q.Query(ctx, purchaseBillBalancesSQL+` ORDER BY b.bill_date DESC, b.bill_id DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := []DocumentBalance{}
-	for rows.Next() {
-		var d DocumentBalance
-		if err := rows.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
-			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID); err != nil {
-			return nil, err
-		}
-		out = append(out, d)
-	}
-	return out, rows.Err()
+	return documentBalanceRows(ctx, q, purchaseBillBalancesSQL+` ORDER BY b.bill_date DESC, b.bill_id DESC`)
 }
 
 // PurchaseBillLine is one bill line with its database-computed money.
@@ -433,6 +403,25 @@ func PurchaseBillBalance(ctx context.Context, q Querier, billID int) (DocumentBa
 		purchaseBillBalancesSQL+` WHERE b.bill_id = $1`, billID))
 }
 
+func documentBalanceRows(ctx context.Context, q Querier, sql string) ([]DocumentBalance, error) {
+	rows, err := q.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []DocumentBalance{}
+	for rows.Next() {
+		var d DocumentBalance
+		if err := rows.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
+			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 func scanDocumentBalance(row pgx.Row) (DocumentBalance, error) {
 	var d DocumentBalance
 	err := row.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
@@ -441,6 +430,139 @@ func scanDocumentBalance(row pgx.Row) (DocumentBalance, error) {
 		return d, ErrNotFound
 	}
 	return d, err
+}
+
+// Credit notes reuse the invoice/bill row shapes: DocumentBalance for the
+// balance views (due_date is always nil — credits do not age — and
+// payment_status carries the application status: open/partial/applied/void),
+// SalesInvoiceLine / PurchaseBillLine for the lines.
+
+const salesCreditNoteBalancesSQL = `
+	SELECT b.credit_note_id, b.credit_note_number, b.customer_id, b.currency_code,
+	       b.credit_note_date::text, NULL::text, b.status,
+	       b.total::numeric(19,4)::text, b.amount_applied::numeric(19,4)::text, b.balance::numeric(19,4)::text,
+	       b.application_status, cn.journal_entry_id
+	FROM sales_credit_note_balances b JOIN sales_credit_notes cn ON cn.id = b.credit_note_id`
+
+const purchaseCreditNoteBalancesSQL = `
+	SELECT b.credit_note_id, b.credit_note_number, b.supplier_id, b.currency_code,
+	       b.credit_note_date::text, NULL::text, b.status,
+	       b.total::numeric(19,4)::text, b.amount_applied::numeric(19,4)::text, b.balance::numeric(19,4)::text,
+	       b.application_status, cn.journal_entry_id
+	FROM purchase_credit_note_balances b JOIN purchase_credit_notes cn ON cn.id = b.credit_note_id`
+
+// SalesCreditNoteBalances returns the balance view of every sales credit
+// note, newest first.
+func SalesCreditNoteBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
+	return documentBalanceRows(ctx, q,
+		salesCreditNoteBalancesSQL+` ORDER BY b.credit_note_date DESC, b.credit_note_id DESC`)
+}
+
+// SalesCreditNoteBalance returns the balance view of a single sales credit note.
+func SalesCreditNoteBalance(ctx context.Context, q Querier, noteID int) (DocumentBalance, error) {
+	return scanDocumentBalance(q.QueryRow(ctx,
+		salesCreditNoteBalancesSQL+` WHERE b.credit_note_id = $1`, noteID))
+}
+
+// PurchaseCreditNoteBalances returns the balance view of every purchase
+// credit note, newest first.
+func PurchaseCreditNoteBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
+	return documentBalanceRows(ctx, q,
+		purchaseCreditNoteBalancesSQL+` ORDER BY b.credit_note_date DESC, b.credit_note_id DESC`)
+}
+
+// PurchaseCreditNoteBalance returns the balance view of a single purchase credit note.
+func PurchaseCreditNoteBalance(ctx context.Context, q Querier, noteID int) (DocumentBalance, error) {
+	return scanDocumentBalance(q.QueryRow(ctx,
+		purchaseCreditNoteBalancesSQL+` WHERE b.credit_note_id = $1`, noteID))
+}
+
+// SalesCreditNoteLines returns a sales credit note's lines in order, or
+// ErrNotFound when the note itself does not exist.
+func SalesCreditNoteLines(ctx context.Context, q Querier, noteID int) ([]SalesInvoiceLine, error) {
+	var exists bool
+	if err := q.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM sales_credit_notes WHERE id = $1)`, noteID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
+	rows, err := q.Query(ctx,
+		`SELECT line_no, product_id, description,
+		        quantity::numeric(19,4)::text, unit_price::numeric(19,4)::text, tax_code, tax_rate::numeric(7,4)::text,
+		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text
+		 FROM sales_credit_note_lines WHERE credit_note_id = $1 ORDER BY line_no`, noteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []SalesInvoiceLine{}
+	for rows.Next() {
+		var l SalesInvoiceLine
+		if err := rows.Scan(&l.LineNo, &l.ProductID, &l.Description,
+			&l.Quantity, &l.UnitPrice, &l.TaxCode, &l.TaxRate,
+			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// PurchaseCreditNoteLines returns a purchase credit note's lines in order, or
+// ErrNotFound when the note itself does not exist.
+func PurchaseCreditNoteLines(ctx context.Context, q Querier, noteID int) ([]PurchaseBillLine, error) {
+	var exists bool
+	if err := q.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM purchase_credit_notes WHERE id = $1)`, noteID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
+	rows, err := q.Query(ctx,
+		`SELECT line_no, product_id, description,
+		        quantity::numeric(19,4)::text, unit_cost::numeric(19,4)::text, tax_code, tax_rate::numeric(7,4)::text,
+		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text
+		 FROM purchase_credit_note_lines WHERE credit_note_id = $1 ORDER BY line_no`, noteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []PurchaseBillLine{}
+	for rows.Next() {
+		var l PurchaseBillLine
+		if err := rows.Scan(&l.LineNo, &l.ProductID, &l.Description,
+			&l.Quantity, &l.UnitCost, &l.TaxCode, &l.TaxRate,
+			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// SalesCreditNoteApplications returns what a sales credit note was applied
+// to, or ErrNotFound when the note itself does not exist.
+func SalesCreditNoteApplications(ctx context.Context, q Querier, noteID int) ([]PaymentApplication, error) {
+	return applicationRows(ctx, q, noteID,
+		`SELECT EXISTS (SELECT 1 FROM sales_credit_notes WHERE id = $1)`,
+		`SELECT ca.invoice_id, si.invoice_number, ca.amount_applied::numeric(19,4)::text
+		 FROM sales_credit_applications ca JOIN sales_invoices si ON si.id = ca.invoice_id
+		 WHERE ca.credit_note_id = $1 ORDER BY ca.id`)
+}
+
+// PurchaseCreditNoteApplications returns what a purchase credit note was
+// applied to, or ErrNotFound when the note itself does not exist.
+func PurchaseCreditNoteApplications(ctx context.Context, q Querier, noteID int) ([]PaymentApplication, error) {
+	return applicationRows(ctx, q, noteID,
+		`SELECT EXISTS (SELECT 1 FROM purchase_credit_notes WHERE id = $1)`,
+		`SELECT ca.bill_id, pb.bill_number, ca.amount_applied::numeric(19,4)::text
+		 FROM purchase_credit_applications ca JOIN purchase_bills pb ON pb.id = ca.bill_id
+		 WHERE ca.credit_note_id = $1 ORDER BY ca.id`)
 }
 
 // Payment is a customer or supplier payment with its applied/unapplied split.

@@ -158,6 +158,121 @@ func CreatePurchaseBill(ctx context.Context, tx pgx.Tx, in PurchaseBillInput) (i
 }
 
 // ---------------------------------------------------------------------------
+// Credit notes
+// ---------------------------------------------------------------------------
+
+// SalesCreditNoteInput reuses the invoice line shape: a credit-note line
+// records what is being credited exactly as an invoice line records what was
+// billed.
+type SalesCreditNoteInput struct {
+	CreditNoteNumber string                  `json:"credit_note_number"`
+	CustomerID       int                     `json:"customer_id"`
+	CreditNoteDate   string                  `json:"credit_note_date"` // YYYY-MM-DD
+	CurrencyCode     string                  `json:"currency_code"`
+	Reference        *string                 `json:"reference"`
+	Memo             *string                 `json:"memo"`
+	Lines            []SalesInvoiceLineInput `json:"lines"`
+}
+
+func (in SalesCreditNoteInput) Validate() string {
+	switch {
+	case in.CreditNoteNumber == "":
+		return "credit_note_number is required"
+	case in.CustomerID <= 0:
+		return "customer_id is required"
+	case in.CreditNoteDate == "":
+		return "credit_note_date is required"
+	case in.CurrencyCode == "":
+		return "currency_code is required"
+	}
+	for i, l := range in.Lines {
+		if l.Description == "" {
+			return "line " + strconv.Itoa(i+1) + ": description is required"
+		}
+	}
+	return ""
+}
+
+// CreateSalesCreditNote inserts a draft credit note and its lines, returning
+// the id.
+func CreateSalesCreditNote(ctx context.Context, tx pgx.Tx, in SalesCreditNoteInput) (int, error) {
+	var id int
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO sales_credit_notes (credit_note_number, customer_id, credit_note_date, currency_code, reference, memo)
+		 VALUES ($1, $2, $3::date, $4, $5, $6)
+		 RETURNING id`,
+		in.CreditNoteNumber, in.CustomerID, in.CreditNoteDate, in.CurrencyCode, in.Reference, in.Memo).Scan(&id); err != nil {
+		return 0, err
+	}
+	for i, l := range in.Lines {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO sales_credit_note_lines
+			   (credit_note_id, line_no, product_id, description, quantity, unit_price, revenue_account_id, tax_code, tax_rate)
+			 VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9::numeric)`,
+			id, i+1, l.ProductID, l.Description,
+			orDefault(l.Quantity, "1"), orDefault(l.UnitPrice, "0"), l.RevenueAccountID, l.TaxCode, orDefault(l.TaxRate, "0")); err != nil {
+			return 0, err
+		}
+	}
+	return id, nil
+}
+
+// PurchaseCreditNoteInput reuses the bill line shape for the same reason
+// SalesCreditNoteInput reuses the invoice's.
+type PurchaseCreditNoteInput struct {
+	CreditNoteNumber string                  `json:"credit_note_number"`
+	SupplierID       int                     `json:"supplier_id"`
+	CreditNoteDate   string                  `json:"credit_note_date"` // YYYY-MM-DD
+	CurrencyCode     string                  `json:"currency_code"`
+	Reference        *string                 `json:"reference"`
+	Memo             *string                 `json:"memo"`
+	Lines            []PurchaseBillLineInput `json:"lines"`
+}
+
+func (in PurchaseCreditNoteInput) Validate() string {
+	switch {
+	case in.CreditNoteNumber == "":
+		return "credit_note_number is required"
+	case in.SupplierID <= 0:
+		return "supplier_id is required"
+	case in.CreditNoteDate == "":
+		return "credit_note_date is required"
+	case in.CurrencyCode == "":
+		return "currency_code is required"
+	}
+	for i, l := range in.Lines {
+		if l.Description == "" {
+			return "line " + strconv.Itoa(i+1) + ": description is required"
+		}
+	}
+	return ""
+}
+
+// CreatePurchaseCreditNote inserts a draft credit note and its lines,
+// returning the id.
+func CreatePurchaseCreditNote(ctx context.Context, tx pgx.Tx, in PurchaseCreditNoteInput) (int, error) {
+	var id int
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO purchase_credit_notes (credit_note_number, supplier_id, credit_note_date, currency_code, reference, memo)
+		 VALUES ($1, $2, $3::date, $4, $5, $6)
+		 RETURNING id`,
+		in.CreditNoteNumber, in.SupplierID, in.CreditNoteDate, in.CurrencyCode, in.Reference, in.Memo).Scan(&id); err != nil {
+		return 0, err
+	}
+	for i, l := range in.Lines {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO purchase_credit_note_lines
+			   (credit_note_id, line_no, product_id, description, quantity, unit_cost, expense_account_id, tax_code, tax_rate)
+			 VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9::numeric)`,
+			id, i+1, l.ProductID, l.Description,
+			orDefault(l.Quantity, "1"), orDefault(l.UnitCost, "0"), l.ExpenseAccountID, l.TaxCode, orDefault(l.TaxRate, "0")); err != nil {
+			return 0, err
+		}
+	}
+	return id, nil
+}
+
+// ---------------------------------------------------------------------------
 // Payments
 // ---------------------------------------------------------------------------
 

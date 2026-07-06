@@ -56,14 +56,22 @@ migrate -path db/migrations -database "$DATABASE_URL" down 1   # roll back one s
 | `sales_invoice_lines` | synthetic int | Invoice detail (line money is computed) |
 | `customer_payments` | synthetic int | Receipts from customers                  |
 | `payment_applications` | synthetic int | Allocation of receipts to invoices    |
+| `sales_credit_notes` | synthetic int | Customer credit note header             |
+| `sales_credit_note_lines` | synthetic int | Credit note detail (line money is computed) |
+| `sales_credit_applications` | synthetic int | Allocation of credit notes to invoices |
 | `sales_invoice_balances` | view  | Per-invoice outstanding balance + status   |
+| `sales_credit_note_balances` | view | Per-note unapplied credit + status      |
 | `ar_aging`      | view           | A/R aging buckets by customer              |
 | `suppliers`     | synthetic int  | "Supplier" role, 1:1 on an organization    |
 | `purchase_bills` | synthetic int | Vendor bill header                         |
 | `purchase_bill_lines` | synthetic int | Bill detail (line money is computed)   |
 | `supplier_payments` | synthetic int | Payments made to suppliers               |
 | `bill_applications` | synthetic int | Allocation of payments to bills          |
+| `purchase_credit_notes` | synthetic int | Supplier credit note header          |
+| `purchase_credit_note_lines` | synthetic int | Credit note detail (line money is computed) |
+| `purchase_credit_applications` | synthetic int | Allocation of credit notes to bills |
 | `purchase_bill_balances` | view  | Per-bill outstanding balance + status      |
+| `purchase_credit_note_balances` | view | Per-note unapplied credit + status   |
 | `ap_aging`      | view           | A/P aging buckets by supplier              |
 
 ### Purchasing / AP invariants (enforced in-database)
