@@ -11,7 +11,8 @@
       "Bash(scp bin/server vps:/tmp/tadmor-server)",
       "Bash(corepack pnpm *)",
       "Bash(curl -s https://tadmor.belunaro.com/)",
-      "Bash(./e2e/run-local.sh)"
+      "Bash(./e2e/run-local.sh)",
+      "Bash(pkill -f 'bin/server')"
     ]
   }
 }
