@@ -18,6 +18,7 @@ import {
   listWarehouses,
   receivePurchaseOrder,
   shipSalesOrder,
+  type OrderLineQty,
   type Warehouse,
 } from "@/lib/api"
 import { AmountCell } from "@/components/amount-cell"
@@ -96,16 +97,20 @@ interface OrderConfig {
   confirm: (id: number) => Promise<unknown>
   close: (id: number) => Promise<unknown>
   cancel: (id: number) => Promise<unknown>
+  // lines carries the chosen per-line quantities; the backend caps each at the
+  // line's outstanding amount, so full-remaining and partial both flow through.
   createDoc: (
     id: number,
     number: string,
     date: string,
     due: string | null,
+    lines: OrderLineQty[],
   ) => Promise<number> // returns the new document id
   createMovements: (
     id: number,
     warehouseId: number,
     date: string | null,
+    lines: OrderLineQty[],
   ) => Promise<number[]> // returns the created movement ids
 }
 
@@ -144,20 +149,22 @@ export function SalesOrderDetail() {
         confirm: confirmSalesOrder,
         close: closeSalesOrder,
         cancel: cancelSalesOrder,
-        createDoc: async (id, number, date, due) =>
+        createDoc: async (id, number, date, due, lines) =>
           (
             await invoiceSalesOrder(id, {
               invoice_number: number,
               invoice_date: date,
               due_date: due,
+              lines,
             })
           ).invoice_id,
-        createMovements: async (id, warehouseId, date) =>
+        createMovements: async (id, warehouseId, date, lines) =>
           (
             await shipSalesOrder(id, {
               warehouse_id: warehouseId,
               movement_date: date,
               reference: null,
+              lines,
             })
           ).movement_ids,
       }}
@@ -200,20 +207,22 @@ export function PurchaseOrderDetail() {
         confirm: confirmPurchaseOrder,
         close: closePurchaseOrder,
         cancel: cancelPurchaseOrder,
-        createDoc: async (id, number, date, due) =>
+        createDoc: async (id, number, date, due, lines) =>
           (
             await billPurchaseOrder(id, {
               bill_number: number,
               bill_date: date,
               due_date: due,
+              lines,
             })
           ).bill_id,
-        createMovements: async (id, warehouseId, date) =>
+        createMovements: async (id, warehouseId, date, lines) =>
           (
             await receivePurchaseOrder(id, {
               warehouse_id: warehouseId,
               movement_date: date,
               reference: null,
+              lines,
             })
           ).movement_ids,
       }}
@@ -270,6 +279,20 @@ function purchaseHeader(o: {
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
+
+// One outstanding order line offered for fulfilment in a panel.
+interface FulfilLine {
+  order_line_id: number
+  line_no: number
+  description: string
+  remaining: string
+}
+
+// Drop the trailing zeros the database pads decimals with ("10.0000" -> "10",
+// "2.5000" -> "2.5") so the pre-filled quantity inputs read naturally.
+function trimZeros(s: string): string {
+  return s.includes(".") ? s.replace(/\.?0+$/, "") : s
+}
 
 function OrderDetail({ config }: { config: OrderConfig }) {
   const { id } = useParams()
@@ -371,6 +394,20 @@ function OrderDetail({ config }: { config: OrderConfig }) {
 
   const isOpen = order.status === "open"
   const isDraft = order.status === "draft"
+
+  // Lines still open on each axis, offered for (partial) fulfilment.
+  const fulfilLine = (l: OrderLineView, remaining: string): FulfilLine => ({
+    order_line_id: l.order_line_id,
+    line_no: l.line_no,
+    description: l.description,
+    remaining,
+  })
+  const docLines = lines
+    .filter((l) => Number(l.qtyToDoc) > 0)
+    .map((l) => fulfilLine(l, l.qtyToDoc))
+  const moveLines = lines
+    .filter((l) => Number(l.qtyToMove) > 0)
+    .map((l) => fulfilLine(l, l.qtyToMove))
 
   return (
     <section className="mx-auto w-full max-w-5xl p-6">
@@ -479,6 +516,7 @@ function OrderDetail({ config }: { config: OrderConfig }) {
         <CreateDocPanel
           config={config}
           orderId={orderId}
+          fulfilLines={docLines}
           onCancel={() => setPanel("none")}
           onCreated={(docId) => navigate(`${config.docBasePath}/${docId}`)}
         />
@@ -489,6 +527,7 @@ function OrderDetail({ config }: { config: OrderConfig }) {
           config={config}
           orderId={orderId}
           warehouses={warehouses}
+          fulfilLines={moveLines}
           onCancel={() => setPanel("none")}
           onCreated={(ids) => {
             setPanel("none")
@@ -541,15 +580,86 @@ function OrderDetail({ config }: { config: OrderConfig }) {
   )
 }
 
-// Inline panel to create the whole remaining invoice/bill from the order.
+// Per-line quantity state for a fulfilment panel. Each outstanding line starts
+// pre-filled with its full remaining amount, so submitting unchanged fulfils
+// everything; lowering (or clearing) a line fulfils part. chosen() returns the
+// lines with a positive quantity, ready for the API.
+function useFulfilQuantities(fulfilLines: FulfilLine[]) {
+  const [qty, setQty] = useState<Record<number, string>>(() =>
+    Object.fromEntries(
+      fulfilLines.map((l) => [l.order_line_id, trimZeros(l.remaining)]),
+    ),
+  )
+  const set = (orderLineId: number, value: string) =>
+    setQty((q) => ({ ...q, [orderLineId]: value }))
+  const chosen = (): OrderLineQty[] =>
+    fulfilLines
+      .map((l) => ({
+        order_line_id: l.order_line_id,
+        quantity: (qty[l.order_line_id] ?? "").trim(),
+      }))
+      .filter((x) => x.quantity !== "" && Number(x.quantity) > 0)
+  return { qty, set, chosen }
+}
+
+// The editable outstanding-lines table shared by both fulfilment panels.
+function FulfilLinesTable({
+  fulfilLines,
+  qty,
+  onQty,
+  idPrefix,
+}: {
+  fulfilLines: FulfilLine[]
+  qty: Record<number, string>
+  onQty: (orderLineId: number, value: string) => void
+  idPrefix: string
+}) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-10">#</TableHead>
+          <TableHead>Description</TableHead>
+          <TableHead className="text-right">Outstanding</TableHead>
+          <TableHead className="w-36 text-right">Qty</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {fulfilLines.map((l) => (
+          <TableRow key={l.order_line_id}>
+            <TableCell className="text-muted-foreground">{l.line_no}</TableCell>
+            <TableCell className="font-medium">{l.description}</TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {trimZeros(l.remaining)}
+            </TableCell>
+            <TableCell className="text-right">
+              <Input
+                id={`${idPrefix}_qty_${l.order_line_id}`}
+                inputMode="decimal"
+                className="ml-auto w-28 text-right"
+                value={qty[l.order_line_id] ?? ""}
+                onChange={(e) => onQty(l.order_line_id, e.target.value)}
+              />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
+// Inline panel to invoice/bill outstanding lines from the order, in full or in
+// part.
 function CreateDocPanel({
   config,
   orderId,
+  fulfilLines,
   onCancel,
   onCreated,
 }: {
   config: OrderConfig
   orderId: number
+  fulfilLines: FulfilLine[]
   onCancel: () => void
   onCreated: (docId: number) => void
 }) {
@@ -558,13 +668,25 @@ function CreateDocPanel({
   const [due, setDue] = useState("")
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const { qty, set, chosen } = useFulfilQuantities(fulfilLines)
 
   function submit(e: FormEvent) {
     e.preventDefault()
+    const lines = chosen()
+    if (lines.length === 0) {
+      setErr("Enter a quantity on at least one line.")
+      return
+    }
     setBusy(true)
     setErr(null)
     config
-      .createDoc(orderId, number.trim(), date, due.trim() === "" ? null : due)
+      .createDoc(
+        orderId,
+        number.trim(),
+        date,
+        due.trim() === "" ? null : due,
+        lines,
+      )
       .then(onCreated)
       .catch((e: unknown) => {
         setBusy(false)
@@ -579,67 +701,86 @@ function CreateDocPanel({
       aria-label={`Create ${config.docLabel}`}
     >
       <p className="text-sm text-muted-foreground">
-        Creates a draft {config.docLabel.toLowerCase()} for everything still
-        outstanding on this order.
+        Creates a draft {config.docLabel.toLowerCase()}. Quantities default to
+        what is outstanding; lower them to {config.docLabel.toLowerCase()} part.
       </p>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <div className="space-y-1">
-          <Label htmlFor="doc_number">{config.docLabel} #</Label>
-          <Input
-            id="doc_number"
-            required
-            value={number}
-            onChange={(e) => setNumber(e.target.value)}
+      {fulfilLines.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nothing left to {config.docLabel.toLowerCase()} on this order.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="space-y-1">
+              <Label htmlFor="doc_number">{config.docLabel} #</Label>
+              <Input
+                id="doc_number"
+                required
+                value={number}
+                onChange={(e) => setNumber(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="doc_date">Date</Label>
+              <Input
+                id="doc_date"
+                type="date"
+                required
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="doc_due">Due Date</Label>
+              <Input
+                id="doc_due"
+                type="date"
+                value={due}
+                onChange={(e) => setDue(e.target.value)}
+              />
+            </div>
+          </div>
+          <FulfilLinesTable
+            fulfilLines={fulfilLines}
+            qty={qty}
+            onQty={set}
+            idPrefix="doc"
           />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="doc_date">Date</Label>
-          <Input
-            id="doc_date"
-            type="date"
-            required
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="doc_due">Due Date</Label>
-          <Input
-            id="doc_due"
-            type="date"
-            value={due}
-            onChange={(e) => setDue(e.target.value)}
-          />
-        </div>
-      </div>
+        </>
+      )}
       {err !== null && (
         <p className="text-sm text-destructive" role="alert">
           {err}
         </p>
       )}
       <div className="flex gap-2">
-        <Button type="submit" disabled={busy}>
-          {busy ? "Creating…" : `Create ${config.docLabel.toLowerCase()}`}
-        </Button>
+        {fulfilLines.length > 0 && (
+          <Button type="submit" disabled={busy}>
+            {busy ? "Creating…" : `Create ${config.docLabel.toLowerCase()}`}
+          </Button>
+        )}
         <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
+          {fulfilLines.length > 0 ? "Cancel" : "Close"}
         </Button>
       </div>
     </form>
   )
 }
 
-// Inline panel to ship/receive the remaining stocked lines into a warehouse.
+// Inline panel to ship/receive outstanding stocked lines into a warehouse, in
+// full or in part. Only stocked lines appear (services carry no stock).
 function MovePanel({
   config,
   orderId,
   warehouses,
+  fulfilLines,
   onCancel,
   onCreated,
 }: {
   config: OrderConfig
   orderId: number
   warehouses: Warehouse[]
+  fulfilLines: FulfilLine[]
   onCancel: () => void
   onCreated: (movementIds: number[]) => void
 }) {
@@ -647,6 +788,7 @@ function MovePanel({
   const [date, setDate] = useState(today())
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const { qty, set, chosen } = useFulfilQuantities(fulfilLines)
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -654,10 +796,15 @@ function MovePanel({
       setErr("Please choose a warehouse.")
       return
     }
+    const lines = chosen()
+    if (lines.length === 0) {
+      setErr("Enter a quantity on at least one line.")
+      return
+    }
     setBusy(true)
     setErr(null)
     config
-      .createMovements(orderId, Number(warehouseId), date)
+      .createMovements(orderId, Number(warehouseId), date, lines)
       .then(onCreated)
       .catch((e: unknown) => {
         setBusy(false)
@@ -673,47 +820,63 @@ function MovePanel({
     >
       <p className="text-sm text-muted-foreground">
         Creates draft {config.moveLabel === "Ship" ? "issue" : "receipt"}{" "}
-        movements for the stocked lines still outstanding. Non-stock lines
-        (services) are skipped.
+        movements for the stocked lines below. Quantities default to what is
+        outstanding; lower them to {config.moveLabel.toLowerCase()} part.
       </p>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <div className="space-y-1">
-          <Label htmlFor="move_warehouse">Warehouse</Label>
-          <Select value={warehouseId} onValueChange={setWarehouseId}>
-            <SelectTrigger id="move_warehouse" className="w-full">
-              <SelectValue placeholder="Select a warehouse" />
-            </SelectTrigger>
-            <SelectContent>
-              {warehouses.map((w) => (
-                <SelectItem key={w.id} value={String(w.id)}>
-                  {w.code} — {w.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="move_date">Date</Label>
-          <Input
-            id="move_date"
-            type="date"
-            required
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
+      {fulfilLines.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nothing left to {config.moveLabel.toLowerCase()} on this order.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="space-y-1">
+              <Label htmlFor="move_warehouse">Warehouse</Label>
+              <Select value={warehouseId} onValueChange={setWarehouseId}>
+                <SelectTrigger id="move_warehouse" className="w-full">
+                  <SelectValue placeholder="Select a warehouse" />
+                </SelectTrigger>
+                <SelectContent>
+                  {warehouses.map((w) => (
+                    <SelectItem key={w.id} value={String(w.id)}>
+                      {w.code} — {w.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="move_date">Date</Label>
+              <Input
+                id="move_date"
+                type="date"
+                required
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <FulfilLinesTable
+            fulfilLines={fulfilLines}
+            qty={qty}
+            onQty={set}
+            idPrefix="move"
           />
-        </div>
-      </div>
+        </>
+      )}
       {err !== null && (
         <p className="text-sm text-destructive" role="alert">
           {err}
         </p>
       )}
       <div className="flex gap-2">
-        <Button type="submit" disabled={busy}>
-          {busy ? "Working…" : config.moveLabel}
-        </Button>
+        {fulfilLines.length > 0 && (
+          <Button type="submit" disabled={busy}>
+            {busy ? "Working…" : config.moveLabel}
+          </Button>
+        )}
         <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
+          {fulfilLines.length > 0 ? "Cancel" : "Close"}
         </Button>
       </div>
     </form>
