@@ -1210,3 +1210,233 @@ export interface StockValuationRow {
 export function getInventoryValuation(): Promise<StockValuationRow[]> {
   return get<StockValuationRow[]>("/inventory/valuation")
 }
+
+// ---------------------------------------------------------------------------
+// Sales orders and purchase orders
+// ---------------------------------------------------------------------------
+
+// Orders are commercial documents that never post to the GL; their lifecycle is
+// draft -> open -> closed (or cancelled). Fulfilment creates ordinary invoices/
+// bills and stock movements that draw down the order lines, and the derived
+// fulfilment state (none/partial/invoiced|shipped|billed|received) is reported
+// by the header views below.
+
+/** Header view of a sales order, mirroring reporting.SalesOrderSummary. */
+export interface SalesOrderSummary {
+  id: number
+  order_number: string
+  customer_id: number
+  order_date: string
+  expected_ship_date: string | null
+  currency_code: string
+  status: string
+  total: string
+  invoiced_status: string
+  shipped_status: string
+}
+
+/** Header view of a purchase order, mirroring reporting.PurchaseOrderSummary. */
+export interface PurchaseOrderSummary {
+  id: number
+  order_number: string
+  supplier_id: number
+  order_date: string
+  expected_receipt_date: string | null
+  currency_code: string
+  status: string
+  total: string
+  billed_status: string
+  received_status: string
+}
+
+/** One sales-order line with its money and derived fulfilment quantities. */
+export interface SalesOrderLine {
+  line_no: number
+  order_line_id: number
+  product_id: number | null
+  description: string
+  quantity: string
+  unit_price: string
+  tax_code: string | null
+  tax_rate: string
+  line_subtotal: string
+  tax_amount: string
+  line_total: string
+  qty_invoiced: string
+  qty_shipped: string
+  qty_to_invoice: string
+  qty_to_ship: string
+}
+
+/** One purchase-order line with its money and derived fulfilment quantities. */
+export interface PurchaseOrderLine {
+  line_no: number
+  order_line_id: number
+  product_id: number | null
+  description: string
+  quantity: string
+  unit_cost: string
+  tax_code: string | null
+  tax_rate: string
+  line_subtotal: string
+  tax_amount: string
+  line_total: string
+  qty_billed: string
+  qty_received: string
+  qty_to_bill: string
+  qty_to_receive: string
+}
+
+export interface SalesOrderLineInput {
+  product_id: number | null
+  description: string
+  quantity: string
+  unit_price: string
+  revenue_account_id: number | null
+  tax_code: string | null
+  tax_rate: string
+}
+
+export interface SalesOrderInput {
+  order_number: string
+  customer_id: number
+  order_date: string
+  expected_ship_date: string | null
+  currency_code: string
+  reference: string | null
+  memo: string | null
+  lines: SalesOrderLineInput[]
+}
+
+export interface PurchaseOrderLineInput {
+  product_id: number | null
+  description: string
+  quantity: string
+  unit_cost: string
+  expense_account_id: number | null
+  tax_code: string | null
+  tax_rate: string
+}
+
+export interface PurchaseOrderInput {
+  order_number: string
+  supplier_id: number
+  order_date: string
+  expected_receipt_date: string | null
+  currency_code: string
+  reference: string | null
+  memo: string | null
+  lines: PurchaseOrderLineInput[]
+}
+
+export function listSalesOrders(): Promise<SalesOrderSummary[]> {
+  return get<SalesOrderSummary[]>("/sales-orders")
+}
+
+export function getSalesOrder(id: number): Promise<SalesOrderSummary> {
+  return get<SalesOrderSummary>(`/sales-orders/${id}`)
+}
+
+export function getSalesOrderLines(id: number): Promise<SalesOrderLine[]> {
+  return get<SalesOrderLine[]>(`/sales-orders/${id}/lines`)
+}
+
+export function createSalesOrder(
+  input: SalesOrderInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/sales-orders", input)
+}
+
+export function listPurchaseOrders(): Promise<PurchaseOrderSummary[]> {
+  return get<PurchaseOrderSummary[]>("/purchase-orders")
+}
+
+export function getPurchaseOrder(id: number): Promise<PurchaseOrderSummary> {
+  return get<PurchaseOrderSummary>(`/purchase-orders/${id}`)
+}
+
+export function getPurchaseOrderLines(id: number): Promise<PurchaseOrderLine[]> {
+  return get<PurchaseOrderLine[]>(`/purchase-orders/${id}/lines`)
+}
+
+export function createPurchaseOrder(
+  input: PurchaseOrderInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/purchase-orders", input)
+}
+
+// Lifecycle transitions. Each returns { status: "ok" } and moves the order
+// between draft/open/closed/cancelled; the caller reloads to see the new state.
+export function confirmSalesOrder(id: number): Promise<{ status: string }> {
+  return post<{ status: string }>(`/sales-orders/${id}/confirm`, {})
+}
+export function closeSalesOrder(id: number): Promise<{ status: string }> {
+  return post<{ status: string }>(`/sales-orders/${id}/close`, {})
+}
+export function cancelSalesOrder(id: number): Promise<{ status: string }> {
+  return post<{ status: string }>(`/sales-orders/${id}/cancel`, {})
+}
+export function confirmPurchaseOrder(id: number): Promise<{ status: string }> {
+  return post<{ status: string }>(`/purchase-orders/${id}/confirm`, {})
+}
+export function closePurchaseOrder(id: number): Promise<{ status: string }> {
+  return post<{ status: string }>(`/purchase-orders/${id}/close`, {})
+}
+export function cancelPurchaseOrder(id: number): Promise<{ status: string }> {
+  return post<{ status: string }>(`/purchase-orders/${id}/cancel`, {})
+}
+
+/** Fulfil one order line partially; omit the array to fulfil all remaining. */
+export interface OrderLineQty {
+  order_line_id: number
+  quantity: string
+}
+
+export interface InvoiceFromOrderInput {
+  invoice_number: string
+  invoice_date: string
+  due_date: string | null
+  lines?: OrderLineQty[]
+}
+
+export interface BillFromOrderInput {
+  bill_number: string
+  bill_date: string
+  due_date: string | null
+  lines?: OrderLineQty[]
+}
+
+export interface FulfilMovementInput {
+  warehouse_id: number
+  movement_date: string | null
+  reference: string | null
+  lines?: OrderLineQty[]
+}
+
+export function invoiceSalesOrder(
+  id: number,
+  input: InvoiceFromOrderInput,
+): Promise<{ invoice_id: number }> {
+  return post<{ invoice_id: number }>(`/sales-orders/${id}/invoice`, input)
+}
+
+export function shipSalesOrder(
+  id: number,
+  input: FulfilMovementInput,
+): Promise<{ movement_ids: number[] }> {
+  return post<{ movement_ids: number[] }>(`/sales-orders/${id}/ship`, input)
+}
+
+export function billPurchaseOrder(
+  id: number,
+  input: BillFromOrderInput,
+): Promise<{ bill_id: number }> {
+  return post<{ bill_id: number }>(`/purchase-orders/${id}/bill`, input)
+}
+
+export function receivePurchaseOrder(
+  id: number,
+  input: FulfilMovementInput,
+): Promise<{ movement_ids: number[] }> {
+  return post<{ movement_ids: number[] }>(`/purchase-orders/${id}/receive`, input)
+}

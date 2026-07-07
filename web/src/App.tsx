@@ -29,6 +29,12 @@ import {
 import { InventoryValuation } from "@/components/inventory-valuation"
 import { InvoiceForm } from "@/components/invoice-form"
 import { JournalEntryDetail } from "@/components/journal-entry"
+import { PurchaseOrders, SalesOrders } from "@/components/order-list"
+import { PurchaseOrderForm, SalesOrderForm } from "@/components/order-form"
+import {
+  PurchaseOrderDetail,
+  SalesOrderDetail,
+} from "@/components/order-detail"
 import {
   CustomerPaymentDetail,
   SupplierPaymentDetail,
@@ -85,6 +91,8 @@ const masterNavItems = [
 const adminNavItems = [{ to: "/users", label: "Users" }]
 
 const documentNavItems = [
+  { to: "/sales-orders", label: "Sales Orders" },
+  { to: "/purchase-orders", label: "Purchase Orders" },
   { to: "/invoices", label: "Invoices" },
   { to: "/bills", label: "Bills" },
   { to: "/credit-notes", label: "Credit Notes" },
@@ -249,6 +257,18 @@ export default function App() {
           <Route path="/users" element={<Users />} />
           <Route path="/users/new" element={<UserForm mode="create" />} />
           <Route path="/users/:id" element={<UserForm mode="edit" />} />
+          <Route path="/sales-orders" element={<SalesOrders />} />
+          <Route path="/sales-orders/new" element={<SalesOrderForm />} />
+          <Route path="/sales-orders/:id" element={<SalesOrderDetail />} />
+          <Route path="/purchase-orders" element={<PurchaseOrders />} />
+          <Route
+            path="/purchase-orders/new"
+            element={<PurchaseOrderForm />}
+          />
+          <Route
+            path="/purchase-orders/:id"
+            element={<PurchaseOrderDetail />}
+          />
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/new" element={<InvoiceForm />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
