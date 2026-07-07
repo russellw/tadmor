@@ -53,6 +53,22 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("POST /customer-payments", s.createCustomerPayment)
 	api.HandleFunc("POST /supplier-payments", s.createSupplierPayment)
 	api.HandleFunc("POST /stock-movements", s.createStockMovement)
+	api.HandleFunc("POST /sales-orders", s.createSalesOrder)
+	api.HandleFunc("POST /purchase-orders", s.createPurchaseOrder)
+
+	// Order lifecycle transitions (draft -> open -> closed, or cancelled).
+	api.HandleFunc("POST /sales-orders/{id}/confirm", s.confirmSalesOrder)
+	api.HandleFunc("POST /sales-orders/{id}/close", s.closeSalesOrder)
+	api.HandleFunc("POST /sales-orders/{id}/cancel", s.cancelSalesOrder)
+	api.HandleFunc("POST /purchase-orders/{id}/confirm", s.confirmPurchaseOrder)
+	api.HandleFunc("POST /purchase-orders/{id}/close", s.closePurchaseOrder)
+	api.HandleFunc("POST /purchase-orders/{id}/cancel", s.cancelPurchaseOrder)
+
+	// Order fulfilment: create the subledger document that draws down the order.
+	api.HandleFunc("POST /sales-orders/{id}/invoice", s.invoiceSalesOrder)
+	api.HandleFunc("POST /sales-orders/{id}/ship", s.shipSalesOrder)
+	api.HandleFunc("POST /purchase-orders/{id}/bill", s.billPurchaseOrder)
+	api.HandleFunc("POST /purchase-orders/{id}/receive", s.receivePurchaseOrder)
 
 	// Post a draft subledger document to the general ledger.
 	api.HandleFunc("POST /sales-invoices/{id}/post", s.postSalesInvoice)
@@ -114,6 +130,12 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /purchase-credit-notes/{id}", s.getPurchaseCreditNote)
 	api.HandleFunc("GET /purchase-credit-notes/{id}/lines", s.getPurchaseCreditNoteLines)
 	api.HandleFunc("GET /purchase-credit-notes/{id}/applications", s.getPurchaseCreditNoteApplications)
+	api.HandleFunc("GET /sales-orders", s.listSalesOrders)
+	api.HandleFunc("GET /sales-orders/{id}", s.getSalesOrder)
+	api.HandleFunc("GET /sales-orders/{id}/lines", s.getSalesOrderLines)
+	api.HandleFunc("GET /purchase-orders", s.listPurchaseOrders)
+	api.HandleFunc("GET /purchase-orders/{id}", s.getPurchaseOrder)
+	api.HandleFunc("GET /purchase-orders/{id}/lines", s.getPurchaseOrderLines)
 
 	// User administration (admins only).
 	api.HandleFunc("GET /users", s.admin(s.listUsers))

@@ -273,6 +273,144 @@ func CreatePurchaseCreditNote(ctx context.Context, tx pgx.Tx, in PurchaseCreditN
 }
 
 // ---------------------------------------------------------------------------
+// Sales orders
+// ---------------------------------------------------------------------------
+
+// SalesOrderLineInput mirrors a sales-invoice line: an order line records what
+// the customer agreed to buy, priced exactly as it will later be invoiced.
+type SalesOrderLineInput struct {
+	ProductID        *int    `json:"product_id"`
+	Description      string  `json:"description"`
+	Quantity         string  `json:"quantity"`   // decimal; default "1"
+	UnitPrice        string  `json:"unit_price"` // decimal; default "0"
+	RevenueAccountID *int    `json:"revenue_account_id"`
+	TaxCode          *string `json:"tax_code"`
+	TaxRate          string  `json:"tax_rate"` // percent; default "0"
+}
+
+type SalesOrderInput struct {
+	OrderNumber      string                `json:"order_number"`
+	CustomerID       int                   `json:"customer_id"`
+	OrderDate        string                `json:"order_date"` // YYYY-MM-DD
+	ExpectedShipDate *string               `json:"expected_ship_date"`
+	CurrencyCode     string                `json:"currency_code"`
+	Reference        *string               `json:"reference"`
+	Memo             *string               `json:"memo"`
+	Lines            []SalesOrderLineInput `json:"lines"`
+}
+
+func (in SalesOrderInput) Validate() string {
+	switch {
+	case in.OrderNumber == "":
+		return "order_number is required"
+	case in.CustomerID <= 0:
+		return "customer_id is required"
+	case in.OrderDate == "":
+		return "order_date is required"
+	case in.CurrencyCode == "":
+		return "currency_code is required"
+	}
+	for i, l := range in.Lines {
+		if l.Description == "" {
+			return "line " + strconv.Itoa(i+1) + ": description is required"
+		}
+	}
+	return ""
+}
+
+// CreateSalesOrder inserts a draft sales order and its lines, returning the id.
+func CreateSalesOrder(ctx context.Context, tx pgx.Tx, in SalesOrderInput) (int, error) {
+	var id int
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO sales_orders (order_number, customer_id, order_date, expected_ship_date, currency_code, reference, memo)
+		 VALUES ($1, $2, $3::date, $4::date, $5, $6, $7)
+		 RETURNING id`,
+		in.OrderNumber, in.CustomerID, in.OrderDate, in.ExpectedShipDate, in.CurrencyCode, in.Reference, in.Memo).Scan(&id); err != nil {
+		return 0, err
+	}
+	for i, l := range in.Lines {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO sales_order_lines
+			   (order_id, line_no, product_id, description, quantity, unit_price, revenue_account_id, tax_code, tax_rate)
+			 VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9::numeric)`,
+			id, i+1, l.ProductID, l.Description,
+			orDefault(l.Quantity, "1"), orDefault(l.UnitPrice, "0"), l.RevenueAccountID, l.TaxCode, orDefault(l.TaxRate, "0")); err != nil {
+			return 0, err
+		}
+	}
+	return id, nil
+}
+
+// ---------------------------------------------------------------------------
+// Purchase orders
+// ---------------------------------------------------------------------------
+
+// PurchaseOrderLineInput mirrors a purchase-bill line.
+type PurchaseOrderLineInput struct {
+	ProductID        *int    `json:"product_id"`
+	Description      string  `json:"description"`
+	Quantity         string  `json:"quantity"`  // decimal; default "1"
+	UnitCost         string  `json:"unit_cost"` // decimal; default "0"
+	ExpenseAccountID *int    `json:"expense_account_id"`
+	TaxCode          *string `json:"tax_code"`
+	TaxRate          string  `json:"tax_rate"` // percent; default "0"
+}
+
+type PurchaseOrderInput struct {
+	OrderNumber         string                   `json:"order_number"`
+	SupplierID          int                      `json:"supplier_id"`
+	OrderDate           string                   `json:"order_date"` // YYYY-MM-DD
+	ExpectedReceiptDate *string                  `json:"expected_receipt_date"`
+	CurrencyCode        string                   `json:"currency_code"`
+	Reference           *string                  `json:"reference"`
+	Memo                *string                  `json:"memo"`
+	Lines               []PurchaseOrderLineInput `json:"lines"`
+}
+
+func (in PurchaseOrderInput) Validate() string {
+	switch {
+	case in.OrderNumber == "":
+		return "order_number is required"
+	case in.SupplierID <= 0:
+		return "supplier_id is required"
+	case in.OrderDate == "":
+		return "order_date is required"
+	case in.CurrencyCode == "":
+		return "currency_code is required"
+	}
+	for i, l := range in.Lines {
+		if l.Description == "" {
+			return "line " + strconv.Itoa(i+1) + ": description is required"
+		}
+	}
+	return ""
+}
+
+// CreatePurchaseOrder inserts a draft purchase order and its lines, returning
+// the id.
+func CreatePurchaseOrder(ctx context.Context, tx pgx.Tx, in PurchaseOrderInput) (int, error) {
+	var id int
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO purchase_orders (order_number, supplier_id, order_date, expected_receipt_date, currency_code, reference, memo)
+		 VALUES ($1, $2, $3::date, $4::date, $5, $6, $7)
+		 RETURNING id`,
+		in.OrderNumber, in.SupplierID, in.OrderDate, in.ExpectedReceiptDate, in.CurrencyCode, in.Reference, in.Memo).Scan(&id); err != nil {
+		return 0, err
+	}
+	for i, l := range in.Lines {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO purchase_order_lines
+			   (order_id, line_no, product_id, description, quantity, unit_cost, expense_account_id, tax_code, tax_rate)
+			 VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9::numeric)`,
+			id, i+1, l.ProductID, l.Description,
+			orDefault(l.Quantity, "1"), orDefault(l.UnitCost, "0"), l.ExpenseAccountID, l.TaxCode, orDefault(l.TaxRate, "0")); err != nil {
+			return 0, err
+		}
+	}
+	return id, nil
+}
+
+// ---------------------------------------------------------------------------
 // Payments
 // ---------------------------------------------------------------------------
 
