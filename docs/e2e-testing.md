@@ -138,7 +138,7 @@ The dev environment is WSL2 (Ubuntu 24.04), which shaped a couple of details:
 
 ## 6. Test structure and the "no hard-delete" finding
 
-Tests live in `e2e/tests/`. Fifteen files today:
+Tests live in `e2e/tests/`. Nineteen files today:
 
 - **`smoke.spec.ts`** — the app boots and a representative screen renders (the
   Chart of Accounts heading + the five primary nav links). No data assertions;
@@ -173,9 +173,13 @@ Tests live in `e2e/tests/`. Fifteen files today:
   own customer, GL accounts, and a **one-day fiscal year + open period** in a
   far-future range (years 2900+, disjoint from the calendar tests' 2200–2899)
   via `salesFixture` in `helpers.ts`, so posting never depends on the dev
-  database having an open period for today. The AP screens (bills, supplier
-  credits/payments, purchase orders) render through the same shared
-  components, so the AR flows cover those code paths.
+  database having an open period for today.
+- **`bills.spec.ts`**, **`supplier-payments.spec.ts`**,
+  **`supplier-credits.spec.ts`**, **`purchase-orders.spec.ts`** — the AP
+  mirrors of the four above (unit cost + expense account instead of price +
+  revenue account, payment account instead of deposit account), built on the
+  analogous `purchaseFixture`: draft creation, posting, deleting, applying a
+  payment/credit to an open bill, and confirming + billing a purchase order.
 
 **Authentication.** The API requires a login session, so a `globalSetup`
 (`global-setup.ts`) runs before any test: it upserts a dedicated
@@ -298,25 +302,25 @@ BASE_URL=http://localhost:8080 corepack pnpm test
 - **`make e2e-test` (running-stack mode) still assumes the dev DB** unless
   `E2E_DATABASE_URL` says otherwise — see the §6 database note. The
   self-contained `make e2e` path uses the dedicated `tadmor_e2e` database.
-- **Coverage gaps** — the AP document screens (bills, supplier
-  credits/payments, purchase orders) are covered only indirectly, through the
-  shared components their AR twins exercise; stock movements, order
-  shipping, and the admin-only unpost action have no specs.
+- **Coverage gaps** — stock movements, order ship/receive fulfilment (the
+  stock axis; the document axis is covered), and the admin-only unpost action
+  have no specs.
 
 ---
 
 ## 9. Status and next step
 
 Done: `e2e/` scaffolded and committed with the hardened pnpm config and Makefile
-targets; Chromium installed; fifteen spec files covering auth, smoke, the
+targets; Chromium installed; nineteen spec files covering auth, smoke, the
 master-data screens (customers, suppliers, products, payment terms, tax codes,
-warehouses, periods, users), the financial-statement reports, and the AR
-document screens — invoices, customer payments, credit notes, and sales orders,
-including posting to the ledger and payment/credit application (see §6) — with
-teardown confirmed to leave zero test rows, including journal entries. The
-self-contained `make e2e` run targets a dedicated `tadmor_e2e` database
-(created on first run) with setup/teardown pinned to it via
-`E2E_DATABASE_URL`, so the suite never touches dev data.
+warehouses, periods, users), the financial-statement reports, and all eight
+document screens — invoices, bills, customer and supplier payments, credit
+notes and supplier credits, sales and purchase orders, including posting to
+the ledger and payment/credit application (see §6) — with teardown confirmed
+to leave zero test rows, including journal entries. The self-contained
+`make e2e` run targets a dedicated `tadmor_e2e` database (created on first
+run) with setup/teardown pinned to it via `E2E_DATABASE_URL`, so the suite
+never touches dev data.
 
-Next (when wanted): direct specs for the AP document screens and stock
-movements if the shared-component coverage ever feels thin.
+Next (when wanted): specs for stock movements and order ship/receive
+fulfilment — the remaining uncovered screens.

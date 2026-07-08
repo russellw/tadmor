@@ -177,6 +177,40 @@ export async function salesFixture(
   return { day, orgName, customerId, arAccount, revenueAccount, cashAccount }
 }
 
+/** The AP mirror of SalesFixture: a supplier wired to a fresh AP account,
+ *  an expense account to post against, a cash account to pay from, and the
+ *  same one-day fiscal year + open period. */
+export interface PurchaseFixture {
+  day: string
+  orgName: string
+  supplierId: number
+  apAccount: { id: number; code: string }
+  expenseAccount: { id: number; code: string }
+  cashAccount: { id: number; code: string }
+}
+
+export async function purchaseFixture(
+  request: APIRequestContext,
+): Promise<PurchaseFixture> {
+  const day = uniqueDocDay()
+  const orgName = uniqueOrgName()
+  const [apAccount, expenseAccount, cashAccount, orgId] = await Promise.all([
+    createAccount(request, "liability"),
+    createAccount(request, "expense"),
+    createAccount(request, "asset"),
+    createOrganization(request, orgName),
+  ])
+  const [supplierId, fiscalYearId] = await Promise.all([
+    createSupplier(request, orgId, {
+      ap_account_id: apAccount.id,
+      currency_code: "USD",
+    }),
+    createFiscalYear(request, `${E2E_PREFIX}FY ${day}`, day, day),
+  ])
+  await createPeriod(request, fiscalYearId, `${E2E_PREFIX}P ${day}`, day, day)
+  return { day, orgName, supplierId, apAccount, expenseAccount, cashAccount }
+}
+
 /** POST an action endpoint (post/confirm/apply/…) and expect success. */
 export async function apiPost(
   request: APIRequestContext,
@@ -302,6 +336,125 @@ export async function createSalesOrderDraft(
     },
   })
   expect(res.ok(), `create sales order failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** Create a draft purchase bill with one free-form line and return its id. */
+export async function createBillDraft(
+  request: APIRequestContext,
+  fixture: PurchaseFixture,
+  number: string,
+  unitCost = "100",
+): Promise<number> {
+  const res = await request.post("/api/purchase-bills", {
+    data: {
+      bill_number: number,
+      supplier_id: fixture.supplierId,
+      bill_date: fixture.day,
+      due_date: null,
+      currency_code: "USD",
+      reference: null,
+      memo: null,
+      lines: [
+        {
+          product_id: null,
+          description: "E2E billed line",
+          quantity: "1",
+          unit_cost: unitCost,
+          expense_account_id: fixture.expenseAccount.id,
+          tax_code: null,
+          tax_rate: "0",
+        },
+      ],
+    },
+  })
+  expect(res.ok(), `create bill failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** Create a draft supplier payment and return its id. */
+export async function createSupplierPaymentDraft(
+  request: APIRequestContext,
+  fixture: PurchaseFixture,
+  amount: string,
+): Promise<number> {
+  const res = await request.post("/api/supplier-payments", {
+    data: {
+      supplier_id: fixture.supplierId,
+      payment_date: fixture.day,
+      currency_code: "USD",
+      amount,
+      method: null,
+      reference: null,
+      payment_account_id: fixture.cashAccount.id,
+    },
+  })
+  expect(res.ok(), `create supplier payment failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** Create a draft purchase credit note with one free-form line, return its id. */
+export async function createSupplierCreditDraft(
+  request: APIRequestContext,
+  fixture: PurchaseFixture,
+  number: string,
+  unitCost: string,
+): Promise<number> {
+  const res = await request.post("/api/purchase-credit-notes", {
+    data: {
+      credit_note_number: number,
+      supplier_id: fixture.supplierId,
+      credit_note_date: fixture.day,
+      currency_code: "USD",
+      reference: null,
+      memo: null,
+      lines: [
+        {
+          product_id: null,
+          description: "E2E returned line",
+          quantity: "1",
+          unit_cost: unitCost,
+          expense_account_id: fixture.expenseAccount.id,
+          tax_code: null,
+          tax_rate: "0",
+        },
+      ],
+    },
+  })
+  expect(res.ok(), `create supplier credit failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** Create a draft purchase order with one free-form line and return its id. */
+export async function createPurchaseOrderDraft(
+  request: APIRequestContext,
+  fixture: PurchaseFixture,
+  number: string,
+  unitCost = "80",
+): Promise<number> {
+  const res = await request.post("/api/purchase-orders", {
+    data: {
+      order_number: number,
+      supplier_id: fixture.supplierId,
+      order_date: fixture.day,
+      expected_receipt_date: null,
+      currency_code: "USD",
+      reference: null,
+      memo: null,
+      lines: [
+        {
+          product_id: null,
+          description: "E2E ordered line",
+          quantity: "1",
+          unit_cost: unitCost,
+          expense_account_id: fixture.expenseAccount.id,
+          tax_code: null,
+          tax_rate: "0",
+        },
+      ],
+    },
+  })
+  expect(res.ok(), `create purchase order failed (${res.status()})`).toBeTruthy()
   return ((await res.json()) as { id: number }).id
 }
 

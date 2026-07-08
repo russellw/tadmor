@@ -47,6 +47,23 @@ export default async function globalTeardown(): Promise<void> {
     DELETE FROM sales_credit_notes WHERE customer_id IN (SELECT id FROM e2e_customers);
     DELETE FROM sales_invoices WHERE customer_id IN (SELECT id FROM e2e_customers);
     DELETE FROM sales_orders WHERE customer_id IN (SELECT id FROM e2e_customers);
+    -- The AP mirror of the block above.
+    CREATE TEMP TABLE e2e_suppliers AS
+      SELECT s.id FROM suppliers s
+      JOIN organizations o ON o.id = s.organization_id
+     WHERE o.name LIKE '${E2E_PREFIX}%';
+    DELETE FROM bill_applications
+     WHERE payment_id IN (
+       SELECT id FROM supplier_payments WHERE supplier_id IN (SELECT id FROM e2e_suppliers)
+     );
+    DELETE FROM purchase_credit_applications
+     WHERE credit_note_id IN (
+       SELECT id FROM purchase_credit_notes WHERE supplier_id IN (SELECT id FROM e2e_suppliers)
+     );
+    DELETE FROM supplier_payments WHERE supplier_id IN (SELECT id FROM e2e_suppliers);
+    DELETE FROM purchase_credit_notes WHERE supplier_id IN (SELECT id FROM e2e_suppliers);
+    DELETE FROM purchase_bills WHERE supplier_id IN (SELECT id FROM e2e_suppliers);
+    DELETE FROM purchase_orders WHERE supplier_id IN (SELECT id FROM e2e_suppliers);
     DELETE FROM journal_entries
      WHERE period_id IN (
        SELECT p.id FROM accounting_periods p

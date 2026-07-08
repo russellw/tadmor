@@ -11,13 +11,12 @@ sections, deferred decisions, and a gap review against the project goal.
 ## Explicitly documented next steps
 
 - **Broaden e2e coverage** (`docs/e2e-testing.md` §9). The master-data
-  screens, reports, and the AR document screens (invoices, customer payments,
-  credit notes, sales orders — including posting and payment/credit
-  application) all have specs, and `make e2e` runs self-contained against a
-  dedicated `tadmor_e2e` database. What's left is optional depth: the AP
-  twins (bills, supplier credits/payments, purchase orders) are exercised
-  only via the shared components, and stock movements and unpost have no
-  specs.
+  screens, reports, and all eight document screens (AR and AP: invoices,
+  bills, payments both ways, credit notes both ways, sales and purchase
+  orders — including posting and payment/credit application) have specs, and
+  `make e2e` runs self-contained against a dedicated `tadmor_e2e` database.
+  What's left is optional depth: stock movements, order ship/receive
+  fulfilment, and unpost have no specs.
 - **Full ISO country/currency seed script** (noted in
   `db/migrations/000002_reference.up.sql` and `docs/local-development.md`).
   Migrations seed only a common subset; the promised ancillary seed script
