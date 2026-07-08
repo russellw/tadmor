@@ -17,10 +17,10 @@ sections, deferred decisions, and a gap review against the project goal.
   `make e2e` runs self-contained against a dedicated `tadmor_e2e` database.
   What's left is optional depth: stock movements, order ship/receive
   fulfilment, and unpost have no specs.
-- **Full ISO country/currency seed script** (noted in
-  `db/migrations/000002_reference.up.sql` and `docs/local-development.md`).
-  Migrations seed only a common subset; the promised ancillary seed script
-  with the complete ISO lists doesn't exist yet.
+- ~~**Full ISO country/currency seed script**~~ — done 2026-07-08:
+  `db/seed/gen_iso_reference.py` generates the committed
+  `db/seed/iso_reference.sql` from Debian's `iso-codes` package;
+  `make seed-iso` applies it (additive, idempotent).
 
 ## Deliberately deferred decisions worth revisiting
 

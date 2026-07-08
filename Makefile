@@ -14,7 +14,7 @@ TEST_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode
 E2E_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_e2e?sslmode=disable
 
 .DEFAULT_GOAL := help
-.PHONY: help build release image deploy demo-snapshot run test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
+.PHONY: help build release image deploy demo-snapshot run seed-iso test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
 
 # Frontend lives in web/ (pnpm, corepack-pinned). Mirrors the Go targets'
 # discipline: the committed pnpm-lock.yaml is the source of truth and CI installs
@@ -53,6 +53,9 @@ demo-snapshot: ## Snapshot the prod DB as the baseline the nightly demo reseed r
 
 run: build ## Build and run the server
 	DATABASE_URL=$(DATABASE_URL) ./bin/server
+
+seed-iso: ## Load the full ISO country/currency lists (additive; see db/seed/)
+	psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -f db/seed/iso_reference.sql
 
 test: ## Run the full test suite from scratch (integration tests reset the DB)
 	TEST_DATABASE_URL=$(TEST_DATABASE_URL) go test -count=1 ./...

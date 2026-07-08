@@ -24,8 +24,9 @@ CREATE TABLE currencies (
 );
 
 -- A starter set of common reference data. The full ISO lists can be loaded by
--- an ancillary seed script; this keeps local development and tests working out
--- of the box. ON CONFLICT DO NOTHING makes re-running harmless.
+-- the ancillary seed script (db/seed/, `make seed-iso`); this keeps local
+-- development and tests working out of the box. ON CONFLICT DO NOTHING makes
+-- re-running harmless.
 INSERT INTO countries (code, alpha3, numeric_code, name) VALUES
     ('US', 'USA', '840', 'United States of America'),
     ('GB', 'GBR', '826', 'United Kingdom'),

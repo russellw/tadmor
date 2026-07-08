@@ -7,6 +7,7 @@ Postgres schema, managed as ordered migrations.
 ```
 db/migrations/NNNNNN_name.up.sql    -- forward migration
 db/migrations/NNNNNN_name.down.sql  -- reverse migration
+db/seed/                            -- optional full ISO reference data (see below)
 ```
 
 Files follow the [golang-migrate](https://github.com/golang-migrate/migrate)
@@ -30,6 +31,17 @@ export DATABASE_URL='postgres://localhost:5432/tadmor?sslmode=disable'
 migrate -path db/migrations -database "$DATABASE_URL" up
 migrate -path db/migrations -database "$DATABASE_URL" down 1   # roll back one step
 ```
+
+## Full ISO reference data
+
+Migrations seed only a starter subset of countries and currencies. The complete
+ISO 3166-1 / ISO 4217 lists live in `db/seed/iso_reference.sql`, applied with
+`make seed-iso` (additive and idempotent — `ON CONFLICT DO NOTHING`, existing
+rows are never modified). The SQL is generated from the Debian `iso-codes`
+package by `db/seed/gen_iso_reference.py` (stdlib-only Python); minor units and
+display symbols are hand-maintained maps in that script, since neither is in
+the iso-codes data. Currency codes with no ISO-defined minor unit (metals,
+bond indices, XDR and kin, XTS, XXX) are excluded.
 
 ## Current schema
 

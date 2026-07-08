@@ -177,7 +177,7 @@ migrate -path db/migrations -database "$DATABASE_URL" down 1   # roll back one s
 
 **Seed data is baked into the `.up.sql` migrations** (with
 `ON CONFLICT DO NOTHING`, so re-running is harmless) — this is why the screens
-have data out of the box. There is no standalone seed script:
+have data out of the box:
 
 | Migration | Seeds |
 |---|---|
@@ -186,9 +186,16 @@ have data out of the box. There is no standalone seed script:
 | `000005_sales` | `payment_terms` (Net 15/30/…), `tax_codes` |
 | `000008_grni` | the GRNI clearing account |
 
-The full ISO country/currency lists are deferred to "an ancillary seed script"
-(noted in `000002_reference.up.sql`); that script does not exist in the repo
-yet — the migrations seed only enough to make local dev and tests work.
+The **full ISO country/currency lists** are an optional extra step:
+
+```bash
+make seed-iso        # loads db/seed/iso_reference.sql into $DATABASE_URL
+```
+
+This is additive and idempotent (`ON CONFLICT DO NOTHING` — existing rows are
+never modified), so it is safe on a database with data. The committed SQL is
+generated from the Debian `iso-codes` package by
+`db/seed/gen_iso_reference.py`; see that script's docstring for regeneration.
 
 ---
 
@@ -219,6 +226,7 @@ the role/DB exist you can run `make run` with no env var set at all.
 | `make release` | `web-build` then build the server with the bundle embedded |
 | `make web-check` | Front-end typecheck + `pnpm audit` |
 | `make test` | Full Go suite against `tadmor_test` (resets the DB) |
+| `make seed-iso` | Load the full ISO country/currency lists (additive, idempotent) |
 
 ---
 
