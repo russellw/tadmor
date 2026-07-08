@@ -50,11 +50,12 @@ sections, deferred decisions, and a gap review against the project goal.
   import or matching.
 - **Document output** — no PDF/print rendering or emailing of invoices; the
   app is screen-only.
-- **New-month period creation is manual ops.** The Periods screen makes it
-  easy, but posting still hard-fails when a month rolls over without someone
-  adding a period ("no open accounting period for the document date" — it has
-  already bitten prod once). Either auto-create the next period or surface a
-  louder warning ahead of time.
+- ~~**New-month period creation is manual ops.**~~ — done 2026-07-08: posting
+  now auto-creates the calendar-month period (clipped to the fiscal year's
+  bounds) when the document date falls inside an open fiscal year that has no
+  period covering it; closed periods and closed fiscal years still reject.
+  The residual gap is the *fiscal-year* rollover — creating next year's
+  fiscal year is still manual, which folds into the year-end close item above.
 
 ## Smaller housekeeping
 

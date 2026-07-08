@@ -39,12 +39,52 @@ var (
 )
 
 // periodForDate returns the id of the open accounting period containing date.
+//
+// If no period covers the date at all but an open fiscal year does, the
+// calendar month containing the date is created as a new open period (clipped
+// to the fiscal year's bounds), so posting keeps working across a month
+// rollover without manual period creation. A closed period covering the date,
+// or a date outside every open fiscal year, still fails with ErrNoOpenPeriod.
 func periodForDate(ctx context.Context, tx pgx.Tx, date string) (int, error) {
-	var id int
-	err := tx.QueryRow(ctx,
-		`SELECT id FROM accounting_periods
+	const selectOpen = `SELECT id FROM accounting_periods
 		 WHERE $1::date BETWEEN start_date AND end_date AND status = 'open'
-		 ORDER BY id LIMIT 1`, date).Scan(&id)
+		 ORDER BY id LIMIT 1`
+	var id int
+	err := tx.QueryRow(ctx, selectOpen, date).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, err
+	}
+
+	// A closed period covering the date means the books for that date are
+	// deliberately shut — never create a sibling period around it.
+	var covered bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM accounting_periods WHERE $1::date BETWEEN start_date AND end_date)`,
+		date).Scan(&covered); err != nil {
+		return 0, err
+	}
+	if covered {
+		return 0, ErrNoOpenPeriod
+	}
+
+	// ON CONFLICT DO NOTHING absorbs both a concurrent auto-create of the
+	// same month and an existing non-month-aligned period the month would
+	// overlap; the re-select decides the outcome either way.
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO accounting_periods (fiscal_year_id, name, start_date, end_date)
+		 SELECT fy.id, to_char($1::date, 'YYYY-MM'),
+		        GREATEST(date_trunc('month', $1::date)::date, fy.start_date),
+		        LEAST((date_trunc('month', $1::date) + interval '1 month - 1 day')::date, fy.end_date)
+		 FROM fiscal_years fy
+		 WHERE $1::date BETWEEN fy.start_date AND fy.end_date AND fy.status = 'open'
+		 ORDER BY fy.start_date LIMIT 1
+		 ON CONFLICT DO NOTHING`, date); err != nil {
+		return 0, err
+	}
+	err = tx.QueryRow(ctx, selectOpen, date).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrNoOpenPeriod
 	}

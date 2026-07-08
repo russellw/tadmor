@@ -2,6 +2,7 @@ package posting_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"tadmor/internal/dbtest"
@@ -137,6 +138,91 @@ func TestPostingBalances(t *testing.T) {
 	}
 	if jeID == nil {
 		t.Error("sales invoice was not linked to a journal entry")
+	}
+}
+
+// TestPeriodAutoCreate covers the month-rollover behaviour of posting: a date
+// inside an open fiscal year but not covered by any period gets its calendar
+// month auto-created as an open period (clipped to the fiscal year's bounds),
+// while dates in a closed period, a closed fiscal year, or outside every
+// fiscal year still refuse to post.
+func TestPeriodAutoCreate(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+	dbtest.Reset(ctx, t, pool)
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	exec, queryID := execAndQueryID(ctx, t, tx)
+
+	// FY2026 has only June; FY2025 starts mid-month to exercise clipping.
+	exec(`INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY2026','2026-01-01','2026-12-31')`)
+	exec(`INSERT INTO accounting_periods (fiscal_year_id, name, start_date, end_date)
+	      SELECT id,'2026-06','2026-06-01','2026-06-30' FROM fiscal_years WHERE name='FY2026'`)
+	exec(`INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY2025','2025-01-15','2025-12-31')`)
+
+	custID := queryID(`WITH o AS (INSERT INTO organizations (name) VALUES ('Acme') RETURNING id)
+	      INSERT INTO customers (organization_id, ar_account_id)
+	      SELECT o.id, (SELECT id FROM accounts WHERE code='1100') FROM o RETURNING id`)
+	newPayment := func(date string) int {
+		return queryID(`INSERT INTO customer_payments (customer_id, payment_date, currency_code, amount, deposit_account_id)
+		      VALUES ($1,$2::date,'USD',10,(SELECT id FROM accounts WHERE code='1000')) RETURNING id`, custID, date)
+	}
+	assertPeriod := func(name, wantStart, wantEnd string) {
+		t.Helper()
+		var start, end, status string
+		if err := tx.QueryRow(ctx,
+			`SELECT start_date::text, end_date::text, status FROM accounting_periods WHERE name = $1`, name).
+			Scan(&start, &end, &status); err != nil {
+			t.Fatalf("period %s was not created: %v", name, err)
+		}
+		if start != wantStart || end != wantEnd || status != "open" {
+			t.Errorf("period %s = %s..%s %s, want %s..%s open", name, start, end, status, wantStart, wantEnd)
+		}
+	}
+
+	// A date past the last existing period auto-creates its calendar month.
+	entryID, err := posting.PostCustomerPayment(ctx, tx, newPayment("2026-07-15"))
+	if err != nil {
+		t.Fatalf("post payment after month rollover: %v", err)
+	}
+	assertPeriod("2026-07", "2026-07-01", "2026-07-31")
+	var entryPeriod string
+	if err := tx.QueryRow(ctx,
+		`SELECT p.name FROM journal_entries je JOIN accounting_periods p ON p.id = je.period_id
+		 WHERE je.id = $1`, entryID).Scan(&entryPeriod); err != nil {
+		t.Fatalf("read entry period: %v", err)
+	}
+	if entryPeriod != "2026-07" {
+		t.Errorf("entry posted into period %s, want 2026-07", entryPeriod)
+	}
+
+	// The auto-created month is clipped to the fiscal year's bounds.
+	if _, err := posting.PostCustomerPayment(ctx, tx, newPayment("2025-01-20")); err != nil {
+		t.Fatalf("post payment in clipped month: %v", err)
+	}
+	assertPeriod("2025-01", "2025-01-15", "2025-01-31")
+
+	// A date outside every fiscal year still refuses to post.
+	if _, err := posting.PostCustomerPayment(ctx, tx, newPayment("2028-03-01")); !errors.Is(err, posting.ErrNoOpenPeriod) {
+		t.Errorf("post outside any fiscal year: err = %v, want ErrNoOpenPeriod", err)
+	}
+
+	// A closed period covering the date must not get a sibling auto-created.
+	exec(`UPDATE accounting_periods SET status='closed' WHERE name='2026-06'`)
+	if _, err := posting.PostCustomerPayment(ctx, tx, newPayment("2026-06-20")); !errors.Is(err, posting.ErrNoOpenPeriod) {
+		t.Errorf("post into closed period: err = %v, want ErrNoOpenPeriod", err)
+	}
+
+	// A closed fiscal year must not grow new periods.
+	exec(`UPDATE fiscal_years SET status='closed' WHERE name='FY2025'`)
+	if _, err := posting.PostCustomerPayment(ctx, tx, newPayment("2025-05-10")); !errors.Is(err, posting.ErrNoOpenPeriod) {
+		t.Errorf("post into closed fiscal year: err = %v, want ErrNoOpenPeriod", err)
 	}
 }
 
