@@ -6,8 +6,9 @@ import { E2E_EMAIL, E2E_PREFIX } from "./tests/helpers"
 const exec = promisify(execFile)
 
 // The app has no hard-delete for master data (accounting entities are
-// deactivated, not removed). Tests create throwaway organizations + customers
-// named with E2E_PREFIX; we delete those rows directly via psql after the run so
+// deactivated, not removed). Tests create throwaway rows (organizations and
+// their customer/supplier roles, products, calendars, codes, users) named with
+// E2E_PREFIX; we delete those rows directly via psql after the run so
 // the dev database doesn't accumulate test data. psql is a system tool, so this
 // adds no npm dependency.
 //
@@ -26,7 +27,12 @@ export default async function globalTeardown(): Promise<void> {
      WHERE organization_id IN (
        SELECT id FROM organizations WHERE name LIKE '${E2E_PREFIX}%'
      );
+    DELETE FROM suppliers
+     WHERE organization_id IN (
+       SELECT id FROM organizations WHERE name LIKE '${E2E_PREFIX}%'
+     );
     DELETE FROM organizations WHERE name LIKE '${E2E_PREFIX}%';
+    DELETE FROM products WHERE sku LIKE '${E2E_PREFIX}%';
     DELETE FROM accounting_periods
      WHERE fiscal_year_id IN (
        SELECT id FROM fiscal_years WHERE name LIKE '${E2E_PREFIX}%'

@@ -16,7 +16,7 @@ test.describe("users", () => {
 
     await page.getByLabel("Email").fill(email)
     await page.getByLabel("Full Name").fill("E2E Person")
-    await page.getByLabel("Password").fill("a-strong-password")
+    await page.getByLabel("Password", { exact: true }).fill("a-strong-password")
     await page.getByRole("button", { name: "Create" }).click()
 
     await expect(page).toHaveURL(/\/users$/)
@@ -34,7 +34,7 @@ test.describe("users", () => {
     await page.goto("/users/new")
     await page.getByLabel("Email").fill(email)
     await page.getByLabel("Full Name").fill("E2E Admin")
-    await page.getByLabel("Password").fill("a-strong-password")
+    await page.getByLabel("Password", { exact: true }).fill("a-strong-password")
     await page.getByLabel("Administrator").check()
     await page.getByRole("button", { name: "Create" }).click()
 
@@ -123,7 +123,7 @@ test.describe("non-admin", () => {
 
     await page.goto("/")
     await page.getByLabel("Email").fill(email)
-    await page.getByLabel("Password").fill("e2e-password")
+    await page.getByLabel("Password", { exact: true }).fill("e2e-password")
     await page.getByRole("button", { name: "Sign in" }).click()
 
     // The shell appears without the Users nav entry.

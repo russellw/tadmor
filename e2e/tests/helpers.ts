@@ -152,6 +152,57 @@ export async function createWarehouse(
   return ((await res.json()) as { id: number }).id
 }
 
+/** Create a supplier on an organization via the API and return its id. Used to
+ *  set up the edit/deactivate tests without driving the create form each time. */
+export async function createSupplier(
+  request: APIRequestContext,
+  organizationId: number,
+  overrides: Record<string, unknown> = {},
+): Promise<number> {
+  const res = await request.post("/api/suppliers", {
+    data: {
+      organization_id: organizationId,
+      supplier_number: null,
+      ap_account_id: null,
+      payment_terms_code: null,
+      currency_code: null,
+      tax_code: null,
+      is_active: true,
+      ...overrides,
+    },
+  })
+  expect(res.ok(), `create supplier failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** Create a throwaway catalog product via the API and return its id. The SKU
+ *  carries the E2E_PREFIX so global-teardown removes the row. */
+export async function createProduct(
+  request: APIRequestContext,
+  sku: string,
+  name: string,
+  overrides: Record<string, unknown> = {},
+): Promise<number> {
+  const res = await request.post("/api/products", {
+    data: {
+      sku,
+      name,
+      description: null,
+      unit_price: "0",
+      currency_code: null,
+      revenue_account_id: null,
+      tax_code: null,
+      track_inventory: false,
+      inventory_account_id: null,
+      cogs_account_id: null,
+      is_active: true,
+      ...overrides,
+    },
+  })
+  expect(res.ok(), `create product failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
 /** Create a customer on an organization via the API and return its id. Used to
  *  set up the edit/deactivate tests without driving the create form each time. */
 export async function createCustomer(

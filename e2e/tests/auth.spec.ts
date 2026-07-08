@@ -21,7 +21,9 @@ test("unauthenticated visit shows the login screen, not the app", async ({
 test("wrong password is rejected with an error", async ({ page }) => {
   await page.goto("/")
   await page.getByLabel("Email").fill(E2E_EMAIL)
-  await page.getByLabel("Password").fill("definitely-not-the-password")
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("definitely-not-the-password")
   await page.getByRole("button", { name: "Sign in" }).click()
   await expect(page.getByRole("alert")).toContainText(
     "invalid email or password",
@@ -35,7 +37,7 @@ test("sign in and sign out round trip", async ({ page }) => {
 
   await page.goto("/")
   await page.getByLabel("Email").fill(E2E_EMAIL)
-  await page.getByLabel("Password").fill(password!)
+  await page.getByLabel("Password", { exact: true }).fill(password!)
   await page.getByRole("button", { name: "Sign in" }).click()
 
   // The app shell appears, showing who is signed in.

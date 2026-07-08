@@ -10,14 +10,13 @@ sections, deferred decisions, and a gap review against the project goal.
 
 ## Explicitly documented next steps
 
-- **Broaden e2e coverage** (`docs/e2e-testing.md` §9). Nine spec files exist —
-  auth, smoke, customers, payment terms, tax codes, warehouses, periods, users,
-  and the financial-statement reports — but **suppliers and products** (same
-  form pattern as customers) and all the **document screens** (invoices,
-  payments, orders, credit notes) have no specs. The `E2E_DATABASE_URL`
-  override is already implemented in setup/teardown; what remains is pointing
-  CI at a **dedicated test database** so teardown stops targeting the dev DB
-  by default.
+- **Broaden e2e coverage** (`docs/e2e-testing.md` §9). All the master-data
+  screens now have specs (auth, smoke, customers, suppliers, products, payment
+  terms, tax codes, warehouses, periods, users, reports), but the **document
+  screens** (invoices, payments, orders, credit notes) have none. The
+  `E2E_DATABASE_URL` override is already implemented in setup/teardown; what
+  remains is pointing CI at a **dedicated test database** so teardown stops
+  targeting the dev DB by default.
 - **Full ISO country/currency seed script** (noted in
   `db/migrations/000002_reference.up.sql` and `docs/local-development.md`).
   Migrations seed only a common subset; the promised ancillary seed script
