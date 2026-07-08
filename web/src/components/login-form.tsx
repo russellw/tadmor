@@ -73,6 +73,11 @@ export function LoginForm({ onLogin }: { onLogin: (user: User) => void }) {
             {busy ? "Signing in…" : "Sign in"}
           </Button>
         </form>
+
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          Guest access: <span className="font-mono">guest@demo</span> /{" "}
+          <span className="font-mono">guest123</span>
+        </p>
       </section>
     </div>
   )
