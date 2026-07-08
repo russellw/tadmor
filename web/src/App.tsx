@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { NavLink, Navigate, Route, Routes } from "react-router-dom"
+import { NavLink, Route, Routes } from "react-router-dom"
+import { MenuIcon } from "lucide-react"
 
 import { logout, me, UNAUTHORIZED_EVENT, type User } from "@/lib/api"
 import { LoginForm } from "@/components/login-form"
@@ -12,6 +13,7 @@ import { BillForm } from "@/components/bill-form"
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
+import { Dashboard } from "@/components/dashboard"
 import { FiscalYearForm } from "@/components/fiscal-year-form"
 import { CreditNoteForm, SupplierCreditForm } from "@/components/credit-note-form"
 import {
@@ -74,65 +76,134 @@ import { cn } from "@/lib/utils"
 // URL routing via react-router-dom (v7). The Go backend's spaHandler falls back
 // to index.html for non-/api/ paths, so deep links like /customers resolve in
 // production; Vite's dev server does the same in development.
-const masterNavItems = [
-  { to: "/accounts", label: "Chart of Accounts" },
-  { to: "/organizations", label: "Organizations" },
-  { to: "/customers", label: "Customers" },
-  { to: "/suppliers", label: "Suppliers" },
-  { to: "/products", label: "Products" },
-  { to: "/tax-codes", label: "Tax Codes" },
-  { to: "/payment-terms", label: "Payment Terms" },
-  { to: "/warehouses", label: "Warehouses" },
-  { to: "/periods", label: "Periods" },
-  // Users is appended for administrators only; the backend enforces the same
-  // rule on the /users endpoints.
+//
+// Navigation is a fixed sidebar grouped by business domain, ordered roughly by
+// how often each group is touched (daily document work first, configure-once
+// data last).
+const navGroups = [
+  {
+    label: "Sales",
+    items: [
+      { to: "/sales-orders", label: "Sales Orders" },
+      { to: "/invoices", label: "Invoices" },
+      { to: "/credit-notes", label: "Credit Notes" },
+      { to: "/customer-payments", label: "Customer Payments" },
+      { to: "/customers", label: "Customers" },
+    ],
+  },
+  {
+    label: "Purchases",
+    items: [
+      { to: "/purchase-orders", label: "Purchase Orders" },
+      { to: "/bills", label: "Bills" },
+      { to: "/supplier-credits", label: "Supplier Credits" },
+      { to: "/supplier-payments", label: "Supplier Payments" },
+      { to: "/suppliers", label: "Suppliers" },
+    ],
+  },
+  {
+    label: "Inventory",
+    items: [
+      { to: "/products", label: "Products" },
+      { to: "/stock-movements", label: "Stock Movements" },
+      { to: "/warehouses", label: "Warehouses" },
+    ],
+  },
+  {
+    label: "Reports",
+    items: [
+      { to: "/reports/profit-and-loss", label: "Profit & Loss" },
+      { to: "/reports/balance-sheet", label: "Balance Sheet" },
+      { to: "/reports/trial-balance", label: "Trial Balance" },
+      { to: "/reports/ar-aging", label: "AR Aging" },
+      { to: "/reports/ap-aging", label: "AP Aging" },
+      { to: "/reports/inventory", label: "Inventory Valuation" },
+    ],
+  },
+  {
+    label: "Accounting",
+    items: [
+      { to: "/accounts", label: "Chart of Accounts" },
+      { to: "/periods", label: "Periods" },
+    ],
+  },
+  {
+    label: "Setup",
+    items: [
+      { to: "/organizations", label: "Organizations" },
+      { to: "/tax-codes", label: "Tax Codes" },
+      { to: "/payment-terms", label: "Payment Terms" },
+      // Users is appended for administrators only; the backend enforces the
+      // same rule on the /users endpoints.
+    ],
+  },
 ]
 
 const adminNavItems = [{ to: "/users", label: "Users" }]
 
-const documentNavItems = [
-  { to: "/sales-orders", label: "Sales Orders" },
-  { to: "/purchase-orders", label: "Purchase Orders" },
-  { to: "/invoices", label: "Invoices" },
-  { to: "/bills", label: "Bills" },
-  { to: "/credit-notes", label: "Credit Notes" },
-  { to: "/supplier-credits", label: "Supplier Credits" },
-  { to: "/customer-payments", label: "Customer Payments" },
-  { to: "/supplier-payments", label: "Supplier Payments" },
-  { to: "/stock-movements", label: "Stock" },
-]
-
-const reportNavItems = [
-  { to: "/reports/profit-and-loss", label: "P&L" },
-  { to: "/reports/balance-sheet", label: "Balance Sheet" },
-  { to: "/reports/trial-balance", label: "Trial Balance" },
-  { to: "/reports/ar-aging", label: "AR Aging" },
-  { to: "/reports/ap-aging", label: "AP Aging" },
-  { to: "/reports/inventory", label: "Inventory" },
-]
-
-function NavItems({ items }: { items: { to: string; label: string }[] }) {
-  return items.map((item) => (
+function SidebarLink({
+  to,
+  label,
+  end,
+}: {
+  to: string
+  label: string
+  end?: boolean
+}) {
+  return (
     <NavLink
-      key={item.to}
-      to={item.to}
+      to={to}
+      end={end}
       className={({ isActive }) =>
         cn(
-          "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+          "block rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
           isActive
-            ? "bg-secondary text-secondary-foreground"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
         )
       }
     >
-      {item.label}
+      {label}
     </NavLink>
-  ))
+  )
+}
+
+// onNavigate lets the mobile drawer close on any link click; clicks bubble up
+// from the NavLinks.
+function SidebarNav({
+  isAdmin,
+  onNavigate,
+}: {
+  isAdmin: boolean
+  onNavigate: () => void
+}) {
+  return (
+    <nav className="flex-1 overflow-y-auto px-3 pb-4" onClick={onNavigate}>
+      {/* `end` keeps Home from matching every route ("/" is a prefix of all). */}
+      <SidebarLink to="/" label="Home" end />
+      {navGroups.map((group) => (
+        <div key={group.label}>
+          <p className="px-3 pb-1 pt-5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {group.label}
+          </p>
+          {(group.label === "Setup" && isAdmin
+            ? [...group.items, ...adminNavItems]
+            : group.items
+          ).map((item) => (
+            <SidebarLink key={item.to} to={item.to} label={item.label} />
+          ))}
+        </div>
+      ))}
+    </nav>
+  )
 }
 
 export default function App() {
   // undefined = still probing the session, null = logged out.
   const [user, setUser] = useState<User | null | undefined>(undefined)
+  // Mobile-only: whether the sidebar drawer is open. On md+ the sidebar is
+  // always visible and this state is ignored.
+  const [navOpen, setNavOpen] = useState(false)
 
   useEffect(() => {
     me()
@@ -166,20 +237,40 @@ export default function App() {
 
   return (
     <CurrentUserContext.Provider value={user}>
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b">
-        <nav className="mx-auto flex w-full max-w-5xl flex-wrap gap-1 p-3">
-          <NavItems
-            items={
-              user.is_admin
-                ? [...masterNavItems, ...adminNavItems]
-                : masterNavItems
-            }
-          />
-          <span aria-hidden className="mx-1 my-auto h-4 w-px bg-border" />
-          <NavItems items={documentNavItems} />
-          <span aria-hidden className="mx-1 my-auto h-4 w-px bg-border" />
-          <NavItems items={reportNavItems} />
+    <div className="flex min-h-screen bg-background text-foreground">
+      {navOpen && (
+        <div
+          aria-hidden
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          onClick={() => setNavOpen(false)}
+        />
+      )}
+      <aside
+        className={cn(
+          "z-40 w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
+          "md:sticky md:top-0 md:flex md:h-screen",
+          navOpen ? "fixed inset-y-0 left-0 flex" : "hidden",
+        )}
+      >
+        <div className="px-6 pt-5 text-lg font-semibold tracking-tight">
+          Tadmor
+        </div>
+        <SidebarNav
+          isAdmin={user.is_admin}
+          onNavigate={() => setNavOpen(false)}
+        />
+      </aside>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center gap-2 border-b px-4 py-2 md:px-6">
+          <Button
+            variant="outline"
+            size="sm"
+            className="md:hidden"
+            aria-label="Open navigation"
+            onClick={() => setNavOpen(true)}
+          >
+            <MenuIcon className="size-4" />
+          </Button>
           <span className="ml-auto flex items-center gap-2">
             <span className="text-sm text-muted-foreground">
               {user.full_name}
@@ -188,11 +279,10 @@ export default function App() {
               Sign out
             </Button>
           </span>
-        </nav>
-      </header>
-      <main>
+        </header>
+        <main className="flex-1">
         <Routes>
-          <Route path="/" element={<Navigate to="/accounts" replace />} />
+          <Route path="/" element={<Dashboard />} />
           <Route path="/accounts" element={<ChartOfAccounts />} />
           <Route path="/accounts/new" element={<AccountForm mode="create" />} />
           <Route path="/accounts/:id" element={<AccountForm mode="edit" />} />
@@ -365,7 +455,8 @@ export default function App() {
             }
           />
         </Routes>
-      </main>
+        </main>
+      </div>
     </div>
     </CurrentUserContext.Provider>
   )

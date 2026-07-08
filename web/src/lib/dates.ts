@@ -1,6 +1,6 @@
 // Date-only arithmetic on the API's YYYY-MM-DD strings, used to prefill the
-// fiscal-calendar forms. All math runs in UTC so the local timezone can never
-// shift a date across midnight.
+// fiscal-calendar forms and to bucket due dates on the dashboard. All math
+// runs in UTC so the local timezone can never shift a date across midnight.
 
 function parts(date: string): [number, number, number] {
   const [y, m, d] = date.split("-").map(Number)
@@ -13,8 +13,22 @@ function format(t: Date): string {
 
 /** The day after the given date. */
 export function dayAfter(date: string): string {
+  return daysAfter(date, 1)
+}
+
+/** The date n days after the given date. */
+export function daysAfter(date: string, n: number): string {
   const [y, m, d] = parts(date)
-  return format(new Date(Date.UTC(y, m - 1, d + 1)))
+  return format(new Date(Date.UTC(y, m - 1, d + n)))
+}
+
+/** Today's date in the user's local timezone (the calendar day they see),
+ *  matching how the server's aging views bucket on current_date. */
+export function today(): string {
+  const t = new Date()
+  const m = String(t.getMonth() + 1).padStart(2, "0")
+  const d = String(t.getDate()).padStart(2, "0")
+  return `${t.getFullYear()}-${m}-${d}`
 }
 
 /** The last day of the given date's month. */

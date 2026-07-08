@@ -140,9 +140,9 @@ The dev environment is WSL2 (Ubuntu 24.04), which shaped a couple of details:
 
 Tests live in `e2e/tests/`. Nineteen files today:
 
-- **`smoke.spec.ts`** — the app boots and a representative screen renders (the
-  Chart of Accounts heading + the five primary nav links). No data assertions;
-  just that the shell and a screen mount.
+- **`smoke.spec.ts`** — the app boots and representative screens render (the
+  Home dashboard, the Chart of Accounts heading, and five sidebar nav links).
+  No data assertions; just that the shell and a screen mount.
 - **`customers.spec.ts`** — the customer lifecycle through the UI: **create**
   (pick a throwaway organization in the New Customer form, set fields, assert the
   new row lists), **edit** (change customer number + currency, assert the list
