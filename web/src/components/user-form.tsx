@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PasswordInput } from "@/components/password-input"
 
 type Mode = "create" | "edit"
 
@@ -199,9 +200,8 @@ export function UserForm({ mode }: { mode: Mode }) {
             {creating && (
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   autoComplete="new-password"
                   value={form.password}
                   onChange={(e) =>
@@ -267,9 +267,8 @@ export function UserForm({ mode }: { mode: Mode }) {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="new_password">New Password</Label>
-                <Input
+                <PasswordInput
                   id="new_password"
-                  type="password"
                   autoComplete="new-password"
                   className="max-w-80"
                   value={newPassword}
