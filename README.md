@@ -75,7 +75,8 @@ binary (a container build also exists; see the repo-root `Dockerfile`). The demo
 runs at https://tadmor.belunaro.com on a fixed-price VPS behind Caddy —
 `make deploy` redeploys it; see [`docs/deployment.md`](docs/deployment.md) for
 the full setup. A guest account (`guest@demo` / `guest123`, non-admin) is open
-for anyone who wants to poke around the demo.
+for anyone who wants to poke around the demo — edit freely, the database is
+reseeded nightly.
 
 ## Dependency / supply-chain policy
 

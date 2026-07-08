@@ -79,6 +79,48 @@ sit inside the *single*-quoted `sh -c` string: root has to expand it — the
 env file is mode 600 root:root, so a double-quoted version fails with
 "Permission denied" because the unprivileged login shell expands it first.)
 
+### 2.2 Nightly demo reseed
+
+The public guest account (`guest@demo`, see the README) lets anyone edit the
+demo data, so every night at 04:17 UTC `tadmor-reseed.timer` rebuilds the
+database from a snapshot: stop `tadmor`, `DROP DATABASE` + `CREATE DATABASE`,
+restore `/var/lib/tadmor-demo/seed.sql`, ensure a fiscal year and an open
+accounting period cover the current date (so posting keeps working as the
+snapshot ages), start `tadmor`. The script and units live in `deploy/`
+(`reseed.sh`, `tadmor-reseed.service`, `tadmor-reseed.timer`).
+
+Consequences worth remembering:
+
+- **Everything reverts nightly** — including users, password changes, and any
+  data curated through the app. To make a change permanent, make it in the
+  app and then refresh the snapshot:
+
+  ```bash
+  make demo-snapshot
+  ```
+
+  (a `pg_dump` of the live database, minus `sessions` rows, written atomically
+  over the seed file — no downtime).
+- The snapshot may predate the running binary's newest migrations; that is
+  fine, because restarting `tadmor` re-applies pending migrations to the
+  restored database. Refreshing the snapshot after schema-changing deploys is
+  tidy but not required.
+- If a restore fails, the script still restarts `tadmor` (which then
+  crash-loops on the missing database) and the failure is visible in
+  `systemctl status tadmor-reseed.service`.
+
+Install/update on the box (also the rebuild procedure):
+
+```bash
+ssh vps 'sudo install -d -m 700 -o postgres -g postgres /var/lib/tadmor-demo'
+make demo-snapshot
+scp deploy/reseed.sh deploy/tadmor-reseed.service deploy/tadmor-reseed.timer vps:/tmp/
+ssh vps 'sudo install -m 755 -o root -g root /tmp/reseed.sh /opt/tadmor/reseed.sh \
+         && sudo install -m 644 -o root -g root /tmp/tadmor-reseed.service /tmp/tadmor-reseed.timer /etc/systemd/system/ \
+         && rm /tmp/reseed.sh /tmp/tadmor-reseed.service /tmp/tadmor-reseed.timer \
+         && sudo systemctl daemon-reload && sudo systemctl enable --now tadmor-reseed.timer'
+```
+
 ## 3. One-time box setup (already done; recorded for rebuild)
 
 The box-level hardening (ufw default-deny with only 22/80/443, SSH key-only,

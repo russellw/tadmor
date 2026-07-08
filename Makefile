@@ -13,7 +13,7 @@ DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable
 TEST_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable
 
 .DEFAULT_GOAL := help
-.PHONY: help build release image deploy run test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
+.PHONY: help build release image deploy demo-snapshot run test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
 
 # Frontend lives in web/ (pnpm, corepack-pinned). Mirrors the Go targets'
 # discipline: the committed pnpm-lock.yaml is the source of truth and CI installs
@@ -46,6 +46,9 @@ deploy: release ## Build and deploy to the VPS (see docs/deployment.md)
 	scp bin/server vps:/tmp/tadmor-server
 	ssh vps 'sudo install -m 755 -o root -g root /tmp/tadmor-server /opt/tadmor/server && rm /tmp/tadmor-server && sudo systemctl restart tadmor'
 	sleep 2 && curl -fsS https://tadmor.belunaro.com/readyz && echo
+
+demo-snapshot: ## Snapshot the prod DB as the baseline the nightly demo reseed restores
+	ssh vps "sudo -u postgres sh -c 'pg_dump --exclude-table-data=sessions tadmor > /var/lib/tadmor-demo/seed.sql.tmp && mv /var/lib/tadmor-demo/seed.sql.tmp /var/lib/tadmor-demo/seed.sql'"
 
 run: build ## Build and run the server
 	DATABASE_URL=$(DATABASE_URL) ./bin/server

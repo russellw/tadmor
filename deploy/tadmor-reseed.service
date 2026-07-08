@@ -1,0 +1,8 @@
+[Unit]
+Description=Tadmor demo database nightly reseed
+Requires=postgresql.service
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/tadmor/reseed.sh
