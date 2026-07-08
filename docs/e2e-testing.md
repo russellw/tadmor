@@ -138,7 +138,7 @@ The dev environment is WSL2 (Ubuntu 24.04), which shaped a couple of details:
 
 ## 6. Test structure and the "no hard-delete" finding
 
-Tests live in `e2e/tests/`. Eleven files today:
+Tests live in `e2e/tests/`. Fifteen files today:
 
 - **`smoke.spec.ts`** — the app boots and a representative screen renders (the
   Chart of Accounts heading + the five primary nav links). No data assertions;
@@ -165,6 +165,17 @@ Tests live in `e2e/tests/`. Eleven files today:
 - **`users.spec.ts`** — user/administrator creation, edit + deactivate,
   password reset, the self-deactivation and self-demotion refusals, and that
   non-admins don't see the Users screen.
+- **`invoices.spec.ts`**, **`payments.spec.ts`**, **`credit-notes.spec.ts`**,
+  **`orders.spec.ts`** — the AR document screens: draft creation through the
+  forms (free-form lines with a chosen revenue account), posting to the
+  ledger, deleting a draft, applying a posted payment/credit note to an open
+  invoice, and confirming + invoicing a sales order. Each test provisions its
+  own customer, GL accounts, and a **one-day fiscal year + open period** in a
+  far-future range (years 2900+, disjoint from the calendar tests' 2200–2899)
+  via `salesFixture` in `helpers.ts`, so posting never depends on the dev
+  database having an open period for today. The AP screens (bills, supplier
+  credits/payments, purchase orders) render through the same shared
+  components, so the AR flows cover those code paths.
 
 **Authentication.** The API requires a login session, so a `globalSetup`
 (`global-setup.ts`) runs before any test: it upserts a dedicated
@@ -279,20 +290,26 @@ BASE_URL=http://localhost:8080 corepack pnpm test
 - **Browser binary** is outside lockfile integrity (version-locked to the pinned
   release; Microsoft CDN). Build-continuity, not malicious-code, risk.
 - **Teardown targets the dev DB by default** — see the §6 CI caveat.
-- **Coverage gaps** — the document screens: invoices, payments, orders, and
-  credit notes have no specs.
+- **Coverage gaps** — the AP document screens (bills, supplier
+  credits/payments, purchase orders) are covered only indirectly, through the
+  shared components their AR twins exercise; stock movements, order
+  shipping, and the admin-only unpost action have no specs.
 
 ---
 
 ## 9. Status and next step
 
 Done: `e2e/` scaffolded and committed with the hardened pnpm config and Makefile
-targets; Chromium installed; eleven spec files covering auth, smoke, customers,
-suppliers, products, payment terms, tax codes, warehouses, periods, users, and
-the financial-statement reports (see §6), with teardown confirmed to leave zero
-test rows. Setup and teardown already honor `E2E_DATABASE_URL` as an override
-for the database they touch.
+targets; Chromium installed; fifteen spec files covering auth, smoke, the
+master-data screens (customers, suppliers, products, payment terms, tax codes,
+warehouses, periods, users), the financial-statement reports, and the AR
+document screens — invoices, customer payments, credit notes, and sales orders,
+including posting to the ledger and payment/credit application (see §6) — with
+teardown confirmed to leave zero test rows, including journal entries. Setup
+and teardown already honor `E2E_DATABASE_URL` as an override for the database
+they touch.
 
-Next (when wanted): add specs for the document screens (invoices, payments,
-orders, credit notes); point CI at a dedicated test database via
-`E2E_DATABASE_URL` so teardown stops defaulting to the dev DB.
+Next (when wanted): direct specs for the AP document screens and stock
+movements if the shared-component coverage ever feels thin; point CI at a
+dedicated test database via `E2E_DATABASE_URL` so teardown stops defaulting to
+the dev DB.

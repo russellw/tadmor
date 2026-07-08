@@ -10,10 +10,12 @@ sections, deferred decisions, and a gap review against the project goal.
 
 ## Explicitly documented next steps
 
-- **Broaden e2e coverage** (`docs/e2e-testing.md` §9). All the master-data
-  screens now have specs (auth, smoke, customers, suppliers, products, payment
-  terms, tax codes, warehouses, periods, users, reports), but the **document
-  screens** (invoices, payments, orders, credit notes) have none. The
+- **Broaden e2e coverage** (`docs/e2e-testing.md` §9). The master-data
+  screens, reports, and the AR document screens (invoices, customer payments,
+  credit notes, sales orders — including posting and payment/credit
+  application) all have specs. The AP twins (bills, supplier
+  credits/payments, purchase orders) are exercised only via the shared
+  components; stock movements and unpost have no specs. The
   `E2E_DATABASE_URL` override is already implemented in setup/teardown; what
   remains is pointing CI at a **dedicated test database** so teardown stops
   targeting the dev DB by default.

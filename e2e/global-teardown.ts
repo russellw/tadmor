@@ -23,6 +23,34 @@ export default async function globalTeardown(): Promise<void> {
   // the run's login user (its sessions cascade). The prefix and email are fixed
   // literals, not user input, so interpolation is safe here.
   const sql = `
+    -- Subledger documents hang off E2E customers, and their journal entries
+    -- land in E2E one-day periods (documents must be dated inside the test's
+    -- own period to post — see helpers.ts salesFixture). Applications first
+    -- (they RESTRICT invoice deletion), then documents (lines cascade),
+    -- invoices before orders (invoice lines reference order lines), and the
+    -- journal entries after the documents that point at them.
+    CREATE TEMP TABLE e2e_customers AS
+      SELECT c.id FROM customers c
+      JOIN organizations o ON o.id = c.organization_id
+     WHERE o.name LIKE '${E2E_PREFIX}%';
+    DELETE FROM payment_applications
+     WHERE payment_id IN (
+       SELECT id FROM customer_payments WHERE customer_id IN (SELECT id FROM e2e_customers)
+     );
+    DELETE FROM sales_credit_applications
+     WHERE credit_note_id IN (
+       SELECT id FROM sales_credit_notes WHERE customer_id IN (SELECT id FROM e2e_customers)
+     );
+    DELETE FROM customer_payments WHERE customer_id IN (SELECT id FROM e2e_customers);
+    DELETE FROM sales_credit_notes WHERE customer_id IN (SELECT id FROM e2e_customers);
+    DELETE FROM sales_invoices WHERE customer_id IN (SELECT id FROM e2e_customers);
+    DELETE FROM sales_orders WHERE customer_id IN (SELECT id FROM e2e_customers);
+    DELETE FROM journal_entries
+     WHERE period_id IN (
+       SELECT p.id FROM accounting_periods p
+       JOIN fiscal_years f ON f.id = p.fiscal_year_id
+      WHERE f.name LIKE '${E2E_PREFIX}%'
+     );
     DELETE FROM customers
      WHERE organization_id IN (
        SELECT id FROM organizations WHERE name LIKE '${E2E_PREFIX}%'
@@ -41,6 +69,9 @@ export default async function globalTeardown(): Promise<void> {
     DELETE FROM tax_codes WHERE code LIKE '${E2E_PREFIX}%';
     DELETE FROM payment_terms WHERE code LIKE '${E2E_PREFIX}%';
     DELETE FROM warehouses WHERE code LIKE '${E2E_PREFIX}%';
+    -- E2E accounts go last: journal lines (cascaded with their entries above)
+    -- and the E2E customers' AR links are gone by now.
+    DELETE FROM accounts WHERE code LIKE '${E2E_PREFIX}%';
     DELETE FROM users WHERE email = '${E2E_EMAIL}' OR email LIKE 'e2e-%@tadmor.test';
   `
   try {

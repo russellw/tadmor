@@ -106,6 +106,205 @@ export async function createTaxCode(
   return code
 }
 
+/** A random single far-future day for document tests, in years 2900–3599 —
+ *  disjoint from uniqueFarYear's 2200–2899 so document-test periods can never
+ *  overlap the fiscal-calendar tests' whole-year ranges. Documents must be
+ *  dated inside an open accounting period to post, and the dev database is not
+ *  guaranteed to have one for today, so each test brings its own one-day
+ *  period. */
+export function uniqueDocDay(): string {
+  const year = 2900 + Math.floor(Math.random() * 700)
+  const month = 1 + Math.floor(Math.random() * 12)
+  const day = 1 + Math.floor(Math.random() * 28)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${year}-${pad(month)}-${pad(day)}`
+}
+
+/** Create a postable E2E account of the given type and return it. The code
+ *  carries the E2E_PREFIX so global-teardown removes the row. */
+export async function createAccount(
+  request: APIRequestContext,
+  accountType: "asset" | "liability" | "equity" | "revenue" | "expense",
+): Promise<{ id: number; code: string }> {
+  const code = uniqueCode()
+  const res = await request.post("/api/accounts", {
+    data: {
+      code,
+      name: `${code} ${accountType}`,
+      account_type: accountType,
+      parent_id: null,
+      currency_code: null,
+      is_postable: true,
+      is_active: true,
+    },
+  })
+  expect(res.ok(), `create account failed (${res.status()})`).toBeTruthy()
+  return { id: ((await res.json()) as { id: number }).id, code }
+}
+
+/** Everything a sales-document test needs, created via the API: a customer
+ *  (on a throwaway organization) wired to a fresh AR account, revenue and
+ *  cash accounts to post against, and a one-day fiscal year + open period so
+ *  documents dated on `day` can post. Every row carries the E2E- prefix. */
+export interface SalesFixture {
+  day: string
+  orgName: string
+  customerId: number
+  arAccount: { id: number; code: string }
+  revenueAccount: { id: number; code: string }
+  cashAccount: { id: number; code: string }
+}
+
+export async function salesFixture(
+  request: APIRequestContext,
+): Promise<SalesFixture> {
+  const day = uniqueDocDay()
+  const orgName = uniqueOrgName()
+  const [arAccount, revenueAccount, cashAccount, orgId] = await Promise.all([
+    createAccount(request, "asset"),
+    createAccount(request, "revenue"),
+    createAccount(request, "asset"),
+    createOrganization(request, orgName),
+  ])
+  const [customerId, fiscalYearId] = await Promise.all([
+    createCustomer(request, orgId, {
+      ar_account_id: arAccount.id,
+      currency_code: "USD",
+    }),
+    createFiscalYear(request, `${E2E_PREFIX}FY ${day}`, day, day),
+  ])
+  await createPeriod(request, fiscalYearId, `${E2E_PREFIX}P ${day}`, day, day)
+  return { day, orgName, customerId, arAccount, revenueAccount, cashAccount }
+}
+
+/** POST an action endpoint (post/confirm/apply/…) and expect success. */
+export async function apiPost(
+  request: APIRequestContext,
+  url: string,
+): Promise<void> {
+  const res = await request.post(url)
+  expect(res.ok(), `POST ${url} failed (${res.status()})`).toBeTruthy()
+}
+
+/** Create a draft sales invoice with one free-form line and return its id. */
+export async function createInvoiceDraft(
+  request: APIRequestContext,
+  fixture: SalesFixture,
+  number: string,
+  unitPrice = "100",
+): Promise<number> {
+  const res = await request.post("/api/sales-invoices", {
+    data: {
+      invoice_number: number,
+      customer_id: fixture.customerId,
+      invoice_date: fixture.day,
+      due_date: null,
+      currency_code: "USD",
+      reference: null,
+      memo: null,
+      lines: [
+        {
+          product_id: null,
+          description: "E2E line",
+          quantity: "1",
+          unit_price: unitPrice,
+          revenue_account_id: fixture.revenueAccount.id,
+          tax_code: null,
+          tax_rate: "0",
+        },
+      ],
+    },
+  })
+  expect(res.ok(), `create invoice failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** Create a draft customer payment and return its id. */
+export async function createCustomerPaymentDraft(
+  request: APIRequestContext,
+  fixture: SalesFixture,
+  amount: string,
+): Promise<number> {
+  const res = await request.post("/api/customer-payments", {
+    data: {
+      customer_id: fixture.customerId,
+      payment_date: fixture.day,
+      currency_code: "USD",
+      amount,
+      method: null,
+      reference: null,
+      deposit_account_id: fixture.cashAccount.id,
+    },
+  })
+  expect(res.ok(), `create payment failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** Create a draft sales credit note with one free-form line, return its id. */
+export async function createCreditNoteDraft(
+  request: APIRequestContext,
+  fixture: SalesFixture,
+  number: string,
+  unitPrice: string,
+): Promise<number> {
+  const res = await request.post("/api/sales-credit-notes", {
+    data: {
+      credit_note_number: number,
+      customer_id: fixture.customerId,
+      credit_note_date: fixture.day,
+      currency_code: "USD",
+      reference: null,
+      memo: null,
+      lines: [
+        {
+          product_id: null,
+          description: "E2E credit line",
+          quantity: "1",
+          unit_price: unitPrice,
+          revenue_account_id: fixture.revenueAccount.id,
+          tax_code: null,
+          tax_rate: "0",
+        },
+      ],
+    },
+  })
+  expect(res.ok(), `create credit note failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** Create a draft sales order with one free-form line and return its id. */
+export async function createSalesOrderDraft(
+  request: APIRequestContext,
+  fixture: SalesFixture,
+  number: string,
+  unitPrice = "80",
+): Promise<number> {
+  const res = await request.post("/api/sales-orders", {
+    data: {
+      order_number: number,
+      customer_id: fixture.customerId,
+      order_date: fixture.day,
+      expected_ship_date: null,
+      currency_code: "USD",
+      reference: null,
+      memo: null,
+      lines: [
+        {
+          product_id: null,
+          description: "E2E ordered line",
+          quantity: "1",
+          unit_price: unitPrice,
+          revenue_account_id: fixture.revenueAccount.id,
+          tax_code: null,
+          tax_rate: "0",
+        },
+      ],
+    },
+  })
+  expect(res.ok(), `create sales order failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
 /** A unique E2E-prefixed email for user-admin tests, lowercase to match how
  *  emails are usually typed (the users table is citext). */
 export function uniqueEmail(): string {
