@@ -138,7 +138,7 @@ The dev environment is WSL2 (Ubuntu 24.04), which shaped a couple of details:
 
 ## 6. Test structure and the "no hard-delete" finding
 
-Tests live in `e2e/tests/`. Three files today:
+Tests live in `e2e/tests/`. Nine files today:
 
 - **`smoke.spec.ts`** — the app boots and a representative screen renders (the
   Chart of Accounts heading + the five primary nav links). No data assertions;
@@ -150,6 +150,17 @@ Tests live in `e2e/tests/`. Three files today:
 - **`auth.spec.ts`** — the login screen and session lifecycle: an
   unauthenticated visit shows the sign-in form (never the app), a wrong
   password is rejected, and a sign-in/sign-out round trip works.
+- **`payment-terms.spec.ts`**, **`tax-codes.spec.ts`**,
+  **`warehouses.spec.ts`** — the same create/edit(/deactivate) lifecycle for
+  the simpler master-data screens, plus a validation rejection (negative due
+  days) on payment terms.
+- **`periods.spec.ts`** — fiscal-year and period creation, and the
+  close/reopen toggle.
+- **`reports.spec.ts`** — P&L and balance-sheet date filtering, and the trial
+  balance drill-down into an account ledger.
+- **`users.spec.ts`** — user/administrator creation, edit + deactivate,
+  password reset, the self-deactivation and self-demotion refusals, and that
+  non-admins don't see the Users screen.
 
 **Authentication.** The API requires a login session, so a `globalSetup`
 (`global-setup.ts`) runs before any test: it upserts a dedicated
@@ -264,18 +275,22 @@ BASE_URL=http://localhost:8080 corepack pnpm test
 - **Browser binary** is outside lockfile integrity (version-locked to the pinned
   release; Microsoft CDN). Build-continuity, not malicious-code, risk.
 - **Teardown targets the dev DB by default** — see the §6 CI caveat.
-- **Coverage is thin** — smoke + the customer lifecycle. Suppliers and products
-  share the identical form pattern, so mirroring those specs is straightforward
-  follow-on work.
+- **Coverage gaps** — suppliers and products (same form pattern as customers,
+  so mirroring those specs is straightforward), and the document screens:
+  invoices, payments, orders, and credit notes have no specs.
 
 ---
 
 ## 9. Status and next step
 
 Done: `e2e/` scaffolded and committed with the hardened pnpm config and Makefile
-targets; Chromium installed; smoke specs and the customer create/edit/deactivate
-specs written and **verified green (5/5)** against the dev stack, with teardown
-confirmed to leave zero test rows.
+targets; Chromium installed; nine spec files covering auth, smoke, customers,
+payment terms, tax codes, warehouses, periods, users, and the financial-statement
+reports (see §6), with teardown confirmed to leave zero test rows. Setup and
+teardown already honor `E2E_DATABASE_URL` as an override for the database they
+touch.
 
 Next (when wanted): mirror the create/edit/deactivate specs for suppliers and
-products; consider a dedicated CI test database via `E2E_DATABASE_URL`.
+products; add specs for the document screens (invoices, payments, orders, credit
+notes); point CI at a dedicated test database via `E2E_DATABASE_URL` so teardown
+stops defaulting to the dev DB.

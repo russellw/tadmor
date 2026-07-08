@@ -10,12 +10,14 @@ sections, deferred decisions, and a gap review against the project goal.
 
 ## Explicitly documented next steps
 
-- **Broaden e2e coverage** (`docs/e2e-testing.md` §9). Only smoke tests plus
-  the customer create/edit/deactivate lifecycle exist. Named follow-on: mirror
-  those specs for **suppliers and products** (same form pattern), and consider
-  a **dedicated CI test database via `E2E_DATABASE_URL`** so teardown stops
-  targeting the dev DB by default. None of the newer screens (invoices,
-  payments, orders, credit notes, reports) have e2e specs at all.
+- **Broaden e2e coverage** (`docs/e2e-testing.md` §9). Nine spec files exist —
+  auth, smoke, customers, payment terms, tax codes, warehouses, periods, users,
+  and the financial-statement reports — but **suppliers and products** (same
+  form pattern as customers) and all the **document screens** (invoices,
+  payments, orders, credit notes) have no specs. The `E2E_DATABASE_URL`
+  override is already implemented in setup/teardown; what remains is pointing
+  CI at a **dedicated test database** so teardown stops targeting the dev DB
+  by default.
 - **Full ISO country/currency seed script** (noted in
   `db/migrations/000002_reference.up.sql` and `docs/local-development.md`).
   Migrations seed only a common subset; the promised ancillary seed script
@@ -35,9 +37,10 @@ sections, deferred decisions, and a gap review against the project goal.
 
 ## Functional gaps toward "comprehensive business management"
 
-- **Period / year-end close.** Periods can be opened via the Periods screen,
-  but there's no closing workflow — no way to lock a period against back-dated
-  postings or roll retained earnings at year end.
+- **Year-end close.** Period locking already works — the Periods screen has a
+  Close/Reopen toggle and a DB trigger rejects postings into closed periods —
+  but there's no year-end workflow: nothing rolls retained earnings into the
+  new fiscal year.
 - **Multi-currency.** A currencies table exists, but nothing in the schema or
   handlers references exchange rates — all documents are effectively
   single-currency. If foreign-currency customers/suppliers are in scope, this
