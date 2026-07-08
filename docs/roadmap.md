@@ -1,0 +1,63 @@
+# Roadmap
+
+What's still to do, as of 2026-07-08. The core loop is in place — master data,
+GL with P&L / balance sheet / trial balance / ledgers / aging / inventory
+valuation, invoices, bills, credit notes, payments, sales and purchase orders
+with partial fulfilment, stock movements with GRNI, auth + roles — and the demo
+is live at https://tadmor.belunaro.com with a nightly reseed. The items below
+are what's known to be missing, gathered from the docs' "status and next step"
+sections, deferred decisions, and a gap review against the project goal.
+
+## Explicitly documented next steps
+
+- **Broaden e2e coverage** (`docs/e2e-testing.md` §9). Only smoke tests plus
+  the customer create/edit/deactivate lifecycle exist. Named follow-on: mirror
+  those specs for **suppliers and products** (same form pattern), and consider
+  a **dedicated CI test database via `E2E_DATABASE_URL`** so teardown stops
+  targeting the dev DB by default. None of the newer screens (invoices,
+  payments, orders, credit notes, reports) have e2e specs at all.
+- **Full ISO country/currency seed script** (noted in
+  `db/migrations/000002_reference.up.sql` and `docs/local-development.md`).
+  Migrations seed only a common subset; the promised ancillary seed script
+  with the complete ISO lists doesn't exist yet.
+
+## Deliberately deferred decisions worth revisiting
+
+- **Dockerfile base-image pinning** (`docs/deployment.md` §4.1) — deferred
+  with reasoning recorded; revisit if the container path ever becomes the real
+  deployment route (the VPS uses the static binary, so low priority).
+- **belunaro.com mail records** — the old OVH MX/SPF records were kept "for
+  now" when DNS moved; keep, replace, or drop mail on the domain is still
+  undecided.
+- **`-adduser` only creates admins** — the guest demo account had to be
+  provisioned by a hand-rolled SQL upsert. Let the CLI (or an admin screen
+  path) create non-admin users properly.
+
+## Functional gaps toward "comprehensive business management"
+
+- **Period / year-end close.** Periods can be opened via the Periods screen,
+  but there's no closing workflow — no way to lock a period against back-dated
+  postings or roll retained earnings at year end.
+- **Multi-currency.** A currencies table exists, but nothing in the schema or
+  handlers references exchange rates — all documents are effectively
+  single-currency. If foreign-currency customers/suppliers are in scope, this
+  is a large schema-and-posting-logic item.
+- **Cash-flow statement** — the one classic financial statement missing
+  alongside P&L and balance sheet.
+- **Bank reconciliation** — payments post to the GL, but there's no statement
+  import or matching.
+- **Document output** — no PDF/print rendering or emailing of invoices; the
+  app is screen-only.
+- **New-month period creation is manual ops.** The Periods screen makes it
+  easy, but posting still hard-fails when a month rolls over without someone
+  adding a period ("no open accounting period for the document date" — it has
+  already bitten prod once). Either auto-create the next period or surface a
+  louder warning ahead of time.
+
+## Smaller housekeeping
+
+- **README front-matter is stale**: it still says a front end is "to come",
+  and its layout section omits `web/`, `deploy/`, and `docs/`.
+- **Demo dataset upkeep**: any curated prod-data change must be followed by
+  `make demo-snapshot` or the nightly reseed reverts it. A guard (e.g. a
+  reminder in the deploy target) could help if this keeps causing surprises.
