@@ -13,12 +13,11 @@ sections, deferred decisions, and a gap review against the project goal.
 - **Broaden e2e coverage** (`docs/e2e-testing.md` §9). The master-data
   screens, reports, and the AR document screens (invoices, customer payments,
   credit notes, sales orders — including posting and payment/credit
-  application) all have specs. The AP twins (bills, supplier
-  credits/payments, purchase orders) are exercised only via the shared
-  components; stock movements and unpost have no specs. The
-  `E2E_DATABASE_URL` override is already implemented in setup/teardown; what
-  remains is pointing CI at a **dedicated test database** so teardown stops
-  targeting the dev DB by default.
+  application) all have specs, and `make e2e` runs self-contained against a
+  dedicated `tadmor_e2e` database. What's left is optional depth: the AP
+  twins (bills, supplier credits/payments, purchase orders) are exercised
+  only via the shared components, and stock movements and unpost have no
+  specs.
 - **Full ISO country/currency seed script** (noted in
   `db/migrations/000002_reference.up.sql` and `docs/local-development.md`).
   Migrations seed only a common subset; the promised ancillary seed script

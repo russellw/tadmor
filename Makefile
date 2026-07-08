@@ -11,6 +11,7 @@ export GOPROXY := off
 #   make test TEST_DATABASE_URL=postgres://user:pass@host:5432/db?sslmode=disable
 DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable
 TEST_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable
+E2E_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_e2e?sslmode=disable
 
 .DEFAULT_GOAL := help
 .PHONY: help build release image deploy demo-snapshot run test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
@@ -87,5 +88,5 @@ e2e-install: ## Install e2e deps (frozen) + Playwright's Chromium (see e2e/READM
 e2e-test: ## Run the Playwright UI tests (stack must already be running; BASE_URL overridable)
 	cd $(E2E) && corepack pnpm test
 
-e2e: ## Build+run the server, run the Playwright UI tests, then tear it down
-	DATABASE_URL=$(DATABASE_URL) $(E2E)/run-local.sh
+e2e: ## Build+run the server against the dedicated e2e DB, run the Playwright UI tests, tear it down
+	DATABASE_URL=$(E2E_DATABASE_URL) $(E2E)/run-local.sh

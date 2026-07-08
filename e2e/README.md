@@ -41,7 +41,16 @@ sudo env "PATH=$PATH" corepack pnpm exec playwright install-deps chromium
 
 ## Running
 
-Start the full stack first (in separate shells):
+The self-contained way — builds and starts the server against the dedicated
+`tadmor_e2e` database (created on first run, migrated on startup), runs the
+suite, and tears everything down:
+
+```sh
+make e2e                             # from the repo root; needs only Postgres up
+```
+
+To run the tests against an already-running stack instead, start it first (in
+separate shells):
 
 ```sh
 make web-dev                         # Vite dev server on :5173 (proxies /api → :8080)
@@ -65,5 +74,9 @@ Failure artifacts (screenshots, traces, HTML report) land in `test-results/` and
 Authentication needs no manual setup: `global-setup.ts` creates a throwaway
 `e2e@tadmor.test` login user (random password per run) directly in the
 database via `psql`, signs in once, and shares the session with every test as
-Playwright storage state; `global-teardown.ts` removes the user again. It uses
-the same connection default / `E2E_DATABASE_URL` override as the teardown.
+Playwright storage state; `global-teardown.ts` removes the user again.
+
+Setup and teardown touch the database named by `E2E_DATABASE_URL`. `make e2e`
+sets it to the same dedicated database its server runs on; in running-stack
+mode the default is the dev database, so if your stack runs on something else,
+set `E2E_DATABASE_URL` to match it.

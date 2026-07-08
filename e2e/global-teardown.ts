@@ -12,8 +12,10 @@ const exec = promisify(execFile)
 // the dev database doesn't accumulate test data. psql is a system tool, so this
 // adds no npm dependency.
 //
-// Connection defaults to the dev database used by `make run`; override with
-// E2E_DATABASE_URL (e.g. to point at a dedicated test DB).
+// `make e2e` (run-local.sh) sets E2E_DATABASE_URL to the dedicated e2e
+// database its server runs on. The fallback is the dev database used by
+// `make run`, for `make e2e-test` against a running dev stack — where this
+// must match that stack's DATABASE_URL.
 const DB =
   process.env.E2E_DATABASE_URL ??
   "postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable"

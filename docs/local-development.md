@@ -34,11 +34,13 @@ hot reload.
 ### 2.1 Create the Postgres role and databases
 
 The Makefile's default connection strings expect role `tadmor` / password
-`tadmor`, databases `tadmor` (dev) and `tadmor_test` (tests):
+`tadmor`, databases `tadmor` (dev), `tadmor_test` (Go tests), and `tadmor_e2e`
+(Playwright UI tests):
 
 ```
 DATABASE_URL      ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable
 TEST_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable
+E2E_DATABASE_URL  ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_e2e?sslmode=disable
 ```
 
 Run these as the Postgres superuser (`postgres`):
@@ -48,6 +50,7 @@ sudo -u postgres psql <<'SQL'
 CREATE ROLE tadmor WITH LOGIN PASSWORD 'tadmor';
 CREATE DATABASE tadmor OWNER tadmor;
 CREATE DATABASE tadmor_test OWNER tadmor;
+CREATE DATABASE tadmor_e2e OWNER tadmor;
 SQL
 ```
 
@@ -58,11 +61,17 @@ there's no inline-password flag; enter `tadmor` twice):
 sudo -u postgres createuser --login --pwprompt tadmor
 sudo -u postgres createdb --owner=tadmor tadmor
 sudo -u postgres createdb --owner=tadmor tadmor_test
+sudo -u postgres createdb --owner=tadmor tadmor_e2e
 ```
 
-**Why two databases:** `tadmor` is your dev data; `tadmor_test` is used by
+**Why separate databases:** `tadmor` is your dev data; `tadmor_test` is used by
 `make test`, whose integration tests **reset the DB** each run, so it must stay
-separate from dev data.
+separate from dev data. `tadmor_e2e` is used by `make e2e`, whose teardown
+**deletes rows via psql** — keeping it separate means a teardown bug can never
+touch dev data. If `tadmor_e2e` is missing, `make e2e` will try to create it
+itself (that works only when the `tadmor` role has `CREATEDB`; the setup above
+doesn't grant it, hence the explicit `createdb`). Schema needs no hand care in
+any of them: the server migrates on startup, and the Go tests reset their DB.
 
 ### 2.2 Allow password auth in `pg_hba.conf`
 

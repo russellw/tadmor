@@ -11,7 +11,10 @@ import { E2E_EMAIL } from "./tests/helpers"
 const exec = promisify(execFile)
 
 // Same psql route (and connection default) as global-teardown: no npm
-// dependency for database access.
+// dependency for database access. `make e2e` (run-local.sh) sets
+// E2E_DATABASE_URL to the dedicated e2e database its server runs on; the
+// dev-DB fallback exists only for `make e2e-test` against a running dev stack,
+// where this must match that stack's DATABASE_URL.
 const DB =
   process.env.E2E_DATABASE_URL ??
   "postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable"

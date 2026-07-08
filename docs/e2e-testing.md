@@ -211,9 +211,13 @@ and their customers directly via `psql` after the run. `psql` is a system tool, 
 this adds **no npm dependency**. Verified: a full run leaves zero `E2E-` rows
 behind.
 
-> **CI caveat.** The teardown defaults to the **dev** database (the one `make run`
-> uses), which is fine for local runs. For CI, point `E2E_DATABASE_URL` at a
-> dedicated test database so a teardown bug can never touch real data.
+> **Which database.** `make e2e` runs everything against a **dedicated
+> `tadmor_e2e` database** (created on first run, migrated by the server on
+> startup) and pins setup/teardown to it via `E2E_DATABASE_URL`, so a teardown
+> bug can never touch dev data. Only `make e2e-test` — the "stack already
+> running" mode — still defaults to the dev database, because there it must
+> match whatever database the running stack uses; override `E2E_DATABASE_URL`
+> to match if that stack isn't on the default dev DB.
 
 ---
 
@@ -231,12 +235,10 @@ tadmor/
     playwright.config.ts    # chromium-only, headless, BASE_URL-overridable, globalSetup/Teardown, storageState
     global-setup.ts         # seeds the e2e login user (psql) + saves the authenticated storage state
     global-teardown.ts      # psql cleanup of E2E- rows and the e2e login user
-    run-local.sh            # one-shot orchestrator for `make e2e` (build+run server, test, tear down)
+    run-local.sh            # one-shot orchestrator for `make e2e` (ensure e2e DB, build+run server, test, tear down)
     tests/
-      helpers.ts            # API setup helpers + E2E_PREFIX + E2E_EMAIL
-      smoke.spec.ts
-      customers.spec.ts
-      auth.spec.ts
+      helpers.ts            # API setup helpers (incl. salesFixture) + E2E_PREFIX + E2E_EMAIL
+      *.spec.ts             # the fifteen spec files listed in §6
     README.md               # setup + run instructions
 ```
 
@@ -260,11 +262,15 @@ make e2e              # build+run the embedded-SPA server, wait for it, test, te
 ```
 
 `run-local.sh` builds the Go binary (which embeds `web/dist`), starts it on
-:8080, waits for it to accept connections, runs the suite against it, and
-**always** tears the server down again via a shell `trap` (even on test failure
-or Ctrl-C). `DATABASE_URL` and `BASE_URL` are overridable. Because the run is a
-single `make` invocation, it also stays inside the agent's `make:*` permission
-allowlist — one command, no per-step prompts.
+:8080 **against the dedicated `tadmor_e2e` database** (creating it on first
+run — the server migrates on startup, and the suite provisions all of its own
+data), waits for it to accept connections, runs the suite against it with
+`E2E_DATABASE_URL` pinned to the same database, and **always** tears the
+server down again via a shell `trap` (even on test failure or Ctrl-C).
+`DATABASE_URL` (via the Makefile's `E2E_DATABASE_URL` variable) and `BASE_URL`
+are overridable. Because the run is a single `make` invocation, it also stays
+inside the agent's `make:*` permission allowlist — one command, no per-step
+prompts.
 
 **Running — against an already-running stack.** If the stack is already up (Vite
 dev on :5173 proxying /api → Go on :8080, with Postgres), run the tests alone:
@@ -289,7 +295,9 @@ BASE_URL=http://localhost:8080 corepack pnpm test
   as vite/esbuild, mitigated by cooldown + pinning.
 - **Browser binary** is outside lockfile integrity (version-locked to the pinned
   release; Microsoft CDN). Build-continuity, not malicious-code, risk.
-- **Teardown targets the dev DB by default** — see the §6 CI caveat.
+- **`make e2e-test` (running-stack mode) still assumes the dev DB** unless
+  `E2E_DATABASE_URL` says otherwise — see the §6 database note. The
+  self-contained `make e2e` path uses the dedicated `tadmor_e2e` database.
 - **Coverage gaps** — the AP document screens (bills, supplier
   credits/payments, purchase orders) are covered only indirectly, through the
   shared components their AR twins exercise; stock movements, order
@@ -305,11 +313,10 @@ master-data screens (customers, suppliers, products, payment terms, tax codes,
 warehouses, periods, users), the financial-statement reports, and the AR
 document screens — invoices, customer payments, credit notes, and sales orders,
 including posting to the ledger and payment/credit application (see §6) — with
-teardown confirmed to leave zero test rows, including journal entries. Setup
-and teardown already honor `E2E_DATABASE_URL` as an override for the database
-they touch.
+teardown confirmed to leave zero test rows, including journal entries. The
+self-contained `make e2e` run targets a dedicated `tadmor_e2e` database
+(created on first run) with setup/teardown pinned to it via
+`E2E_DATABASE_URL`, so the suite never touches dev data.
 
 Next (when wanted): direct specs for the AP document screens and stock
-movements if the shared-component coverage ever feels thin; point CI at a
-dedicated test database via `E2E_DATABASE_URL` so teardown stops defaulting to
-the dev DB.
+movements if the shared-component coverage ever feels thin.
