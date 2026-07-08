@@ -12,7 +12,8 @@
       "Bash(corepack pnpm *)",
       "Bash(curl -s https://tadmor.belunaro.com/)",
       "Bash(./e2e/run-local.sh)",
-      "Bash(pkill -f 'bin/server')"
+      "Bash(pkill -f 'bin/server')",
+      "Bash(curl *)"
     ]
   }
 }
