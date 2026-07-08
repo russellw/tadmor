@@ -56,6 +56,26 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("POST /sales-orders", s.createSalesOrder)
 	api.HandleFunc("POST /purchase-orders", s.createPurchaseOrder)
 
+	// Edit or delete a subledger document while it is still draft.
+	api.HandleFunc("PUT /sales-invoices/{id}", s.updateSalesInvoice)
+	api.HandleFunc("DELETE /sales-invoices/{id}", s.deleteSalesInvoice)
+	api.HandleFunc("PUT /purchase-bills/{id}", s.updatePurchaseBill)
+	api.HandleFunc("DELETE /purchase-bills/{id}", s.deletePurchaseBill)
+	api.HandleFunc("PUT /sales-credit-notes/{id}", s.updateSalesCreditNote)
+	api.HandleFunc("DELETE /sales-credit-notes/{id}", s.deleteSalesCreditNote)
+	api.HandleFunc("PUT /purchase-credit-notes/{id}", s.updatePurchaseCreditNote)
+	api.HandleFunc("DELETE /purchase-credit-notes/{id}", s.deletePurchaseCreditNote)
+	api.HandleFunc("PUT /sales-orders/{id}", s.updateSalesOrder)
+	api.HandleFunc("DELETE /sales-orders/{id}", s.deleteSalesOrder)
+	api.HandleFunc("PUT /purchase-orders/{id}", s.updatePurchaseOrder)
+	api.HandleFunc("DELETE /purchase-orders/{id}", s.deletePurchaseOrder)
+	api.HandleFunc("PUT /customer-payments/{id}", s.updateCustomerPayment)
+	api.HandleFunc("DELETE /customer-payments/{id}", s.deleteCustomerPayment)
+	api.HandleFunc("PUT /supplier-payments/{id}", s.updateSupplierPayment)
+	api.HandleFunc("DELETE /supplier-payments/{id}", s.deleteSupplierPayment)
+	api.HandleFunc("PUT /stock-movements/{id}", s.updateStockMovement)
+	api.HandleFunc("DELETE /stock-movements/{id}", s.deleteStockMovement)
+
 	// Order lifecycle transitions (draft -> open -> closed, or cancelled).
 	api.HandleFunc("POST /sales-orders/{id}/confirm", s.confirmSalesOrder)
 	api.HandleFunc("POST /sales-orders/{id}/close", s.closeSalesOrder)

@@ -1,15 +1,18 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 
-import { formatAmount, lineAmounts, sumAmounts } from "@/lib/amount"
+import { formatAmount, lineAmounts, sumAmounts, trimAmount } from "@/lib/amount"
 import {
   ApiError,
   createPurchaseBill,
+  getPurchaseBill,
+  getPurchaseBillLines,
   listAccounts,
   listOrganizations,
   listProducts,
   listSuppliers,
   listTaxCodes,
+  updatePurchaseBill,
   type Account,
   type Product,
   type PurchaseBillInput,
@@ -71,15 +74,19 @@ function previewLine(l: LineState) {
   )
 }
 
-// New-purchase-bill form: header fields plus dynamic lines, mirroring the
+// Purchase-bill form: header fields plus dynamic lines, mirroring the
 // invoice form on the purchasing side. Picking a product prefills the
 // description and tax from the catalog but not the cost (a product's price is
 // its sales price); at posting time a product line without an explicit
 // expense account debits the product's inventory account, so the account
 // select defaults to "Product's". The bill is created as a draft — posting to
-// the GL happens from the bill page.
-export function BillForm() {
+// the GL happens from the bill page. In edit mode the form loads an existing
+// draft and rewrites it in place; posted and order-linked bills are refused
+// up front.
+export function BillForm({ mode = "create" }: { mode?: "create" | "edit" }) {
   const navigate = useNavigate()
+  const { id } = useParams()
+  const billId = mode === "edit" ? Number(id) : null
 
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -108,8 +115,10 @@ export function BillForm() {
       listProducts(),
       listTaxCodes(),
       listAccounts(),
+      billId !== null ? getPurchaseBill(billId) : null,
+      billId !== null ? getPurchaseBillLines(billId) : null,
     ])
-      .then(([supps, orgs, prods, taxes, accts]) => {
+      .then(([supps, orgs, prods, taxes, accts, doc, docLines]) => {
         if (cancelled) return
         const orgNames = new Map(orgs.map((o) => [o.id, o.name]))
         setSuppliers(
@@ -124,6 +133,39 @@ export function BillForm() {
         setProducts(prods.filter((p) => p.is_active))
         setTaxCodes(taxes)
         setAccounts(accts)
+        if (doc !== null && docLines !== null) {
+          if (doc.status !== "draft") {
+            setError("Only draft bills can be edited.")
+            return
+          }
+          if (docLines.some((l) => l.order_line_id !== null)) {
+            setError(
+              "This bill was created from a purchase order and cannot be edited. Delete it and bill the order again instead.",
+            )
+            return
+          }
+          setSupplierId(String(doc.party_id))
+          setBillNumber(doc.number)
+          setBillDate(doc.date)
+          setDueDate(doc.due_date ?? "")
+          setCurrencyCode(doc.currency_code)
+          setReference(doc.reference ?? "")
+          setMemo(doc.memo ?? "")
+          setLines(
+            docLines.map((l) => ({
+              productId: l.product_id !== null ? String(l.product_id) : NONE,
+              description: l.description,
+              quantity: trimAmount(l.quantity),
+              unitCost: trimAmount(l.unit_cost),
+              taxCode: l.tax_code ?? NONE,
+              taxRate: trimAmount(l.tax_rate),
+              expenseAccountId:
+                l.expense_account_id !== null
+                  ? String(l.expense_account_id)
+                  : NONE,
+            })),
+          )
+        }
         setLoaded(true)
       })
       .catch((err: unknown) => {
@@ -134,7 +176,7 @@ export function BillForm() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [billId])
 
   function setLine(index: number, patch: Partial<LineState>) {
     setLines((ls) => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)))
@@ -207,8 +249,12 @@ export function BillForm() {
     }
     setSaving(true)
     setSaveError(null)
-    createPurchaseBill(input)
-      .then(({ id }) => navigate(`/bills/${id}`))
+    const save =
+      billId !== null
+        ? updatePurchaseBill(billId, input).then(() => billId)
+        : createPurchaseBill(input).then(({ id }) => id)
+    save
+      .then((docId) => navigate(`/bills/${docId}`))
       .catch((err: unknown) => {
         setSaving(false)
         setSaveError(err instanceof ApiError ? err.message : String(err))
@@ -218,9 +264,13 @@ export function BillForm() {
   return (
     <section className="mx-auto w-full max-w-5xl p-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">New Bill</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {billId !== null ? "Edit Bill" : "New Bill"}
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Creates a draft — post it to the ledger from the bill page.
+          {billId !== null
+            ? "Rewrites the draft — it stays unposted."
+            : "Creates a draft — post it to the ledger from the bill page."}
         </p>
       </header>
 
@@ -493,10 +543,12 @@ export function BillForm() {
 
           <div className="flex gap-2">
             <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Create draft"}
+              {saving ? "Saving…" : billId !== null ? "Save changes" : "Create draft"}
             </Button>
             <Button type="button" variant="outline" asChild>
-              <Link to="/bills">Cancel</Link>
+              <Link to={billId !== null ? `/bills/${billId}` : "/bills"}>
+                Cancel
+              </Link>
             </Button>
           </div>
         </form>

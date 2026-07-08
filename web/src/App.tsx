@@ -260,6 +260,10 @@ export default function App() {
           <Route path="/sales-orders" element={<SalesOrders />} />
           <Route path="/sales-orders/new" element={<SalesOrderForm />} />
           <Route path="/sales-orders/:id" element={<SalesOrderDetail />} />
+          <Route
+            path="/sales-orders/:id/edit"
+            element={<SalesOrderForm mode="edit" />}
+          />
           <Route path="/purchase-orders" element={<PurchaseOrders />} />
           <Route
             path="/purchase-orders/new"
@@ -269,15 +273,28 @@ export default function App() {
             path="/purchase-orders/:id"
             element={<PurchaseOrderDetail />}
           />
+          <Route
+            path="/purchase-orders/:id/edit"
+            element={<PurchaseOrderForm mode="edit" />}
+          />
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/new" element={<InvoiceForm />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
+          <Route
+            path="/invoices/:id/edit"
+            element={<InvoiceForm mode="edit" />}
+          />
           <Route path="/bills" element={<Bills />} />
           <Route path="/bills/new" element={<BillForm />} />
           <Route path="/bills/:id" element={<BillDetail />} />
+          <Route path="/bills/:id/edit" element={<BillForm mode="edit" />} />
           <Route path="/credit-notes" element={<CreditNotes />} />
           <Route path="/credit-notes/new" element={<CreditNoteForm />} />
           <Route path="/credit-notes/:id" element={<CreditNoteDetail />} />
+          <Route
+            path="/credit-notes/:id/edit"
+            element={<CreditNoteForm mode="edit" />}
+          />
           <Route path="/supplier-credits" element={<SupplierCredits />} />
           <Route
             path="/supplier-credits/new"
@@ -286,6 +303,10 @@ export default function App() {
           <Route
             path="/supplier-credits/:id"
             element={<SupplierCreditDetail />}
+          />
+          <Route
+            path="/supplier-credits/:id/edit"
+            element={<SupplierCreditForm mode="edit" />}
           />
           <Route path="/customer-payments" element={<CustomerPayments />} />
           <Route
@@ -296,6 +317,10 @@ export default function App() {
             path="/customer-payments/:id"
             element={<CustomerPaymentDetail />}
           />
+          <Route
+            path="/customer-payments/:id/edit"
+            element={<CustomerPaymentForm mode="edit" />}
+          />
           <Route path="/supplier-payments" element={<SupplierPayments />} />
           <Route
             path="/supplier-payments/new"
@@ -305,11 +330,19 @@ export default function App() {
             path="/supplier-payments/:id"
             element={<SupplierPaymentDetail />}
           />
+          <Route
+            path="/supplier-payments/:id/edit"
+            element={<SupplierPaymentForm mode="edit" />}
+          />
           <Route path="/stock-movements" element={<StockMovements />} />
           <Route path="/stock-movements/new" element={<StockMovementForm />} />
           <Route
             path="/stock-movements/:id"
             element={<StockMovementDetail />}
+          />
+          <Route
+            path="/stock-movements/:id/edit"
+            element={<StockMovementForm mode="edit" />}
           />
           <Route
             path="/reports/profit-and-loss"

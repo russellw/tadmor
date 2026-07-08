@@ -10,6 +10,8 @@ import {
   closeSalesOrder,
   confirmPurchaseOrder,
   confirmSalesOrder,
+  deletePurchaseOrder,
+  deleteSalesOrder,
   getPurchaseOrder,
   getPurchaseOrderLines,
   getSalesOrder,
@@ -97,6 +99,7 @@ interface OrderConfig {
   confirm: (id: number) => Promise<unknown>
   close: (id: number) => Promise<unknown>
   cancel: (id: number) => Promise<unknown>
+  deleteOrder: (id: number) => Promise<void>
   // lines carries the chosen per-line quantities; the backend caps each at the
   // line's outstanding amount, so full-remaining and partial both flow through.
   createDoc: (
@@ -149,6 +152,7 @@ export function SalesOrderDetail() {
         confirm: confirmSalesOrder,
         close: closeSalesOrder,
         cancel: cancelSalesOrder,
+        deleteOrder: deleteSalesOrder,
         createDoc: async (id, number, date, due, lines) =>
           (
             await invoiceSalesOrder(id, {
@@ -207,6 +211,7 @@ export function PurchaseOrderDetail() {
         confirm: confirmPurchaseOrder,
         close: closePurchaseOrder,
         cancel: cancelPurchaseOrder,
+        deleteOrder: deletePurchaseOrder,
         createDoc: async (id, number, date, due, lines) =>
           (
             await billPurchaseOrder(id, {
@@ -369,6 +374,25 @@ function OrderDetail({ config }: { config: OrderConfig }) {
       })
   }
 
+  function runDelete() {
+    if (
+      !window.confirm(
+        `Delete this draft ${config.titlePrefix.toLowerCase()}? This cannot be undone.`,
+      )
+    ) {
+      return
+    }
+    setActing(true)
+    setActionError(null)
+    config
+      .deleteOrder(orderId)
+      .then(() => navigate(config.basePath))
+      .catch((err: unknown) => {
+        setActing(false)
+        setActionError(err instanceof ApiError ? err.message : String(err))
+      })
+  }
+
   if (error !== null) {
     return (
       <section className="mx-auto w-full max-w-5xl p-6">
@@ -439,6 +463,16 @@ function OrderDetail({ config }: { config: OrderConfig }) {
             >
               {acting ? "Working…" : "Confirm"}
             </Button>
+          )}
+          {isDraft && (
+            <>
+              <Button variant="outline" disabled={acting} asChild>
+                <Link to={`${config.basePath}/${orderId}/edit`}>Edit</Link>
+              </Button>
+              <Button variant="outline" disabled={acting} onClick={runDelete}>
+                Delete
+              </Button>
+            </>
           )}
           {isOpen && (
             <>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 
 import { isZeroAmount } from "@/lib/amount"
 import { useCurrentUser } from "@/lib/current-user"
@@ -7,6 +7,8 @@ import {
   ApiError,
   applyCustomerPayment,
   applySupplierPayment,
+  deleteCustomerPayment,
+  deleteSupplierPayment,
   getCustomerPayment,
   getCustomerPaymentApplications,
   getSupplierPayment,
@@ -50,6 +52,7 @@ export function CustomerPaymentDetail() {
       post={postCustomerPayment}
       unpost={unpostCustomerPayment}
       apply={applyCustomerPayment}
+      deletePayment={deleteCustomerPayment}
     />
   )
 }
@@ -68,6 +71,7 @@ export function SupplierPaymentDetail() {
       post={postSupplierPayment}
       unpost={unpostSupplierPayment}
       apply={applySupplierPayment}
+      deletePayment={deleteSupplierPayment}
     />
   )
 }
@@ -75,7 +79,8 @@ export function SupplierPaymentDetail() {
 // One payment: header, what it has been applied to, and the lifecycle
 // actions. Post writes the journal entry; Apply allocates the remainder to
 // open documents oldest-first; Unpost reverses the entry, deletes any
-// applications, and returns the payment to draft.
+// applications, and returns the payment to draft. Drafts can be edited or
+// deleted.
 function PaymentDetail({
   titlePrefix,
   basePath,
@@ -88,6 +93,7 @@ function PaymentDetail({
   post,
   unpost,
   apply,
+  deletePayment,
 }: {
   titlePrefix: string
   basePath: string
@@ -100,8 +106,10 @@ function PaymentDetail({
   post: (id: number) => Promise<unknown>
   unpost: (id: number) => Promise<unknown>
   apply: (id: number) => Promise<unknown>
+  deletePayment: (id: number) => Promise<void>
 }) {
   const { id } = useParams()
+  const navigate = useNavigate()
   const paymentId = Number(id)
 
   const [payment, setPayment] = useState<Payment | null>(null)
@@ -163,6 +171,24 @@ function PaymentDetail({
       })
   }
 
+  function runDelete() {
+    if (
+      !window.confirm(
+        `Delete this draft ${titlePrefix.toLowerCase()}? This cannot be undone.`,
+      )
+    ) {
+      return
+    }
+    setActing(true)
+    setActionError(null)
+    deletePayment(paymentId)
+      .then(() => navigate(basePath))
+      .catch((err: unknown) => {
+        setActing(false)
+        setActionError(err instanceof ApiError ? err.message : String(err))
+      })
+  }
+
   return (
     <section className="mx-auto w-full max-w-5xl p-6">
       {error !== null && (
@@ -214,6 +240,20 @@ function PaymentDetail({
               {payment.status === "draft" && (
                 <Button disabled={acting} onClick={() => runAction(post)}>
                   {acting ? "Posting…" : "Post to ledger"}
+                </Button>
+              )}
+              {payment.status === "draft" && (
+                <Button variant="outline" disabled={acting} asChild>
+                  <Link to={`${basePath}/${paymentId}/edit`}>Edit</Link>
+                </Button>
+              )}
+              {payment.status === "draft" && (
+                <Button
+                  variant="outline"
+                  disabled={acting}
+                  onClick={runDelete}
+                >
+                  Delete
                 </Button>
               )}
               {payment.status === "posted" &&

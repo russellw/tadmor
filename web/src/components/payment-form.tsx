@@ -1,16 +1,22 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 
+import { trimAmount } from "@/lib/amount"
 import {
   ApiError,
   createCustomerPayment,
   createSupplierPayment,
+  getCustomerPayment,
+  getSupplierPayment,
   listAccounts,
   listCustomers,
   listOrganizations,
   listSuppliers,
   PAYMENT_METHODS,
+  updateCustomerPayment,
+  updateSupplierPayment,
   type Account,
+  type Payment,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -74,8 +80,13 @@ async function supplierOptions(): Promise<PartyOption[]> {
     }))
 }
 
-function createFromCustomerFields(f: PaymentFields): Promise<{ id: number }> {
-  return createCustomerPayment({
+// Save maps the common fields onto the customer/supplier input shape, creating
+// when editId is null and updating otherwise; it resolves to the payment id.
+function saveCustomerFields(
+  editId: number | null,
+  f: PaymentFields,
+): Promise<number> {
+  const input = {
     customer_id: f.partyId,
     payment_date: f.date,
     currency_code: f.currency,
@@ -83,11 +94,17 @@ function createFromCustomerFields(f: PaymentFields): Promise<{ id: number }> {
     method: f.method,
     reference: f.reference,
     deposit_account_id: f.accountId,
-  })
+  }
+  return editId !== null
+    ? updateCustomerPayment(editId, input).then(() => editId)
+    : createCustomerPayment(input).then(({ id }) => id)
 }
 
-function createFromSupplierFields(f: PaymentFields): Promise<{ id: number }> {
-  return createSupplierPayment({
+function saveSupplierFields(
+  editId: number | null,
+  f: PaymentFields,
+): Promise<number> {
+  const input = {
     supplier_id: f.partyId,
     payment_date: f.date,
     currency_code: f.currency,
@@ -95,33 +112,48 @@ function createFromSupplierFields(f: PaymentFields): Promise<{ id: number }> {
     method: f.method,
     reference: f.reference,
     payment_account_id: f.accountId,
-  })
+  }
+  return editId !== null
+    ? updateSupplierPayment(editId, input).then(() => editId)
+    : createSupplierPayment(input).then(({ id }) => id)
 }
 
-export function CustomerPaymentForm() {
+export function CustomerPaymentForm({
+  mode = "create",
+}: {
+  mode?: "create" | "edit"
+}) {
   return (
     <PaymentForm
-      title="New Customer Payment"
+      mode={mode}
+      title={mode === "edit" ? "Edit Customer Payment" : "New Customer Payment"}
       description="Records money received — post it to the ledger from the payment page, then apply it to open invoices."
       partyLabel="Customer"
       accountLabel="Deposit Account"
       basePath="/customer-payments"
       fetchParties={customerOptions}
-      create={createFromCustomerFields}
+      fetchPayment={getCustomerPayment}
+      save={saveCustomerFields}
     />
   )
 }
 
-export function SupplierPaymentForm() {
+export function SupplierPaymentForm({
+  mode = "create",
+}: {
+  mode?: "create" | "edit"
+}) {
   return (
     <PaymentForm
-      title="New Supplier Payment"
+      mode={mode}
+      title={mode === "edit" ? "Edit Supplier Payment" : "New Supplier Payment"}
       description="Records money paid out — post it to the ledger from the payment page, then apply it to open bills."
       partyLabel="Supplier"
       accountLabel="Payment Account"
       basePath="/supplier-payments"
       fetchParties={supplierOptions}
-      create={createFromSupplierFields}
+      fetchPayment={getSupplierPayment}
+      save={saveSupplierFields}
     />
   )
 }
@@ -132,23 +164,29 @@ function emptyToNull(s: string): string | null {
 }
 
 function PaymentForm({
+  mode,
   title,
   description,
   partyLabel,
   accountLabel,
   basePath,
   fetchParties,
-  create,
+  fetchPayment,
+  save,
 }: {
+  mode: "create" | "edit"
   title: string
   description: string
   partyLabel: string
   accountLabel: string
   basePath: string
   fetchParties: () => Promise<PartyOption[]>
-  create: (fields: PaymentFields) => Promise<{ id: number }>
+  fetchPayment: (id: number) => Promise<Payment>
+  save: (editId: number | null, fields: PaymentFields) => Promise<number>
 }) {
   const navigate = useNavigate()
+  const { id } = useParams()
+  const editId = mode === "edit" ? Number(id) : null
 
   const [parties, setParties] = useState<PartyOption[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -168,11 +206,30 @@ function PaymentForm({
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([fetchParties(), listAccounts()])
-      .then(([partyOptions, accts]) => {
+    Promise.all([
+      fetchParties(),
+      listAccounts(),
+      editId !== null ? fetchPayment(editId) : null,
+    ])
+      .then(([partyOptions, accts, payment]) => {
         if (cancelled) return
         setParties(partyOptions)
         setAccounts(accts)
+        if (payment !== null) {
+          if (payment.status !== "draft") {
+            setError("Only draft payments can be edited.")
+            return
+          }
+          setPartyId(String(payment.party_id))
+          setDate(payment.date)
+          setAmount(trimAmount(payment.amount))
+          setCurrency(payment.currency_code)
+          setMethod(payment.method ?? NONE)
+          setReference(payment.reference ?? "")
+          setAccountId(
+            payment.account_id !== null ? String(payment.account_id) : NONE,
+          )
+        }
         setLoaded(true)
       })
       .catch((err: unknown) => {
@@ -183,7 +240,7 @@ function PaymentForm({
     return () => {
       cancelled = true
     }
-  }, [fetchParties])
+  }, [fetchParties, fetchPayment, editId])
 
   function chooseParty(value: string) {
     setPartyId(value)
@@ -201,7 +258,7 @@ function PaymentForm({
     }
     setSaving(true)
     setSaveError(null)
-    create({
+    save(editId, {
       partyId: Number(partyId),
       date,
       currency: currency.trim().toUpperCase(),
@@ -210,7 +267,7 @@ function PaymentForm({
       reference: emptyToNull(reference),
       accountId: accountId === NONE ? null : Number(accountId),
     })
-      .then(({ id }) => navigate(`${basePath}/${id}`))
+      .then((docId) => navigate(`${basePath}/${docId}`))
       .catch((err: unknown) => {
         setSaving(false)
         setSaveError(err instanceof ApiError ? err.message : String(err))
@@ -346,10 +403,12 @@ function PaymentForm({
 
           <div className="flex gap-2">
             <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Create draft"}
+              {saving ? "Saving…" : editId !== null ? "Save changes" : "Create draft"}
             </Button>
             <Button type="button" variant="outline" asChild>
-              <Link to={basePath}>Cancel</Link>
+              <Link to={editId !== null ? `${basePath}/${editId}` : basePath}>
+                Cancel
+              </Link>
             </Button>
           </div>
         </form>

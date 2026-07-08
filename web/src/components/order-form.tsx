@@ -1,17 +1,23 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 
-import { formatAmount, lineAmounts, sumAmounts } from "@/lib/amount"
+import { formatAmount, lineAmounts, sumAmounts, trimAmount } from "@/lib/amount"
 import {
   ApiError,
   createPurchaseOrder,
   createSalesOrder,
+  getPurchaseOrder,
+  getPurchaseOrderLines,
+  getSalesOrder,
+  getSalesOrderLines,
   listAccounts,
   listCustomers,
   listOrganizations,
   listProducts,
   listSuppliers,
   listTaxCodes,
+  updatePurchaseOrder,
+  updateSalesOrder,
   type Account,
   type Product,
   type PurchaseOrderInput,
@@ -73,12 +79,17 @@ interface OrderConfig {
   prefillPrice: boolean // sales orders prefill from the product's list price
 }
 
-export function SalesOrderForm() {
+export function SalesOrderForm({
+  mode = "create",
+}: {
+  mode?: "create" | "edit"
+}) {
   return (
     <OrderForm
+      mode={mode}
       config={{
         kind: "sales",
-        title: "New Sales Order",
+        title: mode === "edit" ? "Edit Sales Order" : "New Sales Order",
         partyLabel: "Customer",
         unitLabel: "Unit Price",
         accountLabel: "Revenue Account",
@@ -91,12 +102,17 @@ export function SalesOrderForm() {
   )
 }
 
-export function PurchaseOrderForm() {
+export function PurchaseOrderForm({
+  mode = "create",
+}: {
+  mode?: "create" | "edit"
+}) {
   return (
     <OrderForm
+      mode={mode}
       config={{
         kind: "purchase",
-        title: "New Purchase Order",
+        title: mode === "edit" ? "Edit Purchase Order" : "New Purchase Order",
         partyLabel: "Supplier",
         unitLabel: "Unit Cost",
         accountLabel: "Expense Account",
@@ -146,11 +162,20 @@ function previewLine(l: LineState) {
   )
 }
 
-// New-order form: header fields plus dynamic lines, mirroring the invoice/bill
+// Order form: header fields plus dynamic lines, mirroring the invoice/bill
 // forms. The order is created as a draft — confirm it from the order page to
-// make it eligible for fulfilment.
-function OrderForm({ config }: { config: OrderConfig }) {
+// make it eligible for fulfilment. In edit mode the form loads an existing
+// draft and rewrites it in place; confirmed orders are refused up front.
+function OrderForm({
+  config,
+  mode = "create",
+}: {
+  config: OrderConfig
+  mode?: "create" | "edit"
+}) {
   const navigate = useNavigate()
+  const { id } = useParams()
+  const editId = mode === "edit" ? Number(id) : null
 
   const [parties, setParties] = useState<PartyOption[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -175,18 +200,95 @@ function OrderForm({ config }: { config: OrderConfig }) {
 
   useEffect(() => {
     let cancelled = false
+    // Normalize the sales/purchase read shapes to the form's field names.
+    const existing =
+      editId === null
+        ? null
+        : config.kind === "sales"
+          ? getSalesOrder(editId).then((o) => ({
+              status: o.status,
+              partyId: o.customer_id,
+              number: o.order_number,
+              date: o.order_date,
+              expected: o.expected_ship_date,
+              currency: o.currency_code,
+              reference: o.reference,
+              memo: o.memo,
+            }))
+          : getPurchaseOrder(editId).then((o) => ({
+              status: o.status,
+              partyId: o.supplier_id,
+              number: o.order_number,
+              date: o.order_date,
+              expected: o.expected_receipt_date,
+              currency: o.currency_code,
+              reference: o.reference,
+              memo: o.memo,
+            }))
+    const existingLines =
+      editId === null
+        ? null
+        : config.kind === "sales"
+          ? getSalesOrderLines(editId).then((ls) =>
+              ls.map((l) => ({
+                product_id: l.product_id,
+                description: l.description,
+                quantity: l.quantity,
+                unit_amount: l.unit_price,
+                account_id: l.revenue_account_id,
+                tax_code: l.tax_code,
+                tax_rate: l.tax_rate,
+              })),
+            )
+          : getPurchaseOrderLines(editId).then((ls) =>
+              ls.map((l) => ({
+                product_id: l.product_id,
+                description: l.description,
+                quantity: l.quantity,
+                unit_amount: l.unit_cost,
+                account_id: l.expense_account_id,
+                tax_code: l.tax_code,
+                tax_rate: l.tax_rate,
+              })),
+            )
     Promise.all([
       config.fetchParties(),
       listProducts(),
       listTaxCodes(),
       listAccounts(),
+      existing,
+      existingLines,
     ])
-      .then(([pty, prods, taxes, accts]) => {
+      .then(([pty, prods, taxes, accts, order, orderLines]) => {
         if (cancelled) return
         setParties(pty)
         setProducts(prods.filter((p) => p.is_active))
         setTaxCodes(taxes)
         setAccounts(accts)
+        if (order !== null && orderLines !== null) {
+          if (order.status !== "draft") {
+            setError("Only draft orders can be edited.")
+            return
+          }
+          setPartyId(String(order.partyId))
+          setOrderNumber(order.number)
+          setOrderDate(order.date)
+          setExpectedDate(order.expected ?? "")
+          setCurrencyCode(order.currency)
+          setReference(order.reference ?? "")
+          setMemo(order.memo ?? "")
+          setLines(
+            orderLines.map((l) => ({
+              productId: l.product_id !== null ? String(l.product_id) : NONE,
+              description: l.description,
+              quantity: trimAmount(l.quantity),
+              unitAmount: trimAmount(l.unit_amount),
+              taxCode: l.tax_code ?? NONE,
+              taxRate: trimAmount(l.tax_rate),
+              accountId: l.account_id !== null ? String(l.account_id) : NONE,
+            })),
+          )
+        }
         setLoaded(true)
       })
       .catch((err: unknown) => {
@@ -197,7 +299,10 @@ function OrderForm({ config }: { config: OrderConfig }) {
     return () => {
       cancelled = true
     }
-  }, [config])
+    // config is recreated only when the wrapper re-renders (its identity is
+    // otherwise stable), so the document id is the effect's real input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId])
 
   function setLine(index: number, patch: Partial<LineState>) {
     setLines((ls) => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)))
@@ -264,41 +369,51 @@ function OrderForm({ config }: { config: OrderConfig }) {
     setSaving(true)
     setSaveError(null)
 
-    const create =
+    const save =
       config.kind === "sales"
-        ? createSalesOrder({
-            ...common,
-            customer_id: Number(partyId),
-            expected_ship_date: emptyToNull(expectedDate),
-            lines: lines.map((l) => ({
-              product_id: l.productId === NONE ? null : Number(l.productId),
-              description: l.description.trim(),
-              quantity: l.quantity.trim(),
-              unit_price: l.unitAmount.trim(),
-              revenue_account_id:
-                l.accountId === NONE ? null : Number(l.accountId),
-              tax_code: l.taxCode === NONE ? null : l.taxCode,
-              tax_rate: l.taxRate.trim(),
-            })),
-          } satisfies SalesOrderInput)
-        : createPurchaseOrder({
-            ...common,
-            supplier_id: Number(partyId),
-            expected_receipt_date: emptyToNull(expectedDate),
-            lines: lines.map((l) => ({
-              product_id: l.productId === NONE ? null : Number(l.productId),
-              description: l.description.trim(),
-              quantity: l.quantity.trim(),
-              unit_cost: l.unitAmount.trim(),
-              expense_account_id:
-                l.accountId === NONE ? null : Number(l.accountId),
-              tax_code: l.taxCode === NONE ? null : l.taxCode,
-              tax_rate: l.taxRate.trim(),
-            })),
-          } satisfies PurchaseOrderInput)
+        ? (() => {
+            const input = {
+              ...common,
+              customer_id: Number(partyId),
+              expected_ship_date: emptyToNull(expectedDate),
+              lines: lines.map((l) => ({
+                product_id: l.productId === NONE ? null : Number(l.productId),
+                description: l.description.trim(),
+                quantity: l.quantity.trim(),
+                unit_price: l.unitAmount.trim(),
+                revenue_account_id:
+                  l.accountId === NONE ? null : Number(l.accountId),
+                tax_code: l.taxCode === NONE ? null : l.taxCode,
+                tax_rate: l.taxRate.trim(),
+              })),
+            } satisfies SalesOrderInput
+            return editId !== null
+              ? updateSalesOrder(editId, input).then(() => editId)
+              : createSalesOrder(input).then(({ id }) => id)
+          })()
+        : (() => {
+            const input = {
+              ...common,
+              supplier_id: Number(partyId),
+              expected_receipt_date: emptyToNull(expectedDate),
+              lines: lines.map((l) => ({
+                product_id: l.productId === NONE ? null : Number(l.productId),
+                description: l.description.trim(),
+                quantity: l.quantity.trim(),
+                unit_cost: l.unitAmount.trim(),
+                expense_account_id:
+                  l.accountId === NONE ? null : Number(l.accountId),
+                tax_code: l.taxCode === NONE ? null : l.taxCode,
+                tax_rate: l.taxRate.trim(),
+              })),
+            } satisfies PurchaseOrderInput
+            return editId !== null
+              ? updatePurchaseOrder(editId, input).then(() => editId)
+              : createPurchaseOrder(input).then(({ id }) => id)
+          })()
 
-    create
-      .then(({ id }) => navigate(`${config.basePath}/${id}`))
+    save
+      .then((docId) => navigate(`${config.basePath}/${docId}`))
       .catch((err: unknown) => {
         setSaving(false)
         setSaveError(err instanceof ApiError ? err.message : String(err))
@@ -310,7 +425,9 @@ function OrderForm({ config }: { config: OrderConfig }) {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">{config.title}</h1>
         <p className="text-sm text-muted-foreground">
-          Creates a draft — confirm it from the order page to allow fulfilment.
+          {editId !== null
+            ? "Rewrites the draft — it stays unconfirmed."
+            : "Creates a draft — confirm it from the order page to allow fulfilment."}
         </p>
       </header>
 
@@ -584,10 +701,18 @@ function OrderForm({ config }: { config: OrderConfig }) {
 
           <div className="flex gap-2">
             <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Create draft"}
+              {saving ? "Saving…" : editId !== null ? "Save changes" : "Create draft"}
             </Button>
             <Button type="button" variant="outline" asChild>
-              <Link to={config.basePath}>Cancel</Link>
+              <Link
+                to={
+                  editId !== null
+                    ? `${config.basePath}/${editId}`
+                    : config.basePath
+                }
+              >
+                Cancel
+              </Link>
             </Button>
           </div>
         </form>

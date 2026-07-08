@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 
 import { formatAmount } from "@/lib/amount"
 import { useCurrentUser } from "@/lib/current-user"
 import {
   ApiError,
+  deleteStockMovement,
   getStockMovement,
   listAccounts,
   listProducts,
@@ -37,9 +38,11 @@ const NONE = "__none__"
 // (movements carry none of their own); a receipt additionally needs the
 // clearing account it credits (typically Goods Received Not Invoiced), which
 // the matching purchase bill later debits. An issue posts COGS against
-// inventory. Unpost reverses the journal entry.
+// inventory. Unpost reverses the journal entry. Unposted movements can be
+// deleted, and edited too unless they came from order fulfilment.
 export function StockMovementDetail() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const movementId = Number(id)
 
   const [movement, setMovement] = useState<StockMovement | null>(null)
@@ -133,6 +136,24 @@ export function StockMovementDetail() {
       })
   }
 
+  function handleDelete() {
+    if (
+      !window.confirm(
+        "Delete this stock movement? Stock on hand adjusts immediately. This cannot be undone.",
+      )
+    ) {
+      return
+    }
+    setActing(true)
+    setActionError(null)
+    deleteStockMovement(movementId)
+      .then(() => navigate("/stock-movements"))
+      .catch((err: unknown) => {
+        setActing(false)
+        setActionError(err instanceof ApiError ? err.message : String(err))
+      })
+  }
+
   const posted = movement?.journal_entry_id != null
   const postable =
     movement !== null &&
@@ -183,9 +204,25 @@ export function StockMovementDetail() {
                 )}
               </p>
             </div>
-            <Button variant="outline" asChild>
-              <Link to="/stock-movements">Back</Link>
-            </Button>
+            <div className="flex gap-2">
+              {!posted && movement.source_type === null && (
+                <Button variant="outline" disabled={acting} asChild>
+                  <Link to={`/stock-movements/${movementId}/edit`}>Edit</Link>
+                </Button>
+              )}
+              {!posted && (
+                <Button
+                  variant="outline"
+                  disabled={acting}
+                  onClick={handleDelete}
+                >
+                  Delete
+                </Button>
+              )}
+              <Button variant="outline" asChild>
+                <Link to="/stock-movements">Back</Link>
+              </Button>
+            </div>
           </header>
 
           <dl className="mb-6 grid grid-cols-3 gap-4 text-sm">

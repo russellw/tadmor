@@ -77,17 +77,21 @@ func CreateSalesInvoice(ctx context.Context, tx pgx.Tx, in SalesInvoiceInput) (i
 		in.InvoiceNumber, in.CustomerID, in.InvoiceDate, in.DueDate, in.CurrencyCode, in.Reference, in.Memo).Scan(&id); err != nil {
 		return 0, err
 	}
-	for i, l := range in.Lines {
+	return id, insertSalesInvoiceLines(ctx, tx, id, in.Lines)
+}
+
+func insertSalesInvoiceLines(ctx context.Context, tx pgx.Tx, id int, lines []SalesInvoiceLineInput) error {
+	for i, l := range lines {
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO sales_invoice_lines
 			   (invoice_id, line_no, product_id, description, quantity, unit_price, revenue_account_id, tax_code, tax_rate)
 			 VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9::numeric)`,
 			id, i+1, l.ProductID, l.Description,
 			orDefault(l.Quantity, "1"), orDefault(l.UnitPrice, "0"), l.RevenueAccountID, l.TaxCode, orDefault(l.TaxRate, "0")); err != nil {
-			return 0, err
+			return err
 		}
 	}
-	return id, nil
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -144,17 +148,21 @@ func CreatePurchaseBill(ctx context.Context, tx pgx.Tx, in PurchaseBillInput) (i
 		in.BillNumber, in.SupplierID, in.BillDate, in.DueDate, in.CurrencyCode, in.Reference, in.Memo).Scan(&id); err != nil {
 		return 0, err
 	}
-	for i, l := range in.Lines {
+	return id, insertPurchaseBillLines(ctx, tx, id, in.Lines)
+}
+
+func insertPurchaseBillLines(ctx context.Context, tx pgx.Tx, id int, lines []PurchaseBillLineInput) error {
+	for i, l := range lines {
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO purchase_bill_lines
 			   (bill_id, line_no, product_id, description, quantity, unit_cost, expense_account_id, tax_code, tax_rate)
 			 VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9::numeric)`,
 			id, i+1, l.ProductID, l.Description,
 			orDefault(l.Quantity, "1"), orDefault(l.UnitCost, "0"), l.ExpenseAccountID, l.TaxCode, orDefault(l.TaxRate, "0")); err != nil {
-			return 0, err
+			return err
 		}
 	}
-	return id, nil
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -204,17 +212,21 @@ func CreateSalesCreditNote(ctx context.Context, tx pgx.Tx, in SalesCreditNoteInp
 		in.CreditNoteNumber, in.CustomerID, in.CreditNoteDate, in.CurrencyCode, in.Reference, in.Memo).Scan(&id); err != nil {
 		return 0, err
 	}
-	for i, l := range in.Lines {
+	return id, insertSalesCreditNoteLines(ctx, tx, id, in.Lines)
+}
+
+func insertSalesCreditNoteLines(ctx context.Context, tx pgx.Tx, id int, lines []SalesInvoiceLineInput) error {
+	for i, l := range lines {
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO sales_credit_note_lines
 			   (credit_note_id, line_no, product_id, description, quantity, unit_price, revenue_account_id, tax_code, tax_rate)
 			 VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9::numeric)`,
 			id, i+1, l.ProductID, l.Description,
 			orDefault(l.Quantity, "1"), orDefault(l.UnitPrice, "0"), l.RevenueAccountID, l.TaxCode, orDefault(l.TaxRate, "0")); err != nil {
-			return 0, err
+			return err
 		}
 	}
-	return id, nil
+	return nil
 }
 
 // PurchaseCreditNoteInput reuses the bill line shape for the same reason
@@ -259,17 +271,21 @@ func CreatePurchaseCreditNote(ctx context.Context, tx pgx.Tx, in PurchaseCreditN
 		in.CreditNoteNumber, in.SupplierID, in.CreditNoteDate, in.CurrencyCode, in.Reference, in.Memo).Scan(&id); err != nil {
 		return 0, err
 	}
-	for i, l := range in.Lines {
+	return id, insertPurchaseCreditNoteLines(ctx, tx, id, in.Lines)
+}
+
+func insertPurchaseCreditNoteLines(ctx context.Context, tx pgx.Tx, id int, lines []PurchaseBillLineInput) error {
+	for i, l := range lines {
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO purchase_credit_note_lines
 			   (credit_note_id, line_no, product_id, description, quantity, unit_cost, expense_account_id, tax_code, tax_rate)
 			 VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9::numeric)`,
 			id, i+1, l.ProductID, l.Description,
 			orDefault(l.Quantity, "1"), orDefault(l.UnitCost, "0"), l.ExpenseAccountID, l.TaxCode, orDefault(l.TaxRate, "0")); err != nil {
-			return 0, err
+			return err
 		}
 	}
-	return id, nil
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -328,17 +344,21 @@ func CreateSalesOrder(ctx context.Context, tx pgx.Tx, in SalesOrderInput) (int, 
 		in.OrderNumber, in.CustomerID, in.OrderDate, in.ExpectedShipDate, in.CurrencyCode, in.Reference, in.Memo).Scan(&id); err != nil {
 		return 0, err
 	}
-	for i, l := range in.Lines {
+	return id, insertSalesOrderLines(ctx, tx, id, in.Lines)
+}
+
+func insertSalesOrderLines(ctx context.Context, tx pgx.Tx, id int, lines []SalesOrderLineInput) error {
+	for i, l := range lines {
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO sales_order_lines
 			   (order_id, line_no, product_id, description, quantity, unit_price, revenue_account_id, tax_code, tax_rate)
 			 VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9::numeric)`,
 			id, i+1, l.ProductID, l.Description,
 			orDefault(l.Quantity, "1"), orDefault(l.UnitPrice, "0"), l.RevenueAccountID, l.TaxCode, orDefault(l.TaxRate, "0")); err != nil {
-			return 0, err
+			return err
 		}
 	}
-	return id, nil
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -397,17 +417,21 @@ func CreatePurchaseOrder(ctx context.Context, tx pgx.Tx, in PurchaseOrderInput) 
 		in.OrderNumber, in.SupplierID, in.OrderDate, in.ExpectedReceiptDate, in.CurrencyCode, in.Reference, in.Memo).Scan(&id); err != nil {
 		return 0, err
 	}
-	for i, l := range in.Lines {
+	return id, insertPurchaseOrderLines(ctx, tx, id, in.Lines)
+}
+
+func insertPurchaseOrderLines(ctx context.Context, tx pgx.Tx, id int, lines []PurchaseOrderLineInput) error {
+	for i, l := range lines {
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO purchase_order_lines
 			   (order_id, line_no, product_id, description, quantity, unit_cost, expense_account_id, tax_code, tax_rate)
 			 VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9::numeric)`,
 			id, i+1, l.ProductID, l.Description,
 			orDefault(l.Quantity, "1"), orDefault(l.UnitCost, "0"), l.ExpenseAccountID, l.TaxCode, orDefault(l.TaxRate, "0")); err != nil {
-			return 0, err
+			return err
 		}
 	}
-	return id, nil
+	return nil
 }
 
 // ---------------------------------------------------------------------------

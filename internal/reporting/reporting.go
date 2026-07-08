@@ -267,22 +267,25 @@ type DocumentBalance struct {
 	Balance        string  `json:"balance"`
 	PaymentStatus  string  `json:"payment_status"`
 	JournalEntryID *int    `json:"journal_entry_id"`
+	Reference      *string `json:"reference"`
+	Memo           *string `json:"memo"`
 }
 
 // The balance views predate the GL drill-down and do not expose
-// journal_entry_id, so the document queries join it in from the base table.
+// journal_entry_id (nor reference/memo, which the edit screens prefill), so
+// the document queries join them in from the base table.
 const salesInvoiceBalancesSQL = `
 	SELECT b.invoice_id, b.invoice_number, b.customer_id, b.currency_code,
 	       b.invoice_date::text, b.due_date::text, b.status,
 	       b.total::numeric(19,4)::text, b.amount_applied::numeric(19,4)::text, b.balance::numeric(19,4)::text,
-	       b.payment_status, si.journal_entry_id
+	       b.payment_status, si.journal_entry_id, si.reference, si.memo
 	FROM sales_invoice_balances b JOIN sales_invoices si ON si.id = b.invoice_id`
 
 const purchaseBillBalancesSQL = `
 	SELECT b.bill_id, b.bill_number, b.supplier_id, b.currency_code,
 	       b.bill_date::text, b.due_date::text, b.status,
 	       b.total::numeric(19,4)::text, b.amount_applied::numeric(19,4)::text, b.balance::numeric(19,4)::text,
-	       b.payment_status, pb.journal_entry_id
+	       b.payment_status, pb.journal_entry_id, pb.reference, pb.memo
 	FROM purchase_bill_balances b JOIN purchase_bills pb ON pb.id = b.bill_id`
 
 // SalesInvoiceBalances returns the balance view of every invoice, newest first.
@@ -291,17 +294,22 @@ func SalesInvoiceBalances(ctx context.Context, q Querier) ([]DocumentBalance, er
 }
 
 // SalesInvoiceLine is one invoice line with its database-computed money.
+// OrderLineID is set when the line was produced by order fulfilment (such
+// documents cannot be edited); it is always nil for credit-note lines, which
+// reuse this shape.
 type SalesInvoiceLine struct {
-	LineNo       int     `json:"line_no"`
-	ProductID    *int    `json:"product_id"`
-	Description  string  `json:"description"`
-	Quantity     string  `json:"quantity"`
-	UnitPrice    string  `json:"unit_price"`
-	TaxCode      *string `json:"tax_code"`
-	TaxRate      string  `json:"tax_rate"`
-	LineSubtotal string  `json:"line_subtotal"`
-	TaxAmount    string  `json:"tax_amount"`
-	LineTotal    string  `json:"line_total"`
+	LineNo           int     `json:"line_no"`
+	ProductID        *int    `json:"product_id"`
+	Description      string  `json:"description"`
+	Quantity         string  `json:"quantity"`
+	UnitPrice        string  `json:"unit_price"`
+	TaxCode          *string `json:"tax_code"`
+	TaxRate          string  `json:"tax_rate"`
+	LineSubtotal     string  `json:"line_subtotal"`
+	TaxAmount        string  `json:"tax_amount"`
+	LineTotal        string  `json:"line_total"`
+	RevenueAccountID *int    `json:"revenue_account_id"`
+	OrderLineID      *int    `json:"order_line_id"`
 }
 
 // SalesInvoiceLines returns an invoice's lines in order, or ErrNotFound when
@@ -318,7 +326,8 @@ func SalesInvoiceLines(ctx context.Context, q Querier, invoiceID int) ([]SalesIn
 	rows, err := q.Query(ctx,
 		`SELECT line_no, product_id, description,
 		        quantity::numeric(19,4)::text, unit_price::numeric(19,4)::text, tax_code, tax_rate::numeric(7,4)::text,
-		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text
+		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text,
+		        revenue_account_id, order_line_id
 		 FROM sales_invoice_lines WHERE invoice_id = $1 ORDER BY line_no`, invoiceID)
 	if err != nil {
 		return nil, err
@@ -330,7 +339,8 @@ func SalesInvoiceLines(ctx context.Context, q Querier, invoiceID int) ([]SalesIn
 		var l SalesInvoiceLine
 		if err := rows.Scan(&l.LineNo, &l.ProductID, &l.Description,
 			&l.Quantity, &l.UnitPrice, &l.TaxCode, &l.TaxRate,
-			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal); err != nil {
+			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal,
+			&l.RevenueAccountID, &l.OrderLineID); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -350,17 +360,22 @@ func PurchaseBillBalances(ctx context.Context, q Querier) ([]DocumentBalance, er
 }
 
 // PurchaseBillLine is one bill line with its database-computed money.
+// OrderLineID is set when the line was produced by order fulfilment (such
+// documents cannot be edited); it is always nil for credit-note lines, which
+// reuse this shape.
 type PurchaseBillLine struct {
-	LineNo       int     `json:"line_no"`
-	ProductID    *int    `json:"product_id"`
-	Description  string  `json:"description"`
-	Quantity     string  `json:"quantity"`
-	UnitCost     string  `json:"unit_cost"`
-	TaxCode      *string `json:"tax_code"`
-	TaxRate      string  `json:"tax_rate"`
-	LineSubtotal string  `json:"line_subtotal"`
-	TaxAmount    string  `json:"tax_amount"`
-	LineTotal    string  `json:"line_total"`
+	LineNo           int     `json:"line_no"`
+	ProductID        *int    `json:"product_id"`
+	Description      string  `json:"description"`
+	Quantity         string  `json:"quantity"`
+	UnitCost         string  `json:"unit_cost"`
+	TaxCode          *string `json:"tax_code"`
+	TaxRate          string  `json:"tax_rate"`
+	LineSubtotal     string  `json:"line_subtotal"`
+	TaxAmount        string  `json:"tax_amount"`
+	LineTotal        string  `json:"line_total"`
+	ExpenseAccountID *int    `json:"expense_account_id"`
+	OrderLineID      *int    `json:"order_line_id"`
 }
 
 // PurchaseBillLines returns a bill's lines in order, or ErrNotFound when the
@@ -377,7 +392,8 @@ func PurchaseBillLines(ctx context.Context, q Querier, billID int) ([]PurchaseBi
 	rows, err := q.Query(ctx,
 		`SELECT line_no, product_id, description,
 		        quantity::numeric(19,4)::text, unit_cost::numeric(19,4)::text, tax_code, tax_rate::numeric(7,4)::text,
-		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text
+		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text,
+		        expense_account_id, order_line_id
 		 FROM purchase_bill_lines WHERE bill_id = $1 ORDER BY line_no`, billID)
 	if err != nil {
 		return nil, err
@@ -389,7 +405,8 @@ func PurchaseBillLines(ctx context.Context, q Querier, billID int) ([]PurchaseBi
 		var l PurchaseBillLine
 		if err := rows.Scan(&l.LineNo, &l.ProductID, &l.Description,
 			&l.Quantity, &l.UnitCost, &l.TaxCode, &l.TaxRate,
-			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal); err != nil {
+			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal,
+			&l.ExpenseAccountID, &l.OrderLineID); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -414,7 +431,8 @@ func documentBalanceRows(ctx context.Context, q Querier, sql string) ([]Document
 	for rows.Next() {
 		var d DocumentBalance
 		if err := rows.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
-			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID); err != nil {
+			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID,
+			&d.Reference, &d.Memo); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -425,7 +443,8 @@ func documentBalanceRows(ctx context.Context, q Querier, sql string) ([]Document
 func scanDocumentBalance(row pgx.Row) (DocumentBalance, error) {
 	var d DocumentBalance
 	err := row.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
-		&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID)
+		&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID,
+		&d.Reference, &d.Memo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return d, ErrNotFound
 	}
@@ -441,14 +460,14 @@ const salesCreditNoteBalancesSQL = `
 	SELECT b.credit_note_id, b.credit_note_number, b.customer_id, b.currency_code,
 	       b.credit_note_date::text, NULL::text, b.status,
 	       b.total::numeric(19,4)::text, b.amount_applied::numeric(19,4)::text, b.balance::numeric(19,4)::text,
-	       b.application_status, cn.journal_entry_id
+	       b.application_status, cn.journal_entry_id, cn.reference, cn.memo
 	FROM sales_credit_note_balances b JOIN sales_credit_notes cn ON cn.id = b.credit_note_id`
 
 const purchaseCreditNoteBalancesSQL = `
 	SELECT b.credit_note_id, b.credit_note_number, b.supplier_id, b.currency_code,
 	       b.credit_note_date::text, NULL::text, b.status,
 	       b.total::numeric(19,4)::text, b.amount_applied::numeric(19,4)::text, b.balance::numeric(19,4)::text,
-	       b.application_status, cn.journal_entry_id
+	       b.application_status, cn.journal_entry_id, cn.reference, cn.memo
 	FROM purchase_credit_note_balances b JOIN purchase_credit_notes cn ON cn.id = b.credit_note_id`
 
 // SalesCreditNoteBalances returns the balance view of every sales credit
@@ -491,7 +510,8 @@ func SalesCreditNoteLines(ctx context.Context, q Querier, noteID int) ([]SalesIn
 	rows, err := q.Query(ctx,
 		`SELECT line_no, product_id, description,
 		        quantity::numeric(19,4)::text, unit_price::numeric(19,4)::text, tax_code, tax_rate::numeric(7,4)::text,
-		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text
+		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text,
+		        revenue_account_id, NULL::int
 		 FROM sales_credit_note_lines WHERE credit_note_id = $1 ORDER BY line_no`, noteID)
 	if err != nil {
 		return nil, err
@@ -503,7 +523,8 @@ func SalesCreditNoteLines(ctx context.Context, q Querier, noteID int) ([]SalesIn
 		var l SalesInvoiceLine
 		if err := rows.Scan(&l.LineNo, &l.ProductID, &l.Description,
 			&l.Quantity, &l.UnitPrice, &l.TaxCode, &l.TaxRate,
-			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal); err != nil {
+			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal,
+			&l.RevenueAccountID, &l.OrderLineID); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -525,7 +546,8 @@ func PurchaseCreditNoteLines(ctx context.Context, q Querier, noteID int) ([]Purc
 	rows, err := q.Query(ctx,
 		`SELECT line_no, product_id, description,
 		        quantity::numeric(19,4)::text, unit_cost::numeric(19,4)::text, tax_code, tax_rate::numeric(7,4)::text,
-		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text
+		        line_subtotal::numeric(19,4)::text, tax_amount::numeric(19,4)::text, line_total::numeric(19,4)::text,
+		        expense_account_id, NULL::int
 		 FROM purchase_credit_note_lines WHERE credit_note_id = $1 ORDER BY line_no`, noteID)
 	if err != nil {
 		return nil, err
@@ -537,7 +559,8 @@ func PurchaseCreditNoteLines(ctx context.Context, q Querier, noteID int) ([]Purc
 		var l PurchaseBillLine
 		if err := rows.Scan(&l.LineNo, &l.ProductID, &l.Description,
 			&l.Quantity, &l.UnitCost, &l.TaxCode, &l.TaxRate,
-			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal); err != nil {
+			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal,
+			&l.ExpenseAccountID, &l.OrderLineID); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -580,6 +603,9 @@ type Payment struct {
 	AmountApplied  string  `json:"amount_applied"`
 	Unapplied      string  `json:"unapplied"`
 	JournalEntryID *int    `json:"journal_entry_id"`
+	// The cash-side account: deposit_account_id for customer payments,
+	// payment_account_id for supplier payments.
+	AccountID *int `json:"account_id"`
 }
 
 const customerPaymentsSQL = `
@@ -587,7 +613,7 @@ const customerPaymentsSQL = `
 	       cp.amount::numeric(19,4)::text, cp.method, cp.reference, cp.status,
 	       COALESCE(pa.applied, 0)::numeric(19,4)::text,
 	       (cp.amount - COALESCE(pa.applied, 0))::numeric(19,4)::text,
-	       cp.journal_entry_id
+	       cp.journal_entry_id, cp.deposit_account_id
 	FROM customer_payments cp
 	LEFT JOIN (
 	    SELECT payment_id, sum(amount_applied) AS applied
@@ -599,7 +625,7 @@ const supplierPaymentsSQL = `
 	       sp.amount::numeric(19,4)::text, sp.method, sp.reference, sp.status,
 	       COALESCE(ba.applied, 0)::numeric(19,4)::text,
 	       (sp.amount - COALESCE(ba.applied, 0))::numeric(19,4)::text,
-	       sp.journal_entry_id
+	       sp.journal_entry_id, sp.payment_account_id
 	FROM supplier_payments sp
 	LEFT JOIN (
 	    SELECT payment_id, sum(amount_applied) AS applied
@@ -637,7 +663,8 @@ func paymentRows(ctx context.Context, q Querier, sql string) ([]Payment, error) 
 	for rows.Next() {
 		var p Payment
 		if err := rows.Scan(&p.ID, &p.PartyID, &p.Date, &p.Currency, &p.Amount,
-			&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied, &p.JournalEntryID); err != nil {
+			&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied, &p.JournalEntryID,
+			&p.AccountID); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -648,7 +675,8 @@ func paymentRows(ctx context.Context, q Querier, sql string) ([]Payment, error) 
 func scanPayment(row pgx.Row) (Payment, error) {
 	var p Payment
 	err := row.Scan(&p.ID, &p.PartyID, &p.Date, &p.Currency, &p.Amount,
-		&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied, &p.JournalEntryID)
+		&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied, &p.JournalEntryID,
+		&p.AccountID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -781,12 +809,15 @@ type StockMovement struct {
 	Reference      *string `json:"reference"`
 	Notes          *string `json:"notes"`
 	JournalEntryID *int    `json:"journal_entry_id"`
+	// Set when the movement was produced by order fulfilment; such movements
+	// cannot be edited (though they may be deleted while unposted).
+	SourceType *string `json:"source_type"`
 }
 
 const stockMovementsSQL = `
 	SELECT id, product_id, warehouse_id, movement_date::text, movement_type,
 	       quantity::numeric(19,4)::text, unit_cost::numeric(19,4)::text, total_cost::numeric(19,4)::text,
-	       reference, notes, journal_entry_id
+	       reference, notes, journal_entry_id, source_type
 	FROM stock_movements`
 
 // StockMovements returns every stock movement, newest first.
@@ -801,7 +832,8 @@ func StockMovements(ctx context.Context, q Querier) ([]StockMovement, error) {
 	for rows.Next() {
 		var m StockMovement
 		if err := rows.Scan(&m.ID, &m.ProductID, &m.WarehouseID, &m.Date, &m.Type,
-			&m.Quantity, &m.UnitCost, &m.TotalCost, &m.Reference, &m.Notes, &m.JournalEntryID); err != nil {
+			&m.Quantity, &m.UnitCost, &m.TotalCost, &m.Reference, &m.Notes, &m.JournalEntryID,
+			&m.SourceType); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -814,7 +846,8 @@ func StockMovementByID(ctx context.Context, q Querier, movementID int) (StockMov
 	var m StockMovement
 	err := q.QueryRow(ctx, stockMovementsSQL+` WHERE id = $1`, movementID).Scan(
 		&m.ID, &m.ProductID, &m.WarehouseID, &m.Date, &m.Type,
-		&m.Quantity, &m.UnitCost, &m.TotalCost, &m.Reference, &m.Notes, &m.JournalEntryID)
+		&m.Quantity, &m.UnitCost, &m.TotalCost, &m.Reference, &m.Notes, &m.JournalEntryID,
+		&m.SourceType)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return m, ErrNotFound
 	}

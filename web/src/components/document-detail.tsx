@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 
 import { isZeroAmount, sumAmounts } from "@/lib/amount"
 import { useCurrentUser } from "@/lib/current-user"
@@ -7,6 +7,10 @@ import {
   ApiError,
   applyPurchaseCreditNote,
   applySalesCreditNote,
+  deletePurchaseBill,
+  deletePurchaseCreditNote,
+  deleteSalesCreditNote,
+  deleteSalesInvoice,
   getPurchaseBill,
   getPurchaseBillLines,
   getPurchaseCreditNote,
@@ -48,6 +52,8 @@ import {
 
 // Invoice and bill lines differ only in the name of the per-unit money field
 // (unit_price vs unit_cost), so the detail screen renders this common view.
+// order_line_id marks lines produced by order fulfilment: such documents are
+// deletable while draft but not editable.
 interface LineView {
   line_no: number
   description: string
@@ -57,6 +63,7 @@ interface LineView {
   tax_amount: string
   line_subtotal: string
   line_total: string
+  order_line_id: number | null
 }
 
 // Module-level so their identity is stable across renders (they are effect
@@ -100,6 +107,7 @@ export function InvoiceDetail() {
       fetchPartyNames={fetchCustomerNames}
       post={postSalesInvoice}
       unpost={unpostSalesInvoice}
+      deleteDocument={deleteSalesInvoice}
     />
   )
 }
@@ -115,6 +123,7 @@ export function BillDetail() {
       fetchPartyNames={fetchSupplierNames}
       post={postPurchaseBill}
       unpost={unpostPurchaseBill}
+      deleteDocument={deletePurchaseBill}
     />
   )
 }
@@ -131,6 +140,7 @@ export function CreditNoteDetail() {
       fetchPartyNames={fetchCustomerNames}
       post={postSalesCreditNote}
       unpost={unpostSalesCreditNote}
+      deleteDocument={deleteSalesCreditNote}
       apply={applySalesCreditNote}
       fetchApplications={getSalesCreditNoteApplications}
       appliedDocLabel="Invoice"
@@ -152,6 +162,7 @@ export function SupplierCreditDetail() {
       fetchPartyNames={fetchSupplierNames}
       post={postPurchaseCreditNote}
       unpost={unpostPurchaseCreditNote}
+      deleteDocument={deletePurchaseCreditNote}
       apply={applyPurchaseCreditNote}
       fetchApplications={getPurchaseCreditNoteApplications}
       appliedDocLabel="Bill"
@@ -163,9 +174,10 @@ export function SupplierCreditDetail() {
 
 // One document: header, database-computed lines, and the lifecycle actions.
 // Post writes the journal entry; Unpost reverses it and returns the document
-// to draft. Credit notes additionally pass apply/fetchApplications: Apply
-// allocates the unapplied credit to open documents oldest-first, and the
-// allocations render in an "Applied to" table.
+// to draft. Drafts can be edited (unless order-linked) or deleted. Credit
+// notes additionally pass apply/fetchApplications: Apply allocates the
+// unapplied credit to open documents oldest-first, and the allocations render
+// in an "Applied to" table.
 function DocumentDetail({
   titlePrefix,
   backPath,
@@ -176,6 +188,7 @@ function DocumentDetail({
   fetchPartyNames,
   post,
   unpost,
+  deleteDocument,
   apply,
   fetchApplications,
   appliedDocLabel = "",
@@ -191,6 +204,7 @@ function DocumentDetail({
   fetchPartyNames: () => Promise<Map<number, string>>
   post: (id: number) => Promise<unknown>
   unpost: (id: number) => Promise<unknown>
+  deleteDocument: (id: number) => Promise<void>
   apply?: (id: number) => Promise<unknown>
   fetchApplications?: (id: number) => Promise<PaymentApplication[]>
   appliedDocLabel?: string
@@ -198,6 +212,7 @@ function DocumentDetail({
   applyHint?: string
 }) {
   const { id } = useParams()
+  const navigate = useNavigate()
   const documentId = Number(id)
 
   const [document, setDocument] = useState<DocumentBalance | null>(null)
@@ -266,6 +281,24 @@ function DocumentDetail({
       })
   }
 
+  function runDelete() {
+    if (
+      !window.confirm(
+        `Delete this draft ${titlePrefix.toLowerCase()}? This cannot be undone.`,
+      )
+    ) {
+      return
+    }
+    setActing(true)
+    setActionError(null)
+    deleteDocument(documentId)
+      .then(() => navigate(backPath))
+      .catch((err: unknown) => {
+        setActing(false)
+        setActionError(err instanceof ApiError ? err.message : String(err))
+      })
+  }
+
   return (
     <section className="mx-auto w-full max-w-5xl p-6">
       {error !== null && (
@@ -316,6 +349,21 @@ function DocumentDetail({
               {document.status === "draft" && (
                 <Button disabled={acting} onClick={() => runAction(post)}>
                   {acting ? "Posting…" : "Post to ledger"}
+                </Button>
+              )}
+              {document.status === "draft" &&
+                !lines.some((l) => l.order_line_id !== null) && (
+                  <Button variant="outline" disabled={acting} asChild>
+                    <Link to={`${backPath}/${documentId}/edit`}>Edit</Link>
+                  </Button>
+                )}
+              {document.status === "draft" && (
+                <Button
+                  variant="outline"
+                  disabled={acting}
+                  onClick={runDelete}
+                >
+                  Delete
                 </Button>
               )}
               {apply !== undefined &&

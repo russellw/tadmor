@@ -53,6 +53,16 @@ async function send(method: string, path: string, body: unknown): Promise<void> 
   if (!res.ok) throw await failure(res)
 }
 
+// DELETE a resource. Draft-document deletes return 200 with { "status": "ok" };
+// nothing is parsed on success.
+async function del(path: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  })
+  if (!res.ok) throw await failure(res)
+}
+
 // POST a body and parse the JSON response (creates return 201 with { "id": ... }).
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -574,6 +584,8 @@ export interface DocumentBalance {
   payment_status: string
   /** Set once the document has been posted. */
   journal_entry_id: number | null
+  reference: string | null
+  memo: string | null
 }
 
 /** One invoice line with its database-computed money, mirroring
@@ -589,6 +601,10 @@ export interface SalesInvoiceLine {
   line_subtotal: string
   tax_amount: string
   line_total: string
+  revenue_account_id: number | null
+  /** Set when the line was produced by order fulfilment; such documents
+   *  cannot be edited. Always null on credit-note lines. */
+  order_line_id: number | null
 }
 
 /** Input for one draft invoice line, mirroring documents.SalesInvoiceLineInput.
@@ -633,6 +649,19 @@ export function createSalesInvoice(
   return post<{ id: number }>("/sales-invoices", input)
 }
 
+/** Rewrite a draft invoice's header and full line set. */
+export function updateSalesInvoice(
+  id: number,
+  input: SalesInvoiceInput,
+): Promise<void> {
+  return send("PUT", `/sales-invoices/${id}`, input)
+}
+
+/** Delete a draft invoice. */
+export function deleteSalesInvoice(id: number): Promise<void> {
+  return del(`/sales-invoices/${id}`)
+}
+
 export function postSalesInvoice(
   id: number,
 ): Promise<{ journal_entry_id: number }> {
@@ -658,6 +687,10 @@ export interface PurchaseBillLine {
   line_subtotal: string
   tax_amount: string
   line_total: string
+  expense_account_id: number | null
+  /** Set when the line was produced by order fulfilment; such documents
+   *  cannot be edited. Always null on credit-note lines. */
+  order_line_id: number | null
 }
 
 /** Input for one draft bill line, mirroring documents.PurchaseBillLineInput.
@@ -700,6 +733,19 @@ export function createPurchaseBill(
   input: PurchaseBillInput,
 ): Promise<{ id: number }> {
   return post<{ id: number }>("/purchase-bills", input)
+}
+
+/** Rewrite a draft bill's header and full line set. */
+export function updatePurchaseBill(
+  id: number,
+  input: PurchaseBillInput,
+): Promise<void> {
+  return send("PUT", `/purchase-bills/${id}`, input)
+}
+
+/** Delete a draft bill. */
+export function deletePurchaseBill(id: number): Promise<void> {
+  return del(`/purchase-bills/${id}`)
 }
 
 export function postPurchaseBill(
@@ -769,6 +815,19 @@ export function createSalesCreditNote(
   return post<{ id: number }>("/sales-credit-notes", input)
 }
 
+/** Rewrite a draft credit note's header and full line set. */
+export function updateSalesCreditNote(
+  id: number,
+  input: SalesCreditNoteInput,
+): Promise<void> {
+  return send("PUT", `/sales-credit-notes/${id}`, input)
+}
+
+/** Delete a draft credit note. */
+export function deleteSalesCreditNote(id: number): Promise<void> {
+  return del(`/sales-credit-notes/${id}`)
+}
+
 export function postSalesCreditNote(
   id: number,
 ): Promise<{ journal_entry_id: number }> {
@@ -819,6 +878,19 @@ export function createPurchaseCreditNote(
   return post<{ id: number }>("/purchase-credit-notes", input)
 }
 
+/** Rewrite a draft credit note's header and full line set. */
+export function updatePurchaseCreditNote(
+  id: number,
+  input: PurchaseCreditNoteInput,
+): Promise<void> {
+  return send("PUT", `/purchase-credit-notes/${id}`, input)
+}
+
+/** Delete a draft credit note. */
+export function deletePurchaseCreditNote(id: number): Promise<void> {
+  return del(`/purchase-credit-notes/${id}`)
+}
+
 export function postPurchaseCreditNote(
   id: number,
 ): Promise<{ journal_entry_id: number }> {
@@ -858,6 +930,9 @@ export interface Payment {
   unapplied: string
   /** Set once the payment has been posted. */
   journal_entry_id: number | null
+  /** The cash-side account: deposit_account_id for customer payments,
+   *  payment_account_id for supplier payments. */
+  account_id: number | null
 }
 
 /** One allocation of a payment to an invoice or bill, mirroring
@@ -920,6 +995,19 @@ export function createCustomerPayment(
   return post<{ id: number }>("/customer-payments", input)
 }
 
+/** Rewrite a draft customer payment. */
+export function updateCustomerPayment(
+  id: number,
+  input: CustomerPaymentInput,
+): Promise<void> {
+  return send("PUT", `/customer-payments/${id}`, input)
+}
+
+/** Delete a draft customer payment. */
+export function deleteCustomerPayment(id: number): Promise<void> {
+  return del(`/customer-payments/${id}`)
+}
+
 export function postCustomerPayment(
   id: number,
 ): Promise<{ journal_entry_id: number }> {
@@ -961,6 +1049,19 @@ export function createSupplierPayment(
   return post<{ id: number }>("/supplier-payments", input)
 }
 
+/** Rewrite a draft supplier payment. */
+export function updateSupplierPayment(
+  id: number,
+  input: SupplierPaymentInput,
+): Promise<void> {
+  return send("PUT", `/supplier-payments/${id}`, input)
+}
+
+/** Delete a draft supplier payment. */
+export function deleteSupplierPayment(id: number): Promise<void> {
+  return del(`/supplier-payments/${id}`)
+}
+
 export function postSupplierPayment(
   id: number,
 ): Promise<{ journal_entry_id: number }> {
@@ -997,6 +1098,9 @@ export interface StockMovement {
   reference: string | null
   notes: string | null
   journal_entry_id: number | null
+  /** Set when the movement was produced by order fulfilment; such movements
+   *  cannot be edited (though they may be deleted while unposted). */
+  source_type: string | null
 }
 
 /** Input for a stock movement, mirroring documents.StockMovementInput.
@@ -1035,6 +1139,19 @@ export function createStockMovement(
   input: StockMovementInput,
 ): Promise<{ id: number }> {
   return post<{ id: number }>("/stock-movements", input)
+}
+
+/** Rewrite an unposted, non-fulfilment stock movement. */
+export function updateStockMovement(
+  id: number,
+  input: StockMovementInput,
+): Promise<void> {
+  return send("PUT", `/stock-movements/${id}`, input)
+}
+
+/** Delete an unposted stock movement. */
+export function deleteStockMovement(id: number): Promise<void> {
+  return del(`/stock-movements/${id}`)
 }
 
 /** Post a movement to the GL. currency is required; credit_account_id is the
@@ -1233,6 +1350,8 @@ export interface SalesOrderSummary {
   total: string
   invoiced_status: string
   shipped_status: string
+  reference: string | null
+  memo: string | null
 }
 
 /** Header view of a purchase order, mirroring reporting.PurchaseOrderSummary. */
@@ -1247,6 +1366,8 @@ export interface PurchaseOrderSummary {
   total: string
   billed_status: string
   received_status: string
+  reference: string | null
+  memo: string | null
 }
 
 /** One sales-order line with its money and derived fulfilment quantities. */
@@ -1262,6 +1383,7 @@ export interface SalesOrderLine {
   line_subtotal: string
   tax_amount: string
   line_total: string
+  revenue_account_id: number | null
   qty_invoiced: string
   qty_shipped: string
   qty_to_invoice: string
@@ -1281,6 +1403,7 @@ export interface PurchaseOrderLine {
   line_subtotal: string
   tax_amount: string
   line_total: string
+  expense_account_id: number | null
   qty_billed: string
   qty_received: string
   qty_to_bill: string
@@ -1347,6 +1470,19 @@ export function createSalesOrder(
   return post<{ id: number }>("/sales-orders", input)
 }
 
+/** Rewrite a draft order's header and full line set. */
+export function updateSalesOrder(
+  id: number,
+  input: SalesOrderInput,
+): Promise<void> {
+  return send("PUT", `/sales-orders/${id}`, input)
+}
+
+/** Delete a draft order. */
+export function deleteSalesOrder(id: number): Promise<void> {
+  return del(`/sales-orders/${id}`)
+}
+
 export function listPurchaseOrders(): Promise<PurchaseOrderSummary[]> {
   return get<PurchaseOrderSummary[]>("/purchase-orders")
 }
@@ -1363,6 +1499,19 @@ export function createPurchaseOrder(
   input: PurchaseOrderInput,
 ): Promise<{ id: number }> {
   return post<{ id: number }>("/purchase-orders", input)
+}
+
+/** Rewrite a draft order's header and full line set. */
+export function updatePurchaseOrder(
+  id: number,
+  input: PurchaseOrderInput,
+): Promise<void> {
+  return send("PUT", `/purchase-orders/${id}`, input)
+}
+
+/** Delete a draft order. */
+export function deletePurchaseOrder(id: number): Promise<void> {
+  return del(`/purchase-orders/${id}`)
 }
 
 // Lifecycle transitions. Each returns { status: "ok" } and moves the order

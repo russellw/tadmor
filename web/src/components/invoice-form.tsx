@@ -1,15 +1,18 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 
-import { formatAmount, lineAmounts, sumAmounts } from "@/lib/amount"
+import { formatAmount, lineAmounts, sumAmounts, trimAmount } from "@/lib/amount"
 import {
   ApiError,
   createSalesInvoice,
+  getSalesInvoice,
+  getSalesInvoiceLines,
   listAccounts,
   listCustomers,
   listOrganizations,
   listProducts,
   listTaxCodes,
+  updateSalesInvoice,
   type Account,
   type Product,
   type SalesInvoiceInput,
@@ -71,13 +74,16 @@ function previewLine(l: LineState) {
   )
 }
 
-// New-sales-invoice form: header fields plus dynamic lines. Picking a product
+// Sales-invoice form: header fields plus dynamic lines. Picking a product
 // prefills a line from the catalog (description, price, revenue account, tax);
 // everything stays editable, since invoice lines snapshot their values. The
 // invoice is created as a draft — posting to the GL happens from the detail
-// screen.
-export function InvoiceForm() {
+// screen. In edit mode the form loads an existing draft and rewrites it in
+// place; posted and order-linked invoices are refused up front.
+export function InvoiceForm({ mode = "create" }: { mode?: "create" | "edit" }) {
   const navigate = useNavigate()
+  const { id } = useParams()
+  const invoiceId = mode === "edit" ? Number(id) : null
 
   const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -108,8 +114,10 @@ export function InvoiceForm() {
       listProducts(),
       listTaxCodes(),
       listAccounts(),
+      invoiceId !== null ? getSalesInvoice(invoiceId) : null,
+      invoiceId !== null ? getSalesInvoiceLines(invoiceId) : null,
     ])
-      .then(([custs, orgs, prods, taxes, accts]) => {
+      .then(([custs, orgs, prods, taxes, accts, doc, docLines]) => {
         if (cancelled) return
         const orgNames = new Map(orgs.map((o) => [o.id, o.name]))
         setCustomers(
@@ -124,6 +132,39 @@ export function InvoiceForm() {
         setProducts(prods.filter((p) => p.is_active))
         setTaxCodes(taxes)
         setAccounts(accts)
+        if (doc !== null && docLines !== null) {
+          if (doc.status !== "draft") {
+            setError("Only draft invoices can be edited.")
+            return
+          }
+          if (docLines.some((l) => l.order_line_id !== null)) {
+            setError(
+              "This invoice was created from a sales order and cannot be edited. Delete it and invoice the order again instead.",
+            )
+            return
+          }
+          setCustomerId(String(doc.party_id))
+          setInvoiceNumber(doc.number)
+          setInvoiceDate(doc.date)
+          setDueDate(doc.due_date ?? "")
+          setCurrencyCode(doc.currency_code)
+          setReference(doc.reference ?? "")
+          setMemo(doc.memo ?? "")
+          setLines(
+            docLines.map((l) => ({
+              productId: l.product_id !== null ? String(l.product_id) : NONE,
+              description: l.description,
+              quantity: trimAmount(l.quantity),
+              unitPrice: trimAmount(l.unit_price),
+              taxCode: l.tax_code ?? NONE,
+              taxRate: trimAmount(l.tax_rate),
+              revenueAccountId:
+                l.revenue_account_id !== null
+                  ? String(l.revenue_account_id)
+                  : NONE,
+            })),
+          )
+        }
         setLoaded(true)
       })
       .catch((err: unknown) => {
@@ -134,7 +175,7 @@ export function InvoiceForm() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [invoiceId])
 
   function setLine(index: number, patch: Partial<LineState>) {
     setLines((ls) => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)))
@@ -212,8 +253,12 @@ export function InvoiceForm() {
     }
     setSaving(true)
     setSaveError(null)
-    createSalesInvoice(input)
-      .then(({ id }) => navigate(`/invoices/${id}`))
+    const save =
+      invoiceId !== null
+        ? updateSalesInvoice(invoiceId, input).then(() => invoiceId)
+        : createSalesInvoice(input).then(({ id }) => id)
+    save
+      .then((docId) => navigate(`/invoices/${docId}`))
       .catch((err: unknown) => {
         setSaving(false)
         setSaveError(err instanceof ApiError ? err.message : String(err))
@@ -223,9 +268,13 @@ export function InvoiceForm() {
   return (
     <section className="mx-auto w-full max-w-5xl p-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">New Invoice</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {invoiceId !== null ? "Edit Invoice" : "New Invoice"}
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Creates a draft — post it to the ledger from the invoice page.
+          {invoiceId !== null
+            ? "Rewrites the draft — it stays unposted."
+            : "Creates a draft — post it to the ledger from the invoice page."}
         </p>
       </header>
 
@@ -500,10 +549,12 @@ export function InvoiceForm() {
 
           <div className="flex gap-2">
             <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Create draft"}
+              {saving ? "Saving…" : invoiceId !== null ? "Save changes" : "Create draft"}
             </Button>
             <Button type="button" variant="outline" asChild>
-              <Link to="/invoices">Cancel</Link>
+              <Link to={invoiceId !== null ? `/invoices/${invoiceId}` : "/invoices"}>
+                Cancel
+              </Link>
             </Button>
           </div>
         </form>

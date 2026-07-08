@@ -68,6 +68,13 @@ export function lineAmounts(
   }
 }
 
+/** Trim trailing fractional zeros for editing in a form input
+ *  ("4.0000" → "4", "8.5000" → "8.5"). */
+export function trimAmount(value: string): string {
+  if (!value.includes(".")) return value
+  return value.replace(/\.?0+$/, "")
+}
+
 /** Format an amount string for display: thousands separators, trailing zeros
  *  trimmed but at least two decimals kept ("1234.5000" → "1,234.50"). */
 export function formatAmount(value: string): string {

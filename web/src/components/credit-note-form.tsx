@@ -1,18 +1,25 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 
-import { formatAmount, lineAmounts, sumAmounts } from "@/lib/amount"
+import { formatAmount, lineAmounts, sumAmounts, trimAmount } from "@/lib/amount"
 import {
   ApiError,
   createPurchaseCreditNote,
   createSalesCreditNote,
+  getPurchaseCreditNote,
+  getPurchaseCreditNoteLines,
+  getSalesCreditNote,
+  getSalesCreditNoteLines,
   listAccounts,
   listCustomers,
   listOrganizations,
   listProducts,
   listSuppliers,
   listTaxCodes,
+  updatePurchaseCreditNote,
+  updateSalesCreditNote,
   type Account,
+  type DocumentBalance,
   type Product,
   type TaxCode,
 } from "@/lib/api"
@@ -126,10 +133,16 @@ async function fetchSupplierOptions(): Promise<PartyOption[]> {
     }))
 }
 
-export function CreditNoteForm() {
+export function CreditNoteForm({
+  mode = "create",
+}: {
+  mode?: "create" | "edit"
+}) {
   return (
     <GenericCreditNoteForm
-      title="New Credit Note"
+      mode={mode}
+      title={mode === "edit" ? "Edit Credit Note" : "New Credit Note"}
+      noun="credit notes"
       partyLabel="Customer"
       unitLabel="Unit Price"
       accountLabel="Revenue Account"
@@ -144,8 +157,20 @@ export function CreditNoteForm() {
         accountId:
           p.revenue_account_id != null ? String(p.revenue_account_id) : NONE,
       })}
-      create={(header, lines) =>
-        createSalesCreditNote({
+      fetchDocument={getSalesCreditNote}
+      fetchLines={async (id) =>
+        (await getSalesCreditNoteLines(id)).map((l) => ({
+          product_id: l.product_id,
+          description: l.description,
+          quantity: l.quantity,
+          unit_amount: l.unit_price,
+          account_id: l.revenue_account_id,
+          tax_code: l.tax_code,
+          tax_rate: l.tax_rate,
+        }))
+      }
+      save={(editId, header, lines) => {
+        const input = {
           credit_note_number: header.number,
           customer_id: header.partyId,
           credit_note_date: header.date,
@@ -161,16 +186,25 @@ export function CreditNoteForm() {
             tax_code: l.tax_code,
             tax_rate: l.tax_rate,
           })),
-        })
-      }
+        }
+        return editId !== null
+          ? updateSalesCreditNote(editId, input).then(() => editId)
+          : createSalesCreditNote(input).then(({ id }) => id)
+      }}
     />
   )
 }
 
-export function SupplierCreditForm() {
+export function SupplierCreditForm({
+  mode = "create",
+}: {
+  mode?: "create" | "edit"
+}) {
   return (
     <GenericCreditNoteForm
-      title="New Supplier Credit"
+      mode={mode}
+      title={mode === "edit" ? "Edit Supplier Credit" : "New Supplier Credit"}
+      noun="supplier credits"
       partyLabel="Supplier"
       unitLabel="Unit Cost"
       accountLabel="Expense Account"
@@ -180,8 +214,20 @@ export function SupplierCreditForm() {
       // Costs come from the supplier's document, so only the description and
       // tax treatment prefill — the same choice the bill form makes.
       prefillFromProduct={(p) => ({ description: p.name })}
-      create={(header, lines) =>
-        createPurchaseCreditNote({
+      fetchDocument={getPurchaseCreditNote}
+      fetchLines={async (id) =>
+        (await getPurchaseCreditNoteLines(id)).map((l) => ({
+          product_id: l.product_id,
+          description: l.description,
+          quantity: l.quantity,
+          unit_amount: l.unit_cost,
+          account_id: l.expense_account_id,
+          tax_code: l.tax_code,
+          tax_rate: l.tax_rate,
+        }))
+      }
+      save={(editId, header, lines) => {
+        const input = {
           credit_note_number: header.number,
           supplier_id: header.partyId,
           credit_note_date: header.date,
@@ -197,14 +243,19 @@ export function SupplierCreditForm() {
             tax_code: l.tax_code,
             tax_rate: l.tax_rate,
           })),
-        })
-      }
+        }
+        return editId !== null
+          ? updatePurchaseCreditNote(editId, input).then(() => editId)
+          : createPurchaseCreditNote(input).then(({ id }) => id)
+      }}
     />
   )
 }
 
 function GenericCreditNoteForm({
+  mode,
   title,
+  noun,
   partyLabel,
   unitLabel,
   accountLabel,
@@ -212,9 +263,13 @@ function GenericCreditNoteForm({
   backLabel,
   fetchParties,
   prefillFromProduct,
-  create,
+  fetchDocument,
+  fetchLines,
+  save,
 }: {
+  mode: "create" | "edit"
   title: string
+  noun: string
   partyLabel: string
   unitLabel: string
   accountLabel: string
@@ -222,9 +277,19 @@ function GenericCreditNoteForm({
   backLabel: string
   fetchParties: () => Promise<PartyOption[]>
   prefillFromProduct: (p: Product) => Partial<LineState>
-  create: (header: HeaderState, lines: LineValues[]) => Promise<{ id: number }>
+  fetchDocument: (id: number) => Promise<DocumentBalance>
+  fetchLines: (id: number) => Promise<LineValues[]>
+  // Creates when editId is null, updates otherwise; resolves to the id to
+  // navigate to.
+  save: (
+    editId: number | null,
+    header: HeaderState,
+    lines: LineValues[],
+  ) => Promise<number>
 }) {
   const navigate = useNavigate()
+  const { id } = useParams()
+  const editId = mode === "edit" ? Number(id) : null
 
   const [parties, setParties] = useState<PartyOption[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -246,13 +311,43 @@ function GenericCreditNoteForm({
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([fetchParties(), listProducts(), listTaxCodes(), listAccounts()])
-      .then(([partyOpts, prods, taxes, accts]) => {
+    Promise.all([
+      fetchParties(),
+      listProducts(),
+      listTaxCodes(),
+      listAccounts(),
+      editId !== null ? fetchDocument(editId) : null,
+      editId !== null ? fetchLines(editId) : null,
+    ])
+      .then(([partyOpts, prods, taxes, accts, doc, docLines]) => {
         if (cancelled) return
         setParties(partyOpts)
         setProducts(prods.filter((p) => p.is_active))
         setTaxCodes(taxes)
         setAccounts(accts)
+        if (doc !== null && docLines !== null) {
+          if (doc.status !== "draft") {
+            setError(`Only draft ${noun} can be edited.`)
+            return
+          }
+          setPartyId(String(doc.party_id))
+          setNumber(doc.number)
+          setDate(doc.date)
+          setCurrencyCode(doc.currency_code)
+          setReference(doc.reference ?? "")
+          setMemo(doc.memo ?? "")
+          setLines(
+            docLines.map((l) => ({
+              productId: l.product_id !== null ? String(l.product_id) : NONE,
+              description: l.description,
+              quantity: trimAmount(l.quantity),
+              unitAmount: trimAmount(l.unit_amount),
+              taxCode: l.tax_code ?? NONE,
+              taxRate: trimAmount(l.tax_rate),
+              accountId: l.account_id !== null ? String(l.account_id) : NONE,
+            })),
+          )
+        }
         setLoaded(true)
       })
       .catch((err: unknown) => {
@@ -263,8 +358,11 @@ function GenericCreditNoteForm({
     return () => {
       cancelled = true
     }
-    // fetchParties is a module-level function on both call sites; effect runs once.
-  }, [fetchParties])
+    // The function props are fresh arrow functions on every render of the
+    // wrappers, so depending on them would re-run the effect after each
+    // setState; the document id is the only real input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId])
 
   function setLine(index: number, patch: Partial<LineState>) {
     setLines((ls) => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)))
@@ -335,8 +433,8 @@ function GenericCreditNoteForm({
     }))
     setSaving(true)
     setSaveError(null)
-    create(header, lineValues)
-      .then(({ id }) => navigate(`${basePath}/${id}`))
+    save(editId, header, lineValues)
+      .then((docId) => navigate(`${basePath}/${docId}`))
       .catch((err: unknown) => {
         setSaving(false)
         setSaveError(err instanceof ApiError ? err.message : String(err))
@@ -348,8 +446,9 @@ function GenericCreditNoteForm({
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         <p className="text-sm text-muted-foreground">
-          Creates a draft — post it to the ledger from the credit note page,
-          then apply it to open documents.
+          {editId !== null
+            ? "Rewrites the draft — it stays unposted."
+            : "Creates a draft — post it to the ledger from the credit note page, then apply it to open documents."}
         </p>
       </header>
 
@@ -614,10 +713,12 @@ function GenericCreditNoteForm({
 
           <div className="flex gap-2">
             <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Create draft"}
+              {saving ? "Saving…" : editId !== null ? "Save changes" : "Create draft"}
             </Button>
             <Button type="button" variant="outline" asChild>
-              <Link to={basePath}>{backLabel}</Link>
+              <Link to={editId !== null ? `${basePath}/${editId}` : basePath}>
+                {backLabel}
+              </Link>
             </Button>
           </div>
         </form>

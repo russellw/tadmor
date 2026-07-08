@@ -20,12 +20,15 @@ type SalesOrderSummary struct {
 	Total            string  `json:"total"`
 	InvoicedStatus   string  `json:"invoiced_status"`
 	ShippedStatus    string  `json:"shipped_status"`
+	Reference        *string `json:"reference"`
+	Memo             *string `json:"memo"`
 }
 
 const salesOrderSQL = `
 	SELECT f.order_id, f.order_number, f.customer_id, f.order_date::text,
 	       so.expected_ship_date::text, f.currency_code, f.status,
-	       f.total::numeric(19,4)::text, f.invoiced_status, f.shipped_status
+	       f.total::numeric(19,4)::text, f.invoiced_status, f.shipped_status,
+	       so.reference, so.memo
 	FROM sales_order_fulfilment f JOIN sales_orders so ON so.id = f.order_id`
 
 // SalesOrders returns the header view of every sales order, newest first.
@@ -40,7 +43,8 @@ func SalesOrders(ctx context.Context, q Querier) ([]SalesOrderSummary, error) {
 	for rows.Next() {
 		var o SalesOrderSummary
 		if err := rows.Scan(&o.ID, &o.Number, &o.CustomerID, &o.OrderDate, &o.ExpectedShipDate,
-			&o.Currency, &o.Status, &o.Total, &o.InvoicedStatus, &o.ShippedStatus); err != nil {
+			&o.Currency, &o.Status, &o.Total, &o.InvoicedStatus, &o.ShippedStatus,
+			&o.Reference, &o.Memo); err != nil {
 			return nil, err
 		}
 		out = append(out, o)
@@ -53,7 +57,8 @@ func SalesOrder(ctx context.Context, q Querier, orderID int) (SalesOrderSummary,
 	var o SalesOrderSummary
 	err := q.QueryRow(ctx, salesOrderSQL+` WHERE f.order_id = $1`, orderID).Scan(
 		&o.ID, &o.Number, &o.CustomerID, &o.OrderDate, &o.ExpectedShipDate,
-		&o.Currency, &o.Status, &o.Total, &o.InvoicedStatus, &o.ShippedStatus)
+		&o.Currency, &o.Status, &o.Total, &o.InvoicedStatus, &o.ShippedStatus,
+		&o.Reference, &o.Memo)
 	if err == pgx.ErrNoRows {
 		return o, ErrNotFound
 	}
@@ -62,21 +67,22 @@ func SalesOrder(ctx context.Context, q Querier, orderID int) (SalesOrderSummary,
 
 // SalesOrderLine is one order line with its money and derived fulfilment.
 type SalesOrderLine struct {
-	LineNo       int     `json:"line_no"`
-	OrderLineID  int     `json:"order_line_id"`
-	ProductID    *int    `json:"product_id"`
-	Description  string  `json:"description"`
-	Quantity     string  `json:"quantity"`
-	UnitPrice    string  `json:"unit_price"`
-	TaxCode      *string `json:"tax_code"`
-	TaxRate      string  `json:"tax_rate"`
-	LineSubtotal string  `json:"line_subtotal"`
-	TaxAmount    string  `json:"tax_amount"`
-	LineTotal    string  `json:"line_total"`
-	QtyInvoiced  string  `json:"qty_invoiced"`
-	QtyShipped   string  `json:"qty_shipped"`
-	QtyToInvoice string  `json:"qty_to_invoice"`
-	QtyToShip    string  `json:"qty_to_ship"`
+	LineNo           int     `json:"line_no"`
+	OrderLineID      int     `json:"order_line_id"`
+	ProductID        *int    `json:"product_id"`
+	Description      string  `json:"description"`
+	Quantity         string  `json:"quantity"`
+	UnitPrice        string  `json:"unit_price"`
+	TaxCode          *string `json:"tax_code"`
+	TaxRate          string  `json:"tax_rate"`
+	LineSubtotal     string  `json:"line_subtotal"`
+	TaxAmount        string  `json:"tax_amount"`
+	LineTotal        string  `json:"line_total"`
+	RevenueAccountID *int    `json:"revenue_account_id"`
+	QtyInvoiced      string  `json:"qty_invoiced"`
+	QtyShipped       string  `json:"qty_shipped"`
+	QtyToInvoice     string  `json:"qty_to_invoice"`
+	QtyToShip        string  `json:"qty_to_ship"`
 }
 
 // SalesOrderLines returns an order's lines in order, or ErrNotFound when the
@@ -95,6 +101,7 @@ func SalesOrderLines(ctx context.Context, q Querier, orderID int) ([]SalesOrderL
 		       sol.quantity::numeric(19,4)::text, sol.unit_price::numeric(19,4)::text,
 		       sol.tax_code, sol.tax_rate::numeric(7,4)::text,
 		       sol.line_subtotal::numeric(19,4)::text, sol.tax_amount::numeric(19,4)::text, sol.line_total::numeric(19,4)::text,
+		       sol.revenue_account_id,
 		       f.qty_invoiced::numeric(19,4)::text, f.qty_shipped::numeric(19,4)::text,
 		       f.qty_to_invoice::numeric(19,4)::text, f.qty_to_ship::numeric(19,4)::text
 		FROM sales_order_lines sol
@@ -110,7 +117,7 @@ func SalesOrderLines(ctx context.Context, q Querier, orderID int) ([]SalesOrderL
 		var l SalesOrderLine
 		if err := rows.Scan(&l.LineNo, &l.OrderLineID, &l.ProductID, &l.Description,
 			&l.Quantity, &l.UnitPrice, &l.TaxCode, &l.TaxRate,
-			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal,
+			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal, &l.RevenueAccountID,
 			&l.QtyInvoiced, &l.QtyShipped, &l.QtyToInvoice, &l.QtyToShip); err != nil {
 			return nil, err
 		}
@@ -131,12 +138,15 @@ type PurchaseOrderSummary struct {
 	Total               string  `json:"total"`
 	BilledStatus        string  `json:"billed_status"`
 	ReceivedStatus      string  `json:"received_status"`
+	Reference           *string `json:"reference"`
+	Memo                *string `json:"memo"`
 }
 
 const purchaseOrderSQL = `
 	SELECT f.order_id, f.order_number, f.supplier_id, f.order_date::text,
 	       po.expected_receipt_date::text, f.currency_code, f.status,
-	       f.total::numeric(19,4)::text, f.billed_status, f.received_status
+	       f.total::numeric(19,4)::text, f.billed_status, f.received_status,
+	       po.reference, po.memo
 	FROM purchase_order_fulfilment f JOIN purchase_orders po ON po.id = f.order_id`
 
 // PurchaseOrders returns the header view of every purchase order, newest first.
@@ -151,7 +161,8 @@ func PurchaseOrders(ctx context.Context, q Querier) ([]PurchaseOrderSummary, err
 	for rows.Next() {
 		var o PurchaseOrderSummary
 		if err := rows.Scan(&o.ID, &o.Number, &o.SupplierID, &o.OrderDate, &o.ExpectedReceiptDate,
-			&o.Currency, &o.Status, &o.Total, &o.BilledStatus, &o.ReceivedStatus); err != nil {
+			&o.Currency, &o.Status, &o.Total, &o.BilledStatus, &o.ReceivedStatus,
+			&o.Reference, &o.Memo); err != nil {
 			return nil, err
 		}
 		out = append(out, o)
@@ -164,7 +175,8 @@ func PurchaseOrder(ctx context.Context, q Querier, orderID int) (PurchaseOrderSu
 	var o PurchaseOrderSummary
 	err := q.QueryRow(ctx, purchaseOrderSQL+` WHERE f.order_id = $1`, orderID).Scan(
 		&o.ID, &o.Number, &o.SupplierID, &o.OrderDate, &o.ExpectedReceiptDate,
-		&o.Currency, &o.Status, &o.Total, &o.BilledStatus, &o.ReceivedStatus)
+		&o.Currency, &o.Status, &o.Total, &o.BilledStatus, &o.ReceivedStatus,
+		&o.Reference, &o.Memo)
 	if err == pgx.ErrNoRows {
 		return o, ErrNotFound
 	}
@@ -173,21 +185,22 @@ func PurchaseOrder(ctx context.Context, q Querier, orderID int) (PurchaseOrderSu
 
 // PurchaseOrderLine is the purchasing-side mirror of SalesOrderLine.
 type PurchaseOrderLine struct {
-	LineNo       int     `json:"line_no"`
-	OrderLineID  int     `json:"order_line_id"`
-	ProductID    *int    `json:"product_id"`
-	Description  string  `json:"description"`
-	Quantity     string  `json:"quantity"`
-	UnitCost     string  `json:"unit_cost"`
-	TaxCode      *string `json:"tax_code"`
-	TaxRate      string  `json:"tax_rate"`
-	LineSubtotal string  `json:"line_subtotal"`
-	TaxAmount    string  `json:"tax_amount"`
-	LineTotal    string  `json:"line_total"`
-	QtyBilled    string  `json:"qty_billed"`
-	QtyReceived  string  `json:"qty_received"`
-	QtyToBill    string  `json:"qty_to_bill"`
-	QtyToReceive string  `json:"qty_to_receive"`
+	LineNo           int     `json:"line_no"`
+	OrderLineID      int     `json:"order_line_id"`
+	ProductID        *int    `json:"product_id"`
+	Description      string  `json:"description"`
+	Quantity         string  `json:"quantity"`
+	UnitCost         string  `json:"unit_cost"`
+	TaxCode          *string `json:"tax_code"`
+	TaxRate          string  `json:"tax_rate"`
+	LineSubtotal     string  `json:"line_subtotal"`
+	TaxAmount        string  `json:"tax_amount"`
+	LineTotal        string  `json:"line_total"`
+	ExpenseAccountID *int    `json:"expense_account_id"`
+	QtyBilled        string  `json:"qty_billed"`
+	QtyReceived      string  `json:"qty_received"`
+	QtyToBill        string  `json:"qty_to_bill"`
+	QtyToReceive     string  `json:"qty_to_receive"`
 }
 
 // PurchaseOrderLines returns an order's lines in order, or ErrNotFound when the
@@ -206,6 +219,7 @@ func PurchaseOrderLines(ctx context.Context, q Querier, orderID int) ([]Purchase
 		       pol.quantity::numeric(19,4)::text, pol.unit_cost::numeric(19,4)::text,
 		       pol.tax_code, pol.tax_rate::numeric(7,4)::text,
 		       pol.line_subtotal::numeric(19,4)::text, pol.tax_amount::numeric(19,4)::text, pol.line_total::numeric(19,4)::text,
+		       pol.expense_account_id,
 		       f.qty_billed::numeric(19,4)::text, f.qty_received::numeric(19,4)::text,
 		       f.qty_to_bill::numeric(19,4)::text, f.qty_to_receive::numeric(19,4)::text
 		FROM purchase_order_lines pol
@@ -221,7 +235,7 @@ func PurchaseOrderLines(ctx context.Context, q Querier, orderID int) ([]Purchase
 		var l PurchaseOrderLine
 		if err := rows.Scan(&l.LineNo, &l.OrderLineID, &l.ProductID, &l.Description,
 			&l.Quantity, &l.UnitCost, &l.TaxCode, &l.TaxRate,
-			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal,
+			&l.LineSubtotal, &l.TaxAmount, &l.LineTotal, &l.ExpenseAccountID,
 			&l.QtyBilled, &l.QtyReceived, &l.QtyToBill, &l.QtyToReceive); err != nil {
 			return nil, err
 		}
