@@ -69,6 +69,9 @@ type AccountActivityRow struct {
 
 // ProfitAndLoss returns revenue and expense accounts with posted activity in
 // the inclusive [from, to] entry-date range. A nil bound is unbounded.
+// Year-end closing entries (and their reversals) are excluded: they restate
+// balances into retained earnings and would otherwise zero the income
+// statement of the year they close.
 func ProfitAndLoss(ctx context.Context, q Querier, from, to *string) ([]AccountActivityRow, error) {
 	return accountActivityRows(ctx, q,
 		`SELECT a.id, a.code, a.name, a.account_type,
@@ -78,6 +81,7 @@ func ProfitAndLoss(ctx context.Context, q Querier, from, to *string) ([]AccountA
 		 JOIN journal_entries je ON je.id = jl.journal_entry_id
 		 JOIN accounts a ON a.id = jl.account_id
 		 WHERE je.status = 'posted'
+		   AND NOT je.is_closing
 		   AND a.account_type IN ('revenue', 'expense')
 		   AND ($1::date IS NULL OR je.entry_date >= $1::date)
 		   AND ($2::date IS NULL OR je.entry_date <= $2::date)

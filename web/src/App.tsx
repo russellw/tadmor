@@ -14,6 +14,7 @@ import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
 import { Dashboard } from "@/components/dashboard"
+import { FiscalYearClose } from "@/components/fiscal-year-close"
 import { FiscalYearForm } from "@/components/fiscal-year-form"
 import { CreditNoteForm, SupplierCreditForm } from "@/components/credit-note-form"
 import {
@@ -343,6 +344,10 @@ export default function App() {
           <Route
             path="/fiscal-years/:id"
             element={<FiscalYearForm mode="edit" />}
+          />
+          <Route
+            path="/fiscal-years/:id/close"
+            element={<FiscalYearClose />}
           />
           <Route path="/users" element={<Users />} />
           <Route path="/users/new" element={<UserForm mode="create" />} />

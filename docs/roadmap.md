@@ -1,6 +1,6 @@
 # Roadmap
 
-What's still to do, as of 2026-07-08. The core loop is in place — master data,
+What's still to do, as of 2026-07-09. The core loop is in place — master data,
 GL with P&L / balance sheet / trial balance / ledgers / aging / inventory
 valuation, invoices, bills, credit notes, payments, sales and purchase orders
 with partial fulfilment, stock movements with GRNI, auth + roles — and the demo
@@ -36,10 +36,14 @@ sections, deferred decisions, and a gap review against the project goal.
 
 ## Functional gaps toward "comprehensive business management"
 
-- **Year-end close.** Period locking already works — the Periods screen has a
-  Close/Reopen toggle and a DB trigger rejects postings into closed periods —
-  but there's no year-end workflow: nothing rolls retained earnings into the
-  new fiscal year.
+- ~~**Year-end close.**~~ — done 2026-07-09: admins close a fiscal year from
+  the Periods screen; a closing entry (flagged `is_closing`, ignored by the
+  P&L) sweeps revenue/expense into a chosen retained-earnings account, all the
+  year's periods and the year lock (a DB trigger keeps periods of a closed
+  year shut), and the next fiscal year is auto-created — which also resolves
+  the fiscal-year-rollover residual from the period auto-creation item below.
+  Reopen reverses the closing entry. Years close oldest-first and reopen
+  newest-first.
 - **Multi-currency.** A currencies table exists, but nothing in the schema or
   handlers references exchange rates — all documents are effectively
   single-currency. If foreign-currency customers/suppliers are in scope, this
@@ -54,8 +58,8 @@ sections, deferred decisions, and a gap review against the project goal.
   now auto-creates the calendar-month period (clipped to the fiscal year's
   bounds) when the document date falls inside an open fiscal year that has no
   period covering it; closed periods and closed fiscal years still reject.
-  The residual gap is the *fiscal-year* rollover — creating next year's
-  fiscal year is still manual, which folds into the year-end close item above.
+  The fiscal-year-rollover residual was resolved by the year-end close
+  (2026-07-09), which auto-creates the next fiscal year.
 
 ## Smaller housekeeping
 

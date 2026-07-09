@@ -36,6 +36,10 @@ var (
 	ErrNoOpenPeriod    = errors.New("no open accounting period for the document date")
 	ErrMissingAccount  = errors.New("a required GL account is not configured")
 	ErrNothingToPost   = errors.New("document total is zero or negative")
+	ErrYearNotOpen     = errors.New("fiscal year is not open")
+	ErrYearNotClosed   = errors.New("fiscal year is not closed")
+	ErrPriorYearOpen   = errors.New("an earlier fiscal year is still open")
+	ErrLaterYearClosed = errors.New("a later fiscal year has already been closed")
 )
 
 // periodForDate returns the id of the open accounting period containing date.

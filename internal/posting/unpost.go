@@ -41,10 +41,13 @@ func reverseEntry(ctx context.Context, tx pgx.Tx, origID int) (int, error) {
 		return 0, err
 	}
 
+	// The reversal inherits is_closing so that reversing a year-end closing
+	// entry stays invisible to income statements, like the entry it undoes.
 	var rev int
 	if err := tx.QueryRow(ctx,
-		`INSERT INTO journal_entries (entry_date, period_id, currency_code, memo, reverses_entry_id, status, posted_at)
-		 VALUES ($1::date, $2, $3, $4, $5, 'posted', now())
+		`INSERT INTO journal_entries (entry_date, period_id, currency_code, memo, reverses_entry_id, status, posted_at, is_closing)
+		 SELECT $1::date, $2, $3, $4, $5, 'posted', now(), is_closing
+		 FROM journal_entries WHERE id = $5
 		 RETURNING id`,
 		date, period, currency, fmt.Sprintf("Reversal of journal entry %d", origID), origID).Scan(&rev); err != nil {
 		return 0, err

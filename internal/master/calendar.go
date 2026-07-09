@@ -14,11 +14,13 @@ type FiscalYear struct {
 	Status    string `db:"status" json:"status"`
 }
 
+// FiscalYearInput carries a year's editable fields. Status is deliberately
+// absent: open/closed is owned by the year-end close and reopen workflow
+// (posting.CloseFiscalYear / ReopenFiscalYear), never set by plain edits.
 type FiscalYearInput struct {
 	Name      string `json:"name"`
 	StartDate string `json:"start_date"`
 	EndDate   string `json:"end_date"`
-	Status    string `json:"status"` // open|closed; used by Update
 }
 
 func (in FiscalYearInput) Validate() string {
@@ -53,8 +55,8 @@ func CreateFiscalYear(ctx context.Context, q Querier, in FiscalYearInput) (int, 
 
 func UpdateFiscalYear(ctx context.Context, q Querier, id int, in FiscalYearInput) error {
 	return affected(q.Exec(ctx,
-		`UPDATE fiscal_years SET name=$2, start_date=$3::date, end_date=$4::date, status=$5 WHERE id=$1`,
-		id, in.Name, in.StartDate, in.EndDate, orDefault(in.Status, "open")))
+		`UPDATE fiscal_years SET name=$2, start_date=$3::date, end_date=$4::date WHERE id=$1`,
+		id, in.Name, in.StartDate, in.EndDate))
 }
 
 // ---------------------------------------------------------------------------

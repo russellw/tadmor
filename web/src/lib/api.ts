@@ -401,14 +401,13 @@ export interface FiscalYear {
   status: string
 }
 
-/** The writable fields of a fiscal year (FiscalYear without its id), mirroring
- *  master.FiscalYearInput. PUT is a full replace; status is open|closed and is
- *  only honored on update (creates always start open). */
+/** The writable fields of a fiscal year (FiscalYear without its id or status),
+ *  mirroring master.FiscalYearInput. PUT is a full replace. Status is owned by
+ *  the year-end close workflow: closeFiscalYear / reopenFiscalYear. */
 export interface FiscalYearInput {
   name: string
   start_date: string
   end_date: string
-  status: string
 }
 
 export function listFiscalYears(): Promise<FiscalYear[]> {
@@ -430,6 +429,38 @@ export function updateFiscalYear(
   input: FiscalYearInput,
 ): Promise<void> {
   return send("PUT", `/fiscal-years/${id}`, input)
+}
+
+/** What a year-end close produced: the closing journal entry (null when the
+ *  year had no revenue or expense balances to sweep) and the auto-created next
+ *  fiscal year (null when one already existed). */
+export interface CloseFiscalYearResult {
+  closing_entry_id: number | null
+  next_fiscal_year_id: number | null
+}
+
+/** Close a fiscal year (admin-only): posts a closing entry sweeping revenue
+ *  and expenses into the given retained-earnings account, closes all the
+ *  year's periods and the year itself, and rolls the calendar forward. */
+export function closeFiscalYear(
+  id: number,
+  retainedEarningsAccountId: number,
+): Promise<CloseFiscalYearResult> {
+  return post<CloseFiscalYearResult>(`/fiscal-years/${id}/close`, {
+    retained_earnings_account_id: retainedEarningsAccountId,
+  })
+}
+
+/** Reopen a closed fiscal year (admin-only): reverses its closing entry (id
+ *  returned; null when there was none) and reopens the year. Only the period
+ *  that held the closing entry is reopened — others stay closed. */
+export function reopenFiscalYear(
+  id: number,
+): Promise<{ reversal_entry_id: number | null }> {
+  return post<{ reversal_entry_id: number | null }>(
+    `/fiscal-years/${id}/reopen`,
+    {},
+  )
 }
 
 /** An accounting period (the unit that gates posting: documents can only post

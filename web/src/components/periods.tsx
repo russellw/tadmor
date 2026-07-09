@@ -5,10 +5,12 @@ import {
   ApiError,
   listAccountingPeriods,
   listFiscalYears,
+  reopenFiscalYear,
   updateAccountingPeriod,
   type AccountingPeriod,
   type FiscalYear,
 } from "@/lib/api"
+import { useCurrentUser } from "@/lib/current-user"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -30,8 +32,10 @@ function StatusBadge({ status }: { status: string }) {
 // them. Posting a document requires an open period covering its date, so the
 // recurring chore this screen exists for is "add next month's period" (the New
 // period form prefills it) and closing finished months — hence the inline
-// close/reopen toggle rather than a trip through the edit form.
+// close/reopen toggle rather than a trip through the edit form. Admins also
+// run the year-end close (and its undo) from here.
 export function Periods() {
+  const currentUser = useCurrentUser()
   const [years, setYears] = useState<FiscalYear[] | null>(null)
   const [periods, setPeriods] = useState<AccountingPeriod[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -39,6 +43,10 @@ export function Periods() {
   // The id of the period whose status toggle is in flight, if any.
   const [togglingId, setTogglingId] = useState<number | null>(null)
   const [toggleError, setToggleError] = useState<string | null>(null)
+
+  // The id of the fiscal year whose reopen is in flight, if any.
+  const [reopeningId, setReopeningId] = useState<number | null>(null)
+  const [reopenError, setReopenError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -79,6 +87,30 @@ export function Periods() {
         setToggleError(err instanceof ApiError ? err.message : String(err))
       })
       .finally(() => setTogglingId(null))
+  }
+
+  function reopenYear(fy: FiscalYear) {
+    if (
+      !window.confirm(
+        `Reopen ${fy.name}? This reverses its year-end closing entry, restoring the revenue and expense balances.`,
+      )
+    ) {
+      return
+    }
+    setReopeningId(fy.id)
+    setReopenError(null)
+    reopenFiscalYear(fy.id)
+      // Reload rather than patch state: reopening also reopens the period
+      // that held the closing entry.
+      .then(() => Promise.all([listFiscalYears(), listAccountingPeriods()]))
+      .then(([fy, ap]) => {
+        setYears(fy)
+        setPeriods(ap)
+      })
+      .catch((err: unknown) => {
+        setReopenError(err instanceof ApiError ? err.message : String(err))
+      })
+      .finally(() => setReopeningId(null))
   }
 
   const loaded = years !== null && periods !== null
@@ -126,6 +158,12 @@ export function Periods() {
         </p>
       )}
 
+      {reopenError !== null && (
+        <p className="mb-4 text-sm text-destructive" role="alert">
+          Failed to reopen fiscal year: {reopenError}
+        </p>
+      )}
+
       {loaded &&
         years.map((fy) => {
           const fyPeriods = periods.filter((p) => p.fiscal_year_id === fy.id)
@@ -137,12 +175,31 @@ export function Periods() {
                   {fy.start_date} → {fy.end_date}
                 </span>
                 <StatusBadge status={fy.status} />
-                <Link
-                  to={`/fiscal-years/${fy.id}`}
-                  className="ml-auto text-sm font-medium text-primary hover:underline"
-                >
-                  Edit
-                </Link>
+                <div className="ml-auto flex items-center gap-3">
+                  {currentUser.is_admin &&
+                    (fy.status === "open" ? (
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to={`/fiscal-years/${fy.id}/close`}>
+                          Close year
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={reopeningId === fy.id}
+                        onClick={() => reopenYear(fy)}
+                      >
+                        Reopen year
+                      </Button>
+                    ))}
+                  <Link
+                    to={`/fiscal-years/${fy.id}`}
+                    className="text-sm font-medium text-primary hover:underline"
+                  >
+                    Edit
+                  </Link>
+                </div>
               </div>
               {fyPeriods.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
@@ -177,7 +234,11 @@ export function Periods() {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={togglingId === p.id}
+                            // Periods in a closed year are locked (the
+                            // database enforces it); reopen the year first.
+                            disabled={
+                              togglingId === p.id || fy.status === "closed"
+                            }
                             onClick={() => toggleStatus(p)}
                           >
                             {p.status === "open" ? "Close" : "Reopen"}

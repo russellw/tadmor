@@ -12,21 +12,15 @@ import { dayAfter, endOfYearFrom } from "@/lib/dates"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 
 type Mode = "create" | "edit"
 
+// No status field: open/closed is owned by the year-end close workflow on the
+// Periods screen, not by edits here.
 interface FormState {
   name: string
   startDate: string
   endDate: string
-  status: string
 }
 
 // In create mode the form prefills the year after the latest existing fiscal
@@ -41,7 +35,6 @@ function nextYearDefaults(latestEnd: string | undefined): FormState {
     name: `FY${start.slice(0, 4)}`,
     startDate: start,
     endDate: endOfYearFrom(start),
-    status: "open",
   }
 }
 
@@ -71,7 +64,6 @@ export function FiscalYearForm({ mode }: { mode: Mode }) {
             name: fy.name,
             startDate: fy.start_date,
             endDate: fy.end_date,
-            status: fy.status,
           })
         } else {
           // Years come back ordered by start_date, so the last is the latest.
@@ -103,7 +95,6 @@ export function FiscalYearForm({ mode }: { mode: Mode }) {
       name: form.name.trim(),
       start_date: form.startDate,
       end_date: form.endDate,
-      status: form.status,
     }
     setSaving(true)
     setSaveError(null)
@@ -185,24 +176,6 @@ export function FiscalYearForm({ mode }: { mode: Mode }) {
               />
             </div>
           </div>
-
-          {!creating && (
-            <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(status) => setForm({ ...form, status })}
-              >
-                <SelectTrigger id="status" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="open">open</SelectItem>
-                  <SelectItem value="closed">closed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
 
           {saveError !== null && (
             <p className="text-sm text-destructive" role="alert">

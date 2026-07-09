@@ -116,6 +116,12 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("POST /supplier-payments/{id}/unpost", s.admin(s.unpostSupplierPayment))
 	api.HandleFunc("POST /stock-movements/{id}/unpost", s.admin(s.unpostStockMovement))
 
+	// Year-end close: sweep revenue/expense into retained earnings and lock
+	// the year; reopen undoes it. Admin-only — like unpost, these rewrite
+	// posted history.
+	api.HandleFunc("POST /fiscal-years/{id}/close", s.admin(s.closeFiscalYear))
+	api.HandleFunc("POST /fiscal-years/{id}/reopen", s.admin(s.reopenFiscalYear))
+
 	// Master data CRUD.
 	s.registerMasterRoutes(api)
 
@@ -711,6 +717,63 @@ func (s *Server) postStockMovement(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) closeFiscalYear(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		RetainedEarningsAccountID int `json:"retained_earnings_account_id"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if body.RetainedEarningsAccountID <= 0 {
+		writeError(w, http.StatusBadRequest, "retained_earnings_account_id is required")
+		return
+	}
+	var res posting.CloseResult
+	err := db.WithTx(r.Context(), s.pool, func(tx pgx.Tx) error {
+		var e error
+		res, e = posting.CloseFiscalYear(r.Context(), tx, id, body.RetainedEarningsAccountID)
+		return e
+	})
+	if err != nil {
+		s.writePostingError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]*int{
+		"closing_entry_id":    nilIfZero(res.ClosingEntryID),
+		"next_fiscal_year_id": nilIfZero(res.NextFiscalYearID),
+	})
+}
+
+func (s *Server) reopenFiscalYear(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var reversalID int
+	err := db.WithTx(r.Context(), s.pool, func(tx pgx.Tx) error {
+		var e error
+		reversalID, e = posting.ReopenFiscalYear(r.Context(), tx, id)
+		return e
+	})
+	if err != nil {
+		s.writePostingError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]*int{"reversal_entry_id": nilIfZero(reversalID)})
+}
+
+// nilIfZero renders "nothing was produced" ids as JSON null.
+func nilIfZero(id int) *int {
+	if id == 0 {
+		return nil
+	}
+	return &id
+}
+
 func (s *Server) applyCustomerPayment(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -785,12 +848,16 @@ func postingStatus(err error) int {
 		errors.Is(err, posting.ErrNotPosted),
 		errors.Is(err, posting.ErrAlreadyPosted),
 		errors.Is(err, posting.ErrAlreadyReversed),
-		errors.Is(err, posting.ErrHasApplications):
+		errors.Is(err, posting.ErrHasApplications),
+		errors.Is(err, posting.ErrYearNotOpen),
+		errors.Is(err, posting.ErrYearNotClosed):
 		return http.StatusConflict
 	case errors.Is(err, posting.ErrNotPostable),
 		errors.Is(err, posting.ErrNoOpenPeriod),
 		errors.Is(err, posting.ErrMissingAccount),
-		errors.Is(err, posting.ErrNothingToPost):
+		errors.Is(err, posting.ErrNothingToPost),
+		errors.Is(err, posting.ErrPriorYearOpen),
+		errors.Is(err, posting.ErrLaterYearClosed):
 		return http.StatusUnprocessableEntity
 	default:
 		return http.StatusInternalServerError
