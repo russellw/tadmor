@@ -10,13 +10,15 @@ sections, deferred decisions, and a gap review against the project goal.
 
 ## Explicitly documented next steps
 
-- **Broaden e2e coverage** (`docs/e2e-testing.md` §9). The master-data
-  screens, reports, and all eight document screens (AR and AP: invoices,
-  bills, payments both ways, credit notes both ways, sales and purchase
-  orders — including posting and payment/credit application) have specs, and
-  `make e2e` runs self-contained against a dedicated `tadmor_e2e` database.
-  What's left is optional depth: stock movements, order ship/receive
-  fulfilment, and unpost have no specs.
+- ~~**Broaden e2e coverage**~~ — the three remaining uncovered screens got
+  specs 2026-07-09: `stock-movements.spec.ts` (create a receipt, post/unpost it,
+  delete an unposted one), `fulfilment.spec.ts` (the stock axis of orders —
+  ship a sales order and receive a purchase order, each with a stocked line),
+  and `unpost.spec.ts` (the admin-only unpost that reverses a posted invoice or
+  bill back to draft). The suite is now twenty-two spec files and still tears
+  down to zero rows (teardown gained a stock-movements sweep). What's left is
+  optional *depth*, not whole screens: partial fulfilment, the transfer/
+  adjustment movement types, and the document email button once one exists.
 - ~~**Full ISO country/currency seed script**~~ — done 2026-07-08:
   `db/seed/gen_iso_reference.py` generates the committed
   `db/seed/iso_reference.sql` from Debian's `iso-codes` package;

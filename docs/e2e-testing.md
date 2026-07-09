@@ -138,7 +138,7 @@ The dev environment is WSL2 (Ubuntu 24.04), which shaped a couple of details:
 
 ## 6. Test structure and the "no hard-delete" finding
 
-Tests live in `e2e/tests/`. Nineteen files today:
+Tests live in `e2e/tests/`. Twenty-two files today:
 
 - **`smoke.spec.ts`** — the app boots and representative screens render (the
   Home dashboard, the Chart of Accounts heading, and five sidebar nav links).
@@ -180,6 +180,20 @@ Tests live in `e2e/tests/`. Nineteen files today:
   revenue account, payment account instead of deposit account), built on the
   analogous `purchaseFixture`: draft creation, posting, deleting, applying a
   payment/credit to an open bill, and confirming + billing a purchase order.
+- **`stock-movements.spec.ts`** — the direct stock-movement lifecycle: create a
+  receipt through the form, post it to the ledger (crediting a chosen clearing
+  account) and unpost it again, and delete an unposted movement. Each test
+  brings a stocked product, a warehouse, a clearing account, and a one-day open
+  period via `inventoryFixture` in `helpers.ts`.
+- **`fulfilment.spec.ts`** — the *stock* axis of order fulfilment (the document
+  axis lives in the order specs above): confirming then **shipping** a sales
+  order and **receiving** a purchase order, each carrying a stocked-product line
+  (built on `shipFixture` / `receiveFixture`), creates the issue/receipt
+  movement and drives the order's shipped/received status to full.
+- **`unpost.spec.ts`** — the admin-only **unpost** action on a posted document:
+  it reverses the journal entry and returns an invoice (and its AP mirror, a
+  bill) to draft, ready to be posted again. Posting is done via the API so each
+  test drives only the unpost through the UI.
 
 **Authentication.** The API requires a login session, so a `globalSetup`
 (`global-setup.ts`) runs before any test: it upserts a dedicated
@@ -242,7 +256,7 @@ tadmor/
     run-local.sh            # one-shot orchestrator for `make e2e` (ensure e2e DB, build+run server, test, tear down)
     tests/
       helpers.ts            # API setup helpers (incl. salesFixture) + E2E_PREFIX + E2E_EMAIL
-      *.spec.ts             # the fifteen spec files listed in §6
+      *.spec.ts             # the spec files listed in §6
     README.md               # setup + run instructions
 ```
 
@@ -302,25 +316,30 @@ BASE_URL=http://localhost:8080 corepack pnpm test
 - **`make e2e-test` (running-stack mode) still assumes the dev DB** unless
   `E2E_DATABASE_URL` says otherwise — see the §6 database note. The
   self-contained `make e2e` path uses the dedicated `tadmor_e2e` database.
-- **Coverage gaps** — stock movements, order ship/receive fulfilment (the
-  stock axis; the document axis is covered), and the admin-only unpost action
-  have no specs.
+- **Coverage** — the master-data screens, the reports, all eight document
+  screens (both fulfilment axes of orders), direct stock movements, and the
+  admin-only unpost action now have specs. What remains optional is more
+  breadth (e.g. partial fulfilment, transfer/adjustment movement types, the
+  self-service email button once it exists), not a whole uncovered screen.
 
 ---
 
 ## 9. Status and next step
 
 Done: `e2e/` scaffolded and committed with the hardened pnpm config and Makefile
-targets; Chromium installed; nineteen spec files covering auth, smoke, the
+targets; Chromium installed; twenty-two spec files covering auth, smoke, the
 master-data screens (customers, suppliers, products, payment terms, tax codes,
-warehouses, periods, users), the financial-statement reports, and all eight
+warehouses, periods, users), the financial-statement reports, all eight
 document screens — invoices, bills, customer and supplier payments, credit
 notes and supplier credits, sales and purchase orders, including posting to
-the ledger and payment/credit application (see §6) — with teardown confirmed
-to leave zero test rows, including journal entries. The self-contained
-`make e2e` run targets a dedicated `tadmor_e2e` database (created on first
-run) with setup/teardown pinned to it via `E2E_DATABASE_URL`, so the suite
-never touches dev data.
+the ledger and payment/credit application — plus direct stock movements
+(create/post/unpost/delete), the stock axis of order fulfilment (ship/receive),
+and the admin-only document unpost (see §6) — with teardown confirmed to leave
+zero test rows, including journal entries and stock movements. The
+self-contained `make e2e` run targets a dedicated `tadmor_e2e` database
+(created on first run) with setup/teardown pinned to it via `E2E_DATABASE_URL`,
+so the suite never touches dev data.
 
-Next (when wanted): specs for stock movements and order ship/receive
-fulfilment — the remaining uncovered screens.
+Next (when wanted): more depth rather than new screens — partial ship/receive
+and partial invoice/bill, the non-postable movement types (transfer,
+adjustment), and the document email button once the front end grows one.

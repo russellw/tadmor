@@ -64,6 +64,12 @@ export default async function globalTeardown(): Promise<void> {
     DELETE FROM purchase_credit_notes WHERE supplier_id IN (SELECT id FROM e2e_suppliers);
     DELETE FROM purchase_bills WHERE supplier_id IN (SELECT id FROM e2e_suppliers);
     DELETE FROM purchase_orders WHERE supplier_id IN (SELECT id FROM e2e_suppliers);
+    -- Stock movements (direct and order-fulfilment) reference the E2E product
+    -- and warehouse, and a posted one references its journal entry — all with
+    -- RESTRICT FKs, so they must go before those rows and the entries below.
+    DELETE FROM stock_movements
+     WHERE product_id IN (SELECT id FROM products WHERE sku LIKE '${E2E_PREFIX}%')
+        OR warehouse_id IN (SELECT id FROM warehouses WHERE code LIKE '${E2E_PREFIX}%');
     DELETE FROM journal_entries
      WHERE period_id IN (
        SELECT p.id FROM accounting_periods p

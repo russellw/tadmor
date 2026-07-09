@@ -458,6 +458,213 @@ export async function createPurchaseOrderDraft(
   return ((await res.json()) as { id: number }).id
 }
 
+/** A stocked (inventory-tracked) product wired to its own fresh inventory and
+ *  COGS accounts — the pair a receipt/issue posts against. Extra product fields
+ *  (e.g. a revenue account, for order lines) come through `overrides`. */
+export async function createStockedProduct(
+  request: APIRequestContext,
+  overrides: Record<string, unknown> = {},
+): Promise<{
+  id: number
+  sku: string
+  inventoryAccount: { id: number; code: string }
+  cogsAccount: { id: number; code: string }
+}> {
+  const [inventoryAccount, cogsAccount] = await Promise.all([
+    createAccount(request, "asset"),
+    createAccount(request, "expense"),
+  ])
+  const sku = uniqueCode()
+  const id = await createProduct(request, sku, `${sku} stocked`, {
+    track_inventory: true,
+    inventory_account_id: inventoryAccount.id,
+    cogs_account_id: cogsAccount.id,
+    ...overrides,
+  })
+  return { id, sku, inventoryAccount, cogsAccount }
+}
+
+/** Everything a direct stock-movement test needs: a stocked product, a
+ *  warehouse to move it into, a clearing account a receipt can credit, and a
+ *  one-day fiscal year + open period so a movement dated on `day` can post. */
+export interface InventoryFixture {
+  day: string
+  productId: number
+  productSku: string
+  warehouse: { id: number; code: string }
+  inventoryAccount: { id: number; code: string }
+  clearingAccount: { id: number; code: string }
+}
+
+export async function inventoryFixture(
+  request: APIRequestContext,
+): Promise<InventoryFixture> {
+  const day = uniqueDocDay()
+  const [product, clearingAccount] = await Promise.all([
+    createStockedProduct(request),
+    createAccount(request, "liability"),
+  ])
+  const whCode = uniqueCode()
+  const [warehouseId, fiscalYearId] = await Promise.all([
+    createWarehouse(request, whCode, `${whCode} warehouse`),
+    createFiscalYear(request, `${E2E_PREFIX}FY ${day}`, day, day),
+  ])
+  await createPeriod(request, fiscalYearId, `${E2E_PREFIX}P ${day}`, day, day)
+  return {
+    day,
+    productId: product.id,
+    productSku: product.sku,
+    warehouse: { id: warehouseId, code: whCode },
+    inventoryAccount: product.inventoryAccount,
+    clearingAccount,
+  }
+}
+
+/** Create a stock movement via the API and return its id. Quantity is signed
+ *  (positive for a receipt, negative for an issue), dated on the fixture day so
+ *  it can post into the fixture's open period. */
+export async function createMovement(
+  request: APIRequestContext,
+  fixture: InventoryFixture,
+  movementType: string,
+  quantity: string,
+  unitCost = "4",
+): Promise<number> {
+  const res = await request.post("/api/stock-movements", {
+    data: {
+      product_id: fixture.productId,
+      warehouse_id: fixture.warehouse.id,
+      movement_type: movementType,
+      movement_date: fixture.day,
+      quantity,
+      unit_cost: unitCost,
+      reference: null,
+      notes: null,
+    },
+  })
+  expect(res.ok(), `create movement failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** The sales-order fixture plus a stocked product and a warehouse, for the
+ *  ship (issue-movement) leg of order fulfilment. The product carries the
+ *  fixture's revenue account so the order line prices cleanly. */
+export interface ShipFixture extends SalesFixture {
+  productId: number
+  warehouse: { id: number; code: string }
+}
+
+export async function shipFixture(
+  request: APIRequestContext,
+): Promise<ShipFixture> {
+  const f = await salesFixture(request)
+  const product = await createStockedProduct(request, {
+    revenue_account_id: f.revenueAccount.id,
+  })
+  const whCode = uniqueCode()
+  const warehouseId = await createWarehouse(
+    request,
+    whCode,
+    `${whCode} warehouse`,
+  )
+  return {
+    ...f,
+    productId: product.id,
+    warehouse: { id: warehouseId, code: whCode },
+  }
+}
+
+/** Create a draft sales order with one stocked line (a real product, so the
+ *  line carries a shipping axis) and return its id. */
+export async function createStockedSalesOrderDraft(
+  request: APIRequestContext,
+  fixture: ShipFixture,
+  number: string,
+  quantity = "5",
+): Promise<number> {
+  const res = await request.post("/api/sales-orders", {
+    data: {
+      order_number: number,
+      customer_id: fixture.customerId,
+      order_date: fixture.day,
+      expected_ship_date: null,
+      currency_code: "USD",
+      reference: null,
+      memo: null,
+      lines: [
+        {
+          product_id: fixture.productId,
+          description: "E2E stocked line",
+          quantity,
+          unit_price: "20",
+          revenue_account_id: fixture.revenueAccount.id,
+          tax_code: null,
+          tax_rate: "0",
+        },
+      ],
+    },
+  })
+  expect(res.ok(), `create sales order failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
+/** The AP mirror of ShipFixture, for the receive (receipt-movement) leg. */
+export interface ReceiveFixture extends PurchaseFixture {
+  productId: number
+  warehouse: { id: number; code: string }
+}
+
+export async function receiveFixture(
+  request: APIRequestContext,
+): Promise<ReceiveFixture> {
+  const f = await purchaseFixture(request)
+  const product = await createStockedProduct(request)
+  const whCode = uniqueCode()
+  const warehouseId = await createWarehouse(
+    request,
+    whCode,
+    `${whCode} warehouse`,
+  )
+  return {
+    ...f,
+    productId: product.id,
+    warehouse: { id: warehouseId, code: whCode },
+  }
+}
+
+/** Create a draft purchase order with one stocked line and return its id. */
+export async function createStockedPurchaseOrderDraft(
+  request: APIRequestContext,
+  fixture: ReceiveFixture,
+  number: string,
+  quantity = "5",
+): Promise<number> {
+  const res = await request.post("/api/purchase-orders", {
+    data: {
+      order_number: number,
+      supplier_id: fixture.supplierId,
+      order_date: fixture.day,
+      expected_receipt_date: null,
+      currency_code: "USD",
+      reference: null,
+      memo: null,
+      lines: [
+        {
+          product_id: fixture.productId,
+          description: "E2E stocked line",
+          quantity,
+          unit_cost: "12",
+          expense_account_id: fixture.expenseAccount.id,
+          tax_code: null,
+          tax_rate: "0",
+        },
+      ],
+    },
+  })
+  expect(res.ok(), `create purchase order failed (${res.status()})`).toBeTruthy()
+  return ((await res.json()) as { id: number }).id
+}
+
 /** A unique E2E-prefixed email for user-admin tests, lowercase to match how
  *  emails are usually typed (the users table is citext). */
 export function uniqueEmail(): string {
