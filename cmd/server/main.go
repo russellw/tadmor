@@ -26,6 +26,7 @@ import (
 	"tadmor/internal/config"
 	"tadmor/internal/db"
 	"tadmor/internal/httpapi"
+	"tadmor/internal/mailer"
 	"tadmor/web"
 )
 
@@ -115,9 +116,21 @@ func run(logger *slog.Logger) error {
 		logger.Info("database schema up to date")
 	}
 
+	mail := mailer.New(mailer.Config{
+		Addr:     cfg.SMTPAddr,
+		Username: cfg.SMTPUser,
+		Password: cfg.SMTPPass,
+		From:     cfg.MailFrom,
+	}, logger)
+	if cfg.SMTPAddr == "" {
+		logger.Info("email sending disabled (SMTP_ADDR unset)")
+	} else {
+		logger.Info("email sending enabled", "smtp_addr", cfg.SMTPAddr)
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewServer(pool, logger).Handler(web.DistFS()),
+		Handler:           httpapi.NewServer(pool, logger, httpapi.WithMailer(mail)).Handler(web.DistFS()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

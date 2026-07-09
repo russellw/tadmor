@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 
 	"tadmor/internal/db"
 	"tadmor/internal/documents"
+	"tadmor/internal/mailer"
 	"tadmor/internal/posting"
 	"tadmor/internal/printing"
 	"tadmor/internal/reporting"
@@ -26,13 +28,28 @@ import (
 
 // Server holds the dependencies shared by the HTTP handlers.
 type Server struct {
-	pool *pgxpool.Pool
-	log  *slog.Logger
+	pool   *pgxpool.Pool
+	log    *slog.Logger
+	mailer mailer.Mailer
 }
 
-// NewServer builds a Server over the given pool.
-func NewServer(pool *pgxpool.Pool, log *slog.Logger) *Server {
-	return &Server{pool: pool, log: log}
+// Option configures a Server built by NewServer.
+type Option func(*Server)
+
+// WithMailer sets the mailer the email endpoints use. Without it a Server
+// defaults to a no-op mailer, so email attempts report "not configured".
+func WithMailer(m mailer.Mailer) Option {
+	return func(s *Server) { s.mailer = m }
+}
+
+// NewServer builds a Server over the given pool. Email sending defaults to the
+// no-op mailer; pass WithMailer to enable it.
+func NewServer(pool *pgxpool.Pool, log *slog.Logger, opts ...Option) *Server {
+	s := &Server{pool: pool, log: log, mailer: mailer.New(mailer.Config{}, log)}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Handler wires the routes. Routing uses the standard library's method-aware
@@ -100,6 +117,16 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("POST /customer-payments/{id}/post", s.postCustomerPayment)
 	api.HandleFunc("POST /supplier-payments/{id}/post", s.postSupplierPayment)
 	api.HandleFunc("POST /stock-movements/{id}/post", s.postStockMovement)
+
+	// Email a printable document to its counterparty as a PDF attachment.
+	// Inert unless SMTP is configured: without it these report 501 "not
+	// configured" and send nothing.
+	api.HandleFunc("POST /sales-invoices/{id}/email", s.emailHandler("invoice", "Invoice", printing.SalesInvoicePDF))
+	api.HandleFunc("POST /purchase-bills/{id}/email", s.emailHandler("bill", "Bill", printing.PurchaseBillPDF))
+	api.HandleFunc("POST /sales-credit-notes/{id}/email", s.emailHandler("credit-note", "Credit Note", printing.SalesCreditNotePDF))
+	api.HandleFunc("POST /purchase-credit-notes/{id}/email", s.emailHandler("supplier-credit", "Credit Note", printing.PurchaseCreditNotePDF))
+	api.HandleFunc("POST /sales-orders/{id}/email", s.emailHandler("sales-order", "Sales Order", printing.SalesOrderPDF))
+	api.HandleFunc("POST /purchase-orders/{id}/email", s.emailHandler("purchase-order", "Purchase Order", printing.PurchaseOrderPDF))
 
 	// Auto-apply a payment or credit note to the counterparty's open
 	// documents, oldest first.
@@ -440,6 +467,61 @@ func (s *Server) pdfHandler(prefix string, render func(context.Context, reportin
 		w.Header().Set("Content-Disposition", `inline; filename="`+pdfFilename(prefix, number)+`"`)
 		_, _ = w.Write(out)
 	}
+}
+
+// emailHandler emails a printable document to its counterparty as a PDF
+// attachment. render produces the same bytes as the PDF endpoint; prefix names
+// the attachment file and label is the human document name for the subject.
+//
+// Recipients come from an optional {"to": [...]} request body; resolving the
+// counterparty's address from the organization is a follow-up that awaits the
+// organizations.email column. When no mailer is configured the send reports
+// ErrNotConfigured before any of that matters, so this stays inert on the demo.
+func (s *Server) emailHandler(prefix, label string, render func(context.Context, reporting.Querier, int) ([]byte, string, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := pathID(w, r)
+		if !ok {
+			return
+		}
+		var body struct {
+			To []string `json:"to"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		out, number, err := render(r.Context(), s.pool, id)
+		if err != nil {
+			s.writeReadError(w, err)
+			return
+		}
+		msg := mailer.Message{
+			To:      body.To,
+			Subject: fmt.Sprintf("%s %s", label, number),
+			Body:    fmt.Sprintf("Please find attached %s %s.", strings.ToLower(label), number),
+			Attachments: []mailer.Attachment{{
+				Filename:    pdfFilename(prefix, number),
+				ContentType: "application/pdf",
+				Data:        out,
+			}},
+		}
+		if err := s.mailer.Send(r.Context(), msg); err != nil {
+			s.writeMailError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+	}
+}
+
+// writeMailError maps a mailer error to an HTTP response. A not-configured
+// mailer is a 501, not a server fault: the endpoint exists but sending is off.
+func (s *Server) writeMailError(w http.ResponseWriter, err error) {
+	if errors.Is(err, mailer.ErrNotConfigured) {
+		writeError(w, http.StatusNotImplemented, "email sending is not configured")
+		return
+	}
+	s.log.Error("email send failed", "err", err)
+	writeError(w, http.StatusInternalServerError, "internal error")
 }
 
 // pdfFilename derives a safe download filename from a document number.

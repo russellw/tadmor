@@ -88,7 +88,17 @@ sections, deferred decisions, and a gap review against the project goal.
   widths generated from the Adobe AFMs) and one shared layout in
   `internal/printing` driven by a per-document spec (labels + queries). The
   issuer block comes from the organization flagged `is_self` (checkbox on the
-  organization form; at most one). Still open: emailing.
+  organization form; at most one). Emailing is built but inert (2026-07-09):
+  `internal/mailer` is a stdlib-only (`net/smtp`) sender behind a `Mailer`
+  interface whose default is a no-op that reports `ErrNotConfigured`, selected
+  whenever `SMTP_ADDR` is unset — so the demo, which sets no SMTP environment,
+  never sends. `POST /api/<collection>/{id}/email` renders the same PDF as the
+  download endpoint and attaches it; with no mailer configured it returns 501.
+  Turning it on in production is a config flip (`SMTP_ADDR`, `SMTP_USER`,
+  `SMTP_PASS`, `MAIL_FROM`) plus two follow-ups: an `organizations.email`
+  column so the recipient resolves from the counterparty (today it comes from
+  an optional `to` in the request body), and the belunaro.com mail records
+  (SPF/DKIM) the deferred mail-records decision covers. No front-end button yet.
 - ~~**New-month period creation is manual ops.**~~ — done 2026-07-08: posting
   now auto-creates the calendar-month period (clipped to the fiscal year's
   bounds) when the document date falls inside an open fiscal year that has no
