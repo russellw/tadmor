@@ -1,18 +1,22 @@
 # tadmor
 
-Business management software. Postgres + Go backend, with a TypeScript/React
-front end to come.
+Business management software: a Postgres + Go backend with a TypeScript/React
+front end, shipped as a single static binary that embeds the built SPA.
 
 ## Layout
 
 ```
 cmd/server/        main entry point (HTTP server + migration-on-startup)
-internal/config/   environment configuration
-internal/db/       Postgres connectivity + the migration runner
-internal/httpapi/  HTTP routes (net/http, no framework)
+internal/          the backend's domain packages: config, db, httpapi,
+                   master, documents, orders, posting, reporting, banking,
+                   pdf, printing, auth
 db/migrations/     ordered SQL migrations (see db/README.md)
-vendor/            all third-party source, committed and reviewable
+db/seed/           reference-data seeds (ISO countries/currencies)
+web/               the TypeScript/React front end (see docs/frontend-stack.md)
 e2e/               browser-driven UI tests (Playwright; see docs/e2e-testing.md)
+deploy/            deployment assets for the fixed-price VPS
+docs/              architecture, deployment, and development docs
+vendor/            all third-party Go source, committed and reviewable
 ```
 
 ## Prerequisites
@@ -35,12 +39,18 @@ A `Makefile` wraps the common tasks with the pinned toolchain and a hermetic
 (offline, vendored) environment. Run `make` to list targets:
 
 ```sh
-make build    # build bin/server
-make run      # build and run the server
-make test     # full test suite from scratch (integration tests reset the DB)
-make vet      # go vet
-make fmt      # gofmt -w
+make build      # build bin/server (embeds whatever is in web/dist)
+make release    # build the front end into web/dist, then the server
+make run        # build and run the server
+make test       # full test suite from scratch (integration tests reset the DB)
+make web-build  # build only the front end into web/dist
+make web-check  # type-check + audit the front end
+make vet        # go vet
+make fmt        # gofmt -w
 ```
+
+`make build` embeds the current contents of `web/dist`; use `make release`
+(or run `make web-build` first) whenever the front end has changed.
 
 Override connection strings on the command line, e.g.
 `make test TEST_DATABASE_URL=postgres://user:pass@host:5432/db?sslmode=disable`.
