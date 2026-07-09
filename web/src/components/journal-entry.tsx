@@ -65,81 +65,129 @@ export function JournalEntryDetail() {
 
       {entry !== null && (
         <>
-          <header className="mb-6 flex items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-semibold tracking-tight">
-                  Journal Entry #{entry.id}
-                </h1>
-                <Badge
-                  variant={entry.status === "posted" ? "default" : "outline"}
-                >
-                  {entry.status}
-                </Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {entry.entry_date}
-                {entry.reference !== null && ` · ${entry.reference}`}
-                {" · "}
-                {entry.currency_code}
-              </p>
-              {entry.memo !== null && (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {entry.memo}
-                </p>
-              )}
-            </div>
-            <Button variant="outline" asChild>
-              <Link to="/reports/trial-balance">Back to trial balance</Link>
-            </Button>
-          </header>
-
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">#</TableHead>
-                <TableHead className="w-28">Code</TableHead>
-                <TableHead>Account</TableHead>
-                <TableHead>Memo</TableHead>
-                <TableHead className="text-right">Debit</TableHead>
-                <TableHead className="text-right">Credit</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entry.lines.map((l) => (
-                <TableRow key={l.line_no}>
-                  <TableCell className="text-muted-foreground">
-                    {l.line_no}
-                  </TableCell>
-                  <TableCell className="font-mono">{l.account_code}</TableCell>
-                  <TableCell>
-                    <Link
-                      to={`/accounts/${l.account_id}/ledger`}
-                      className="font-medium text-primary hover:underline"
-                    >
-                      {l.account_name}
+          {(() => {
+            // Show the base-currency conversion only for a foreign-currency
+            // entry (one whose transaction and base amounts differ on a line).
+            const foreign = entry.lines.some(
+              (l) => l.debit !== l.base_debit || l.credit !== l.base_credit,
+            )
+            return (
+              <>
+                <header className="mb-6 flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h1 className="text-2xl font-semibold tracking-tight">
+                        Journal Entry #{entry.id}
+                      </h1>
+                      <Badge
+                        variant={
+                          entry.status === "posted" ? "default" : "outline"
+                        }
+                      >
+                        {entry.status}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {entry.entry_date}
+                      {entry.reference !== null && ` · ${entry.reference}`}
+                      {" · "}
+                      {entry.currency_code}
+                      {foreign && ` · rate ${entry.exchange_rate}`}
+                    </p>
+                    {entry.memo !== null && (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {entry.memo}
+                      </p>
+                    )}
+                  </div>
+                  <Button variant="outline" asChild>
+                    <Link to="/reports/trial-balance">
+                      Back to trial balance
                     </Link>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {l.memo ?? "—"}
-                  </TableCell>
-                  <AmountCell value={l.debit} />
-                  <AmountCell value={l.credit} />
-                </TableRow>
-              ))}
-            </TableBody>
-            <TableFooter>
-              <TableRow>
-                <TableCell colSpan={4}>Total</TableCell>
-                <AmountCell
-                  value={sumAmounts(entry.lines.map((l) => l.debit))}
-                />
-                <AmountCell
-                  value={sumAmounts(entry.lines.map((l) => l.credit))}
-                />
-              </TableRow>
-            </TableFooter>
-          </Table>
+                  </Button>
+                </header>
+
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">#</TableHead>
+                      <TableHead className="w-28">Code</TableHead>
+                      <TableHead>Account</TableHead>
+                      <TableHead>Memo</TableHead>
+                      <TableHead className="text-right">Debit</TableHead>
+                      <TableHead className="text-right">Credit</TableHead>
+                      {foreign && (
+                        <>
+                          <TableHead className="text-right">Base Dr</TableHead>
+                          <TableHead className="text-right">Base Cr</TableHead>
+                        </>
+                      )}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {entry.lines.map((l) => (
+                      <TableRow key={l.line_no}>
+                        <TableCell className="text-muted-foreground">
+                          {l.line_no}
+                        </TableCell>
+                        <TableCell className="font-mono">
+                          {l.account_code}
+                        </TableCell>
+                        <TableCell>
+                          <Link
+                            to={`/accounts/${l.account_id}/ledger`}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            {l.account_name}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {l.memo ?? "—"}
+                        </TableCell>
+                        <AmountCell value={l.debit} />
+                        <AmountCell value={l.credit} />
+                        {foreign && (
+                          <>
+                            <AmountCell value={l.base_debit} />
+                            <AmountCell value={l.base_credit} />
+                          </>
+                        )}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell colSpan={4}>
+                        {foreign
+                          ? `Total (${entry.currency_code} / base)`
+                          : "Total"}
+                      </TableCell>
+                      <AmountCell
+                        value={sumAmounts(entry.lines.map((l) => l.debit))}
+                      />
+                      <AmountCell
+                        value={sumAmounts(entry.lines.map((l) => l.credit))}
+                      />
+                      {foreign && (
+                        <>
+                          <AmountCell
+                            value={sumAmounts(
+                              entry.lines.map((l) => l.base_debit),
+                            )}
+                          />
+                          <AmountCell
+                            value={sumAmounts(
+                              entry.lines.map((l) => l.base_credit),
+                            )}
+                          />
+                        </>
+                      )}
+                    </TableRow>
+                  </TableFooter>
+                </Table>
+              </>
+            )
+          })()}
         </>
       )}
     </section>

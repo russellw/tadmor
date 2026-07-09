@@ -21,7 +21,6 @@ import {
 } from "@/components/stock-movements"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -34,8 +33,8 @@ import {
 // Radix Select reserves "" as a value, so the nullable select uses this.
 const NONE = "__none__"
 
-// One stock movement: its facts plus the GL actions. Posting needs a currency
-// (movements carry none of their own); a receipt additionally needs the
+// One stock movement: its facts plus the GL actions. Movements carry no
+// currency of their own and post in the base currency; a receipt needs the
 // clearing account it credits (typically Goods Received Not Invoiced), which
 // the matching purchase bill later debits. An issue posts COGS against
 // inventory. Unpost reverses the journal entry. Unposted movements can be
@@ -51,7 +50,6 @@ export function StockMovementDetail() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  const [currency, setCurrency] = useState("")
   const [creditAccountId, setCreditAccountId] = useState(NONE)
   const [acting, setActing] = useState(false)
   const currentUser = useCurrentUser()
@@ -69,7 +67,6 @@ export function StockMovementDetail() {
     return {
       m,
       productName: product ? `${product.sku} — ${product.name}` : `#${m.product_id}`,
-      productCurrency: product?.currency_code ?? null,
       warehouseName: warehouse
         ? `${warehouse.code} — ${warehouse.name}`
         : `#${m.warehouse_id}`,
@@ -90,7 +87,6 @@ export function StockMovementDetail() {
         setProductName(r.productName)
         setWarehouseName(r.warehouseName)
         setAccounts(r.accts)
-        setCurrency((c) => (c === "" ? (r.productCurrency ?? "") : c))
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -115,7 +111,6 @@ export function StockMovementDetail() {
     setActionError(null)
     postStockMovement(
       movementId,
-      currency.trim().toUpperCase(),
       creditAccountId === NONE ? null : Number(creditAccountId),
     )
       .then(refresh)
@@ -264,39 +259,27 @@ export function StockMovementDetail() {
                     : "Debits the product's COGS account and credits its inventory account."}
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              {movement.movement_type === "receipt" && (
                 <div className="space-y-2">
-                  <Label htmlFor="currency">Currency</Label>
-                  <Input
-                    id="currency"
-                    maxLength={3}
-                    placeholder="e.g. USD"
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value)}
-                  />
+                  <Label htmlFor="credit_account">Credit Account</Label>
+                  <Select
+                    value={creditAccountId}
+                    onValueChange={setCreditAccountId}
+                  >
+                    <SelectTrigger id="credit_account" className="w-full">
+                      <SelectValue placeholder="Select an account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>None</SelectItem>
+                      {accounts.map((a) => (
+                        <SelectItem key={a.id} value={String(a.id)}>
+                          {a.code} — {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                {movement.movement_type === "receipt" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="credit_account">Credit Account</Label>
-                    <Select
-                      value={creditAccountId}
-                      onValueChange={setCreditAccountId}
-                    >
-                      <SelectTrigger id="credit_account" className="w-full">
-                        <SelectValue placeholder="Select an account" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE}>None</SelectItem>
-                        {accounts.map((a) => (
-                          <SelectItem key={a.id} value={String(a.id)}>
-                            {a.code} — {a.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
+              )}
               <Button disabled={acting} onClick={handlePost}>
                 {acting ? "Posting…" : "Post to ledger"}
               </Button>

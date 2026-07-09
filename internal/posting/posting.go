@@ -13,6 +13,15 @@
 //	customer payment   Dr cash               Cr A/R
 //	supplier payment   Dr A/P                Cr cash
 //	inventory issue    Dr COGS               Cr inventory
+//
+// Every journal line carries its amount twice: in the document's transaction
+// currency (debit/credit) and converted to the ledger's base currency
+// (base_debit/base_credit), at the latest exchange rate on or before the
+// document date. Detail lines convert by rounding; the gross counter-line
+// (A/R, A/P) takes the sum of the converted detail lines, so an entry always
+// balances in base exactly. Applying a payment or credit note posted at a
+// different rate than the document it settles realizes an FX gain or loss;
+// see apply.go.
 package posting
 
 import (
@@ -41,7 +50,15 @@ var (
 	ErrPriorYearOpen   = errors.New("an earlier fiscal year is still open")
 	ErrLaterYearClosed = errors.New("a later fiscal year has already been closed")
 	ErrBankMatched     = errors.New("journal entry has lines matched to a bank statement")
+	ErrNoExchangeRate  = errors.New("no exchange rate on or before the document date")
 )
+
+// baseCurrency returns the ledger's base currency from gl_settings.
+func baseCurrency(ctx context.Context, tx pgx.Tx) (string, error) {
+	var c string
+	err := tx.QueryRow(ctx, `SELECT base_currency FROM gl_settings`).Scan(&c)
+	return c, err
+}
 
 // periodForDate returns the id of the open accounting period containing date.
 //
@@ -99,13 +116,25 @@ func periodForDate(ctx context.Context, tx pgx.Tx, date string) (int, error) {
 	return id, nil
 }
 
-// createEntry inserts a posted journal-entry header and returns its id.
+// createEntry inserts a posted journal-entry header and returns its id. The
+// entry records the exchange rate its amounts convert to base at: 1 for the
+// base currency, otherwise the currency's latest rate on or before the entry
+// date — no such rate fails with ErrNoExchangeRate.
 func createEntry(ctx context.Context, tx pgx.Tx, date string, periodID int, currency, memo, reference string) (int, error) {
 	var id int
 	err := tx.QueryRow(ctx,
-		`INSERT INTO journal_entries (entry_date, period_id, currency_code, memo, reference, status, posted_at)
-		 VALUES ($1::date, $2, $3, $4, $5, 'posted', now())
+		`INSERT INTO journal_entries (entry_date, period_id, currency_code, exchange_rate, memo, reference, status, posted_at)
+		 SELECT $1::date, $2, $3, r.rate, $4, $5, 'posted', now()
+		 FROM (SELECT CASE WHEN $3 = (SELECT base_currency FROM gl_settings) THEN 1::numeric
+		                   ELSE (SELECT rate FROM exchange_rates
+		                         WHERE currency_code = $3 AND rate_date <= $1::date
+		                         ORDER BY rate_date DESC LIMIT 1)
+		              END AS rate) r
+		 WHERE r.rate IS NOT NULL
 		 RETURNING id`, date, periodID, currency, memo, reference).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("posting: currency %s, date %s: %w", currency, date, ErrNoExchangeRate)
+	}
 	return id, err
 }
 
@@ -166,15 +195,8 @@ func PostSalesInvoice(ctx context.Context, tx pgx.Tx, invoiceID int) (int, error
 		return 0, err
 	}
 
-	// Dr accounts receivable for the gross total.
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 1, c.ar_account_id, si.total, 0, 'Accounts receivable'
-		 FROM sales_invoices si JOIN customers c ON c.id = si.customer_id
-		 WHERE si.id = $2`, je, invoiceID); err != nil {
-		return 0, err
-	}
-	// Cr revenue per account, then Cr sales tax per account.
+	// Cr revenue per account, then Cr sales tax per account, converted to
+	// base at the entry's rate.
 	if _, err := tx.Exec(ctx,
 		`WITH rev AS (
 		     SELECT COALESCE(l.revenue_account_id, p.revenue_account_id) AS account_id,
@@ -190,9 +212,20 @@ func PostSalesInvoice(ctx context.Context, tx pgx.Tx, invoiceID int) (int, error
 		     UNION ALL
 		     SELECT 1 AS ord, account_id, amount, 'Sales tax'::text FROM tax
 		 )
-		 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 1 + row_number() OVER (ORDER BY ord, account_id), account_id, 0, amount, memo
+		 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 1 + row_number() OVER (ORDER BY ord, account_id), account_id, 0, amount, memo,
+		        0, round(amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4)
 		 FROM credits`, je, invoiceID); err != nil {
+		return 0, err
+	}
+	// Dr accounts receivable for the gross total; its base amount is the sum
+	// of the converted credits, so the entry balances in base exactly.
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 1, c.ar_account_id, si.total, 0, 'Accounts receivable',
+		        (SELECT COALESCE(sum(base_credit), 0) FROM journal_lines WHERE journal_entry_id = $1), 0
+		 FROM sales_invoices si JOIN customers c ON c.id = si.customer_id
+		 WHERE si.id = $2`, je, invoiceID); err != nil {
 		return 0, err
 	}
 
@@ -261,7 +294,8 @@ func PostPurchaseBill(ctx context.Context, tx pgx.Tx, billID int) (int, error) {
 		return 0, err
 	}
 
-	// Dr expense/inventory per account, then Dr input tax per account.
+	// Dr expense/inventory per account, then Dr input tax per account,
+	// converted to base at the entry's rate.
 	if _, err := tx.Exec(ctx,
 		`WITH exp AS (
 		     SELECT COALESCE(l.expense_account_id, p.inventory_account_id) AS account_id,
@@ -277,17 +311,20 @@ func PostPurchaseBill(ctx context.Context, tx pgx.Tx, billID int) (int, error) {
 		     UNION ALL
 		     SELECT 1 AS ord, account_id, amount, 'Input tax'::text FROM tax
 		 )
-		 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, row_number() OVER (ORDER BY ord, account_id), account_id, amount, 0, memo
+		 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, row_number() OVER (ORDER BY ord, account_id), account_id, amount, 0, memo,
+		        round(amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4), 0
 		 FROM debits`, je, billID); err != nil {
 		return 0, err
 	}
-	// Cr accounts payable for the gross total (numbered after the debit lines).
+	// Cr accounts payable for the gross total (numbered after the debit
+	// lines); its base amount is the sum of the converted debits.
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
 		 SELECT $1,
 		        (SELECT COALESCE(max(line_no), 0) FROM journal_lines WHERE journal_entry_id = $1) + 1,
-		        s.ap_account_id, 0, pb.total, 'Accounts payable'
+		        s.ap_account_id, 0, pb.total, 'Accounts payable',
+		        0, (SELECT COALESCE(sum(base_debit), 0) FROM journal_lines WHERE journal_entry_id = $1)
 		 FROM purchase_bills pb JOIN suppliers s ON s.id = pb.supplier_id
 		 WHERE pb.id = $2`, je, billID); err != nil {
 		return 0, err
@@ -341,15 +378,19 @@ func PostCustomerPayment(ctx context.Context, tx pgx.Tx, paymentID int) (int, er
 		return 0, err
 	}
 
+	// Both lines carry the same amount, so the same rounded conversion keeps
+	// the entry balanced in base.
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 1, cp.deposit_account_id, cp.amount, 0, 'Cash received'
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 1, cp.deposit_account_id, cp.amount, 0, 'Cash received',
+		        round(cp.amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4), 0
 		 FROM customer_payments cp WHERE cp.id = $2`, je, paymentID); err != nil {
 		return 0, err
 	}
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 2, c.ar_account_id, 0, cp.amount, 'Accounts receivable'
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 2, c.ar_account_id, 0, cp.amount, 'Accounts receivable',
+		        0, round(cp.amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4)
 		 FROM customer_payments cp JOIN customers c ON c.id = cp.customer_id
 		 WHERE cp.id = $2`, je, paymentID); err != nil {
 		return 0, err
@@ -403,16 +444,20 @@ func PostSupplierPayment(ctx context.Context, tx pgx.Tx, paymentID int) (int, er
 		return 0, err
 	}
 
+	// Both lines carry the same amount, so the same rounded conversion keeps
+	// the entry balanced in base.
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 1, s.ap_account_id, sp.amount, 0, 'Accounts payable'
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 1, s.ap_account_id, sp.amount, 0, 'Accounts payable',
+		        round(sp.amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4), 0
 		 FROM supplier_payments sp JOIN suppliers s ON s.id = sp.supplier_id
 		 WHERE sp.id = $2`, je, paymentID); err != nil {
 		return 0, err
 	}
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 2, sp.payment_account_id, 0, sp.amount, 'Cash paid'
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 2, sp.payment_account_id, 0, sp.amount, 'Cash paid',
+		        0, round(sp.amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4)
 		 FROM supplier_payments sp WHERE sp.id = $2`, je, paymentID); err != nil {
 		return 0, err
 	}
@@ -426,10 +471,10 @@ func PostSupplierPayment(ctx context.Context, tx pgx.Tx, paymentID int) (int, er
 }
 
 // PostInventoryIssue posts the cost of an inventory issue (a 'issue' stock
-// movement): Dr COGS, Cr inventory, valued at the movement's cost. currency is
-// the functional currency to record the entry in, since stock movements are
-// quantity/cost records without a currency of their own.
-func PostInventoryIssue(ctx context.Context, tx pgx.Tx, movementID int, currency string) (int, error) {
+// movement): Dr COGS, Cr inventory, valued at the movement's cost. Stock
+// movements are quantity/cost records without a currency of their own, so the
+// entry is recorded in the base currency.
+func PostInventoryIssue(ctx context.Context, tx pgx.Tx, movementID int) (int, error) {
 	var (
 		movementType, date      string
 		cogsAccount, invAccount *int
@@ -464,22 +509,27 @@ func PostInventoryIssue(ctx context.Context, tx pgx.Tx, movementID int, currency
 	if err != nil {
 		return 0, err
 	}
+	currency, err := baseCurrency(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
 	je, err := createEntry(ctx, tx, date, period, currency, "Inventory issue", "")
 	if err != nil {
 		return 0, err
 	}
 
-	// total_cost is negative for an issue; abs() gives the cost moved.
+	// total_cost is negative for an issue; abs() gives the cost moved. Costs
+	// are already in base, so the base amounts mirror the transaction ones.
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 1, p.cogs_account_id, abs(sm.total_cost), 0, 'Cost of goods sold'
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 1, p.cogs_account_id, abs(sm.total_cost), 0, 'Cost of goods sold', abs(sm.total_cost), 0
 		 FROM stock_movements sm JOIN products p ON p.id = sm.product_id
 		 WHERE sm.id = $2`, je, movementID); err != nil {
 		return 0, err
 	}
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 2, p.inventory_account_id, 0, abs(sm.total_cost), 'Inventory'
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 2, p.inventory_account_id, 0, abs(sm.total_cost), 'Inventory', 0, abs(sm.total_cost)
 		 FROM stock_movements sm JOIN products p ON p.id = sm.product_id
 		 WHERE sm.id = $2`, je, movementID); err != nil {
 		return 0, err
@@ -497,8 +547,8 @@ func PostInventoryIssue(ctx context.Context, tx pgx.Tx, movementID int, currency
 // movement): Dr inventory, Cr the supplied clearing account. That credit
 // account is typically a Goods-Received-Not-Invoiced account which the matching
 // purchase bill later debits, so it nets to zero once the goods are invoiced.
-// currency is the functional currency to record the entry in.
-func PostInventoryReceipt(ctx context.Context, tx pgx.Tx, movementID int, currency string, creditAccountID int) (int, error) {
+// Like issues, receipts are recorded in the base currency.
+func PostInventoryReceipt(ctx context.Context, tx pgx.Tx, movementID int, creditAccountID int) (int, error) {
 	var (
 		movementType, date string
 		invAccount         *int
@@ -546,22 +596,26 @@ func PostInventoryReceipt(ctx context.Context, tx pgx.Tx, movementID int, curren
 	if err != nil {
 		return 0, err
 	}
+	currency, err := baseCurrency(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
 	je, err := createEntry(ctx, tx, date, period, currency, "Inventory receipt", "")
 	if err != nil {
 		return 0, err
 	}
 
-	// total_cost is positive for a receipt.
+	// total_cost is positive for a receipt; costs are already in base.
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 1, p.inventory_account_id, sm.total_cost, 0, 'Inventory'
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 1, p.inventory_account_id, sm.total_cost, 0, 'Inventory', sm.total_cost, 0
 		 FROM stock_movements sm JOIN products p ON p.id = sm.product_id
 		 WHERE sm.id = $2`, je, movementID); err != nil {
 		return 0, err
 	}
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 2, $3, 0, sm.total_cost, 'Goods received not invoiced'
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 2, $3, 0, sm.total_cost, 'Goods received not invoiced', 0, sm.total_cost
 		 FROM stock_movements sm WHERE sm.id = $2`, je, movementID, creditAccountID); err != nil {
 		return 0, err
 	}
@@ -577,7 +631,7 @@ func PostInventoryReceipt(ctx context.Context, tx pgx.Tx, movementID int, curren
 // PostStockMovement posts a stock movement to the GL, dispatching on its type:
 // an 'issue' posts COGS, a 'receipt' posts inventory against creditAccountID.
 // creditAccountID is ignored for issues and required (> 0) for receipts.
-func PostStockMovement(ctx context.Context, tx pgx.Tx, movementID int, currency string, creditAccountID int) (int, error) {
+func PostStockMovement(ctx context.Context, tx pgx.Tx, movementID int, creditAccountID int) (int, error) {
 	var movementType string
 	err := tx.QueryRow(ctx, `SELECT movement_type FROM stock_movements WHERE id = $1`, movementID).Scan(&movementType)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -588,12 +642,12 @@ func PostStockMovement(ctx context.Context, tx pgx.Tx, movementID int, currency 
 	}
 	switch movementType {
 	case "issue":
-		return PostInventoryIssue(ctx, tx, movementID, currency)
+		return PostInventoryIssue(ctx, tx, movementID)
 	case "receipt":
 		if creditAccountID <= 0 {
 			return 0, fmt.Errorf("posting: stock movement %d: a credit account is required to post a receipt: %w", movementID, ErrMissingAccount)
 		}
-		return PostInventoryReceipt(ctx, tx, movementID, currency, creditAccountID)
+		return PostInventoryReceipt(ctx, tx, movementID, creditAccountID)
 	default:
 		return 0, fmt.Errorf("posting: stock movement %d: type %q is not postable to the GL: %w", movementID, movementType, ErrNotPostable)
 	}

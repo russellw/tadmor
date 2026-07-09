@@ -15,12 +15,135 @@ type Application struct {
 	Amount     string `json:"amount"`
 }
 
+// fxSpec parameterizes realized-FX posting over the four application kinds.
+type fxSpec struct {
+	// candidates selects the settling document's applications that still
+	// need an FX entry: those without one whose two documents were posted at
+	// rates that convert the applied amount to different base values. Columns:
+	// application id, document number, party control account (A/R or A/P),
+	// settlement date, and the signed base difference
+	// round(applied·settler rate) − round(applied·document rate), as text.
+	candidates string
+	// update links the posted FX entry ($1) back to the application ($2).
+	update string
+	// memo is the FX entry's memo, with the document number interpolated.
+	memo string
+	// arSide is true when the control account is A/R (customer side): a
+	// positive difference is then a gain (the settlement relieved more base
+	// value than the receivable carried). On the A/P side the same positive
+	// difference is a loss.
+	arSide bool
+}
+
+// postSettlementFX books the realized exchange gain or loss for every
+// application of one settling document (payment or credit note) that needs
+// it. Each FX entry is a base-currency entry dated on the settlement date:
+// one line trues the party control account up to zero for the settled
+// amount, the other books the gain/loss to the configured FX account.
+func postSettlementFX(ctx context.Context, tx pgx.Tx, settlerID int, spec fxSpec) error {
+	type candidate struct {
+		appID        int
+		number       string
+		partyAccount int
+		date         string
+		diff         string
+	}
+	rows, err := tx.Query(ctx, spec.candidates, settlerID)
+	if err != nil {
+		return err
+	}
+	var cands []candidate
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.appID, &c.number, &c.partyAccount, &c.date, &c.diff); err != nil {
+			rows.Close()
+			return err
+		}
+		cands = append(cands, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(cands) == 0 {
+		return nil
+	}
+
+	var base string
+	var fxAccount *int
+	if err := tx.QueryRow(ctx,
+		`SELECT base_currency, fx_gain_loss_account_id FROM gl_settings`).Scan(&base, &fxAccount); err != nil {
+		return err
+	}
+	if fxAccount == nil {
+		return fmt.Errorf("posting: exchange gain/loss account is not configured in settings: %w", ErrMissingAccount)
+	}
+
+	for _, c := range cands {
+		period, err := periodForDate(ctx, tx, c.date)
+		if err != nil {
+			return err
+		}
+		je, err := createEntry(ctx, tx, c.date, period, base, fmt.Sprintf(spec.memo, c.number), c.number)
+		if err != nil {
+			return err
+		}
+		// v is oriented so that a positive value debits the control account
+		// and credits the FX account; on the A/R side that orientation is the
+		// difference as computed, on the A/P side its negation.
+		sign := 1
+		if !spec.arSide {
+			sign = -1
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+			 SELECT $1, 1, $2, greatest(d.v, 0), greatest(-d.v, 0), 'Settlement revaluation',
+			        greatest(d.v, 0), greatest(-d.v, 0)
+			 FROM (SELECT $3::numeric(19,4) * $4 AS v) d`, je, c.partyAccount, c.diff, sign); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+			 SELECT $1, 2, $2, greatest(-d.v, 0), greatest(d.v, 0), 'Exchange gain (loss)',
+			        greatest(-d.v, 0), greatest(d.v, 0)
+			 FROM (SELECT $3::numeric(19,4) * $4 AS v) d`, je, *fxAccount, c.diff, sign); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, spec.update, je, c.appID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var customerPaymentFX = fxSpec{
+	candidates: `
+		SELECT pa.id, si.invoice_number, c.ar_account_id, cp.payment_date::text,
+		       (round(pa.amount_applied * jes.exchange_rate, 4)
+		      - round(pa.amount_applied * jed.exchange_rate, 4))::text
+		FROM payment_applications pa
+		JOIN customer_payments cp ON cp.id = pa.payment_id
+		JOIN customers c          ON c.id = cp.customer_id
+		JOIN sales_invoices si    ON si.id = pa.invoice_id
+		JOIN journal_entries jes  ON jes.id = cp.journal_entry_id
+		JOIN journal_entries jed  ON jed.id = si.journal_entry_id
+		WHERE pa.payment_id = $1 AND pa.fx_journal_entry_id IS NULL
+		  AND round(pa.amount_applied * jes.exchange_rate, 4)
+		   <> round(pa.amount_applied * jed.exchange_rate, 4)`,
+	update: `UPDATE payment_applications SET fx_journal_entry_id = $1 WHERE id = $2`,
+	memo:   "Exchange difference on settlement of invoice %s",
+	arSide: true,
+}
+
 // AutoApplyCustomerPayment allocates a customer payment's unapplied remainder
 // across the customer's open invoices (posted, same currency, with an
 // outstanding balance), oldest first. It returns the applications it created,
 // which may be empty if there is nothing open to apply to. The allocation is
 // computed in SQL so it never over-applies the payment or any invoice; the
-// database's over-application constraint is the backstop.
+// database's over-application constraint is the backstop. The payment itself
+// must be posted — applications realize FX differences between the two
+// documents' journal entries, so both entries must exist (the database
+// enforces the same rule).
 func AutoApplyCustomerPayment(ctx context.Context, tx pgx.Tx, paymentID int) ([]Application, error) {
 	var status string
 	err := tx.QueryRow(ctx, `SELECT status FROM customer_payments WHERE id = $1`, paymentID).Scan(&status)
@@ -30,8 +153,8 @@ func AutoApplyCustomerPayment(ctx context.Context, tx pgx.Tx, paymentID int) ([]
 	if err != nil {
 		return nil, err
 	}
-	if status == "void" {
-		return nil, fmt.Errorf("posting: customer payment %d is void: %w", paymentID, ErrNotPostable)
+	if status != "posted" {
+		return nil, fmt.Errorf("posting: customer payment %d: %w", paymentID, ErrNotPosted)
 	}
 
 	rows, err := tx.Query(ctx, `
@@ -77,7 +200,32 @@ RETURNING invoice_id, amount_applied::text`, paymentID)
 		}
 		apps = append(apps, a)
 	}
-	return apps, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := postSettlementFX(ctx, tx, paymentID, customerPaymentFX); err != nil {
+		return nil, err
+	}
+	return apps, nil
+}
+
+var supplierPaymentFX = fxSpec{
+	candidates: `
+		SELECT ba.id, pb.bill_number, s.ap_account_id, sp.payment_date::text,
+		       (round(ba.amount_applied * jes.exchange_rate, 4)
+		      - round(ba.amount_applied * jed.exchange_rate, 4))::text
+		FROM bill_applications ba
+		JOIN supplier_payments sp ON sp.id = ba.payment_id
+		JOIN suppliers s          ON s.id = sp.supplier_id
+		JOIN purchase_bills pb    ON pb.id = ba.bill_id
+		JOIN journal_entries jes  ON jes.id = sp.journal_entry_id
+		JOIN journal_entries jed  ON jed.id = pb.journal_entry_id
+		WHERE ba.payment_id = $1 AND ba.fx_journal_entry_id IS NULL
+		  AND round(ba.amount_applied * jes.exchange_rate, 4)
+		   <> round(ba.amount_applied * jed.exchange_rate, 4)`,
+	update: `UPDATE bill_applications SET fx_journal_entry_id = $1 WHERE id = $2`,
+	memo:   "Exchange difference on settlement of bill %s",
+	arSide: false,
 }
 
 // AutoApplySupplierPayment is the purchasing-side mirror of
@@ -92,8 +240,8 @@ func AutoApplySupplierPayment(ctx context.Context, tx pgx.Tx, paymentID int) ([]
 	if err != nil {
 		return nil, err
 	}
-	if status == "void" {
-		return nil, fmt.Errorf("posting: supplier payment %d is void: %w", paymentID, ErrNotPostable)
+	if status != "posted" {
+		return nil, fmt.Errorf("posting: supplier payment %d: %w", paymentID, ErrNotPosted)
 	}
 
 	rows, err := tx.Query(ctx, `
@@ -139,5 +287,11 @@ RETURNING bill_id, amount_applied::text`, paymentID)
 		}
 		apps = append(apps, a)
 	}
-	return apps, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := postSettlementFX(ctx, tx, paymentID, supplierPaymentFX); err != nil {
+		return nil, err
+	}
+	return apps, nil
 }

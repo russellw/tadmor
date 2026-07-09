@@ -93,7 +93,7 @@ func TestPostingBalances(t *testing.T) {
 	mustPost("purchase bill", func() (int, error) { return posting.PostPurchaseBill(ctx, tx, billID) })
 	mustPost("customer payment", func() (int, error) { return posting.PostCustomerPayment(ctx, tx, custPay) })
 	mustPost("supplier payment", func() (int, error) { return posting.PostSupplierPayment(ctx, tx, supPay) })
-	mustPost("inventory issue", func() (int, error) { return posting.PostInventoryIssue(ctx, tx, movID, "USD") })
+	mustPost("inventory issue", func() (int, error) { return posting.PostInventoryIssue(ctx, tx, movID) })
 
 	// Force the deferred balance constraints to run now; this fails if any
 	// generated journal entry is unbalanced.
@@ -257,7 +257,7 @@ func TestInventoryReceiptClearsAgainstBill(t *testing.T) {
 	// Receive 10 units @ 7 = 70: Dr inventory 70 / Cr GRNI 70.
 	movID := queryID(`INSERT INTO stock_movements (product_id, warehouse_id, movement_type, movement_date, quantity, unit_cost)
 	      VALUES ($1,$2,'receipt','2026-06-16',10,7) RETURNING id`, invProd, whID)
-	if _, err := posting.PostInventoryReceipt(ctx, tx, movID, "USD", grni); err != nil {
+	if _, err := posting.PostInventoryReceipt(ctx, tx, movID, grni); err != nil {
 		t.Fatalf("post receipt: %v", err)
 	}
 

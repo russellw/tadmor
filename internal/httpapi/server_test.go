@@ -154,12 +154,12 @@ func TestPostStockMovementReceiptEndpoint(t *testing.T) {
 	url := srv.URL + "/api/stock-movements/" + strconv.Itoa(movID) + "/post"
 
 	// Missing credit_account_id -> 422 (a receipt needs a clearing account).
-	if status, body := postJSON(t, url, `{"currency":"USD"}`); status != http.StatusUnprocessableEntity {
+	if status, body := postJSON(t, url, `{}`); status != http.StatusUnprocessableEntity {
 		t.Fatalf("receipt without credit account: status = %d, want 422 (body: %s)", status, body)
 	}
 
 	// With the GRNI account it posts.
-	status, body := postJSON(t, url, `{"currency":"USD","credit_account_id":`+strconv.Itoa(grni)+`}`)
+	status, body := postJSON(t, url, `{"credit_account_id":`+strconv.Itoa(grni)+`}`)
 	if status != http.StatusOK {
 		t.Fatalf("receipt post: status = %d, want 200 (body: %s)", status, body)
 	}

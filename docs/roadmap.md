@@ -44,10 +44,27 @@ sections, deferred decisions, and a gap review against the project goal.
   the fiscal-year-rollover residual from the period auto-creation item below.
   Reopen reverses the closing entry. Years close oldest-first and reopen
   newest-first.
-- **Multi-currency.** A currencies table exists, but nothing in the schema or
-  handlers references exchange rates — all documents are effectively
-  single-currency. If foreign-currency customers/suppliers are in scope, this
-  is a large schema-and-posting-logic item.
+- ~~**Multi-currency.**~~ — done 2026-07-09: the ledger has a base
+  (functional) currency and an FX gain/loss account (Setup → Settings, backed
+  by a one-row `gl_settings` a trigger freezes once entries exist), plus
+  manually maintained `exchange_rates` (Accounting → Exchange Rates, one rate
+  per currency per date). Every journal line now carries its amount twice — in
+  the document's transaction currency (`debit`/`credit`, what bank rec matches)
+  and converted to base at the document date's latest rate
+  (`base_debit`/`base_credit`, what every report sums); `journal_entries`
+  records the `exchange_rate` used, and a document with no covering rate can't
+  post. Settling a payment or credit note against a document booked at a
+  different rate posts a realized FX entry to the gain/loss account (linked via
+  `fx_journal_entry_id` on the application, reversed on unpost). Reports, the
+  trial balance, the account ledger, and the journal-entry drill-down all read
+  base amounts and surface the transaction/base split on foreign-currency
+  rows. Deliberately out of scope for now, each worth its own item later:
+  **cross-currency settlement** (a payment must still match its document's
+  currency — the application triggers enforce it); **period-end revaluation**
+  of open foreign-currency AR/AP/bank balances at a closing rate (only
+  *realized* differences post today); and a sub-cent rounding residual can
+  remain on a foreign document settled across several partial payments (each
+  installment rounds independently).
 - ~~**Cash-flow statement**~~ — done 2026-07-09: indirect-method statement at
   Reports → Cash Flow (`GET /api/cash-flow`): net income plus each non-cash
   balance-sheet account's cash impact, grouped operating/investing/financing

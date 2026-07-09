@@ -74,7 +74,8 @@ func PostSalesCreditNote(ctx context.Context, tx pgx.Tx, noteID int) (int, error
 		return 0, err
 	}
 
-	// Dr revenue per account, then Dr sales tax per account.
+	// Dr revenue per account, then Dr sales tax per account, converted to
+	// base at the entry's rate.
 	if _, err := tx.Exec(ctx,
 		`WITH rev AS (
 		     SELECT COALESCE(l.revenue_account_id, p.revenue_account_id) AS account_id,
@@ -90,17 +91,20 @@ func PostSalesCreditNote(ctx context.Context, tx pgx.Tx, noteID int) (int, error
 		     UNION ALL
 		     SELECT 1 AS ord, account_id, amount, 'Sales tax credited'::text FROM tax
 		 )
-		 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, row_number() OVER (ORDER BY ord, account_id), account_id, amount, 0, memo
+		 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, row_number() OVER (ORDER BY ord, account_id), account_id, amount, 0, memo,
+		        round(amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4), 0
 		 FROM debits`, je, noteID); err != nil {
 		return 0, err
 	}
-	// Cr accounts receivable for the gross total (numbered after the debits).
+	// Cr accounts receivable for the gross total (numbered after the debits);
+	// its base amount is the sum of the converted debits.
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
 		 SELECT $1,
 		        (SELECT COALESCE(max(line_no), 0) FROM journal_lines WHERE journal_entry_id = $1) + 1,
-		        c.ar_account_id, 0, cn.total, 'Accounts receivable'
+		        c.ar_account_id, 0, cn.total, 'Accounts receivable',
+		        0, (SELECT COALESCE(sum(base_debit), 0) FROM journal_lines WHERE journal_entry_id = $1)
 		 FROM sales_credit_notes cn JOIN customers c ON c.id = cn.customer_id
 		 WHERE cn.id = $2`, je, noteID); err != nil {
 		return 0, err
@@ -171,15 +175,8 @@ func PostPurchaseCreditNote(ctx context.Context, tx pgx.Tx, noteID int) (int, er
 		return 0, err
 	}
 
-	// Dr accounts payable for the gross total.
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 1, s.ap_account_id, cn.total, 0, 'Accounts payable'
-		 FROM purchase_credit_notes cn JOIN suppliers s ON s.id = cn.supplier_id
-		 WHERE cn.id = $2`, je, noteID); err != nil {
-		return 0, err
-	}
-	// Cr expense/inventory per account, then Cr input tax per account.
+	// Cr expense/inventory per account, then Cr input tax per account,
+	// converted to base at the entry's rate.
 	if _, err := tx.Exec(ctx,
 		`WITH exp AS (
 		     SELECT COALESCE(l.expense_account_id, p.inventory_account_id) AS account_id,
@@ -195,9 +192,20 @@ func PostPurchaseCreditNote(ctx context.Context, tx pgx.Tx, noteID int) (int, er
 		     UNION ALL
 		     SELECT 1 AS ord, account_id, amount, 'Input tax credited'::text FROM tax
 		 )
-		 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-		 SELECT $1, 1 + row_number() OVER (ORDER BY ord, account_id), account_id, 0, amount, memo
+		 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 1 + row_number() OVER (ORDER BY ord, account_id), account_id, 0, amount, memo,
+		        0, round(amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4)
 		 FROM credits`, je, noteID); err != nil {
+		return 0, err
+	}
+	// Dr accounts payable for the gross total; its base amount is the sum of
+	// the converted credits.
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+		 SELECT $1, 1, s.ap_account_id, cn.total, 0, 'Accounts payable',
+		        (SELECT COALESCE(sum(base_credit), 0) FROM journal_lines WHERE journal_entry_id = $1), 0
+		 FROM purchase_credit_notes cn JOIN suppliers s ON s.id = cn.supplier_id
+		 WHERE cn.id = $2`, je, noteID); err != nil {
 		return 0, err
 	}
 
@@ -209,11 +217,31 @@ func PostPurchaseCreditNote(ctx context.Context, tx pgx.Tx, noteID int) (int, er
 	return je, nil
 }
 
+var salesCreditFX = fxSpec{
+	candidates: `
+		SELECT ca.id, si.invoice_number, c.ar_account_id, cn.credit_note_date::text,
+		       (round(ca.amount_applied * jes.exchange_rate, 4)
+		      - round(ca.amount_applied * jed.exchange_rate, 4))::text
+		FROM sales_credit_applications ca
+		JOIN sales_credit_notes cn ON cn.id = ca.credit_note_id
+		JOIN customers c           ON c.id = cn.customer_id
+		JOIN sales_invoices si     ON si.id = ca.invoice_id
+		JOIN journal_entries jes   ON jes.id = cn.journal_entry_id
+		JOIN journal_entries jed   ON jed.id = si.journal_entry_id
+		WHERE ca.credit_note_id = $1 AND ca.fx_journal_entry_id IS NULL
+		  AND round(ca.amount_applied * jes.exchange_rate, 4)
+		   <> round(ca.amount_applied * jed.exchange_rate, 4)`,
+	update: `UPDATE sales_credit_applications SET fx_journal_entry_id = $1 WHERE id = $2`,
+	memo:   "Exchange difference on settlement of invoice %s",
+	arSide: true,
+}
+
 // AutoApplySalesCreditNote allocates a sales credit note's unapplied remainder
 // across the customer's open invoices (posted, same currency, with an
 // outstanding balance), oldest first — the credit-note analog of
 // AutoApplyCustomerPayment. Invoice availability counts payments and credit
-// notes combined, via the invoice_amount_settled helper (000012).
+// notes combined, via the invoice_amount_settled helper (000012). Like
+// payments, the note must itself be posted before it can be applied.
 func AutoApplySalesCreditNote(ctx context.Context, tx pgx.Tx, noteID int) ([]Application, error) {
 	var status string
 	err := tx.QueryRow(ctx, `SELECT status FROM sales_credit_notes WHERE id = $1`, noteID).Scan(&status)
@@ -223,8 +251,8 @@ func AutoApplySalesCreditNote(ctx context.Context, tx pgx.Tx, noteID int) ([]App
 	if err != nil {
 		return nil, err
 	}
-	if status == "void" {
-		return nil, fmt.Errorf("posting: sales credit note %d is void: %w", noteID, ErrNotPostable)
+	if status != "posted" {
+		return nil, fmt.Errorf("posting: sales credit note %d: %w", noteID, ErrNotPosted)
 	}
 
 	rows, err := tx.Query(ctx, `
@@ -269,7 +297,32 @@ RETURNING invoice_id, amount_applied::text`, noteID)
 		}
 		apps = append(apps, a)
 	}
-	return apps, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := postSettlementFX(ctx, tx, noteID, salesCreditFX); err != nil {
+		return nil, err
+	}
+	return apps, nil
+}
+
+var purchaseCreditFX = fxSpec{
+	candidates: `
+		SELECT ca.id, pb.bill_number, s.ap_account_id, cn.credit_note_date::text,
+		       (round(ca.amount_applied * jes.exchange_rate, 4)
+		      - round(ca.amount_applied * jed.exchange_rate, 4))::text
+		FROM purchase_credit_applications ca
+		JOIN purchase_credit_notes cn ON cn.id = ca.credit_note_id
+		JOIN suppliers s              ON s.id = cn.supplier_id
+		JOIN purchase_bills pb        ON pb.id = ca.bill_id
+		JOIN journal_entries jes      ON jes.id = cn.journal_entry_id
+		JOIN journal_entries jed      ON jed.id = pb.journal_entry_id
+		WHERE ca.credit_note_id = $1 AND ca.fx_journal_entry_id IS NULL
+		  AND round(ca.amount_applied * jes.exchange_rate, 4)
+		   <> round(ca.amount_applied * jed.exchange_rate, 4)`,
+	update: `UPDATE purchase_credit_applications SET fx_journal_entry_id = $1 WHERE id = $2`,
+	memo:   "Exchange difference on settlement of bill %s",
+	arSide: false,
 }
 
 // AutoApplyPurchaseCreditNote is the purchasing-side mirror of
@@ -284,8 +337,8 @@ func AutoApplyPurchaseCreditNote(ctx context.Context, tx pgx.Tx, noteID int) ([]
 	if err != nil {
 		return nil, err
 	}
-	if status == "void" {
-		return nil, fmt.Errorf("posting: purchase credit note %d is void: %w", noteID, ErrNotPostable)
+	if status != "posted" {
+		return nil, fmt.Errorf("posting: purchase credit note %d: %w", noteID, ErrNotPosted)
 	}
 
 	rows, err := tx.Query(ctx, `
@@ -330,7 +383,13 @@ RETURNING bill_id, amount_applied::text`, noteID)
 		}
 		apps = append(apps, a)
 	}
-	return apps, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := postSettlementFX(ctx, tx, noteID, purchaseCreditFX); err != nil {
+		return nil, err
+	}
+	return apps, nil
 }
 
 // UnpostSalesCreditNote reverses a posted sales credit note's journal entry

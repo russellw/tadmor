@@ -33,6 +33,8 @@ import {
   Invoices,
   SupplierCredits,
 } from "@/components/document-list"
+import { ExchangeRateForm } from "@/components/exchange-rate-form"
+import { ExchangeRates } from "@/components/exchange-rates"
 import { InventoryValuation } from "@/components/inventory-valuation"
 import { InvoiceForm } from "@/components/invoice-form"
 import { JournalEntryDetail } from "@/components/journal-entry"
@@ -66,6 +68,7 @@ import { Organizations } from "@/components/organizations"
 import { ProductForm } from "@/components/product-form"
 import { Products } from "@/components/products"
 import { ProfitAndLoss } from "@/components/profit-and-loss"
+import { SettingsScreen } from "@/components/settings"
 import { SupplierForm } from "@/components/supplier-form"
 import { Suppliers } from "@/components/suppliers"
 import { TaxCodeForm } from "@/components/tax-code-form"
@@ -131,6 +134,7 @@ const navGroups = [
     items: [
       { to: "/accounts", label: "Chart of Accounts" },
       { to: "/bank-statements", label: "Bank Reconciliation" },
+      { to: "/exchange-rates", label: "Exchange Rates" },
       { to: "/periods", label: "Periods" },
     ],
   },
@@ -140,6 +144,7 @@ const navGroups = [
       { to: "/organizations", label: "Organizations" },
       { to: "/tax-codes", label: "Tax Codes" },
       { to: "/payment-terms", label: "Payment Terms" },
+      { to: "/settings", label: "Settings" },
       // Users is appended for administrators only; the backend enforces the
       // same rule on the /users endpoints.
     ],
@@ -353,6 +358,16 @@ export default function App() {
             path="/bank-statements/:id/edit"
             element={<BankStatementForm mode="edit" />}
           />
+          <Route path="/exchange-rates" element={<ExchangeRates />} />
+          <Route
+            path="/exchange-rates/new"
+            element={<ExchangeRateForm mode="create" />}
+          />
+          <Route
+            path="/exchange-rates/:currency/:date"
+            element={<ExchangeRateForm mode="edit" />}
+          />
+          <Route path="/settings" element={<SettingsScreen />} />
           <Route path="/periods" element={<Periods />} />
           <Route path="/periods/new" element={<PeriodForm mode="create" />} />
           <Route path="/periods/:id" element={<PeriodForm mode="edit" />} />

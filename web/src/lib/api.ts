@@ -410,6 +410,74 @@ export function updatePaymentTerm(
   return send("PUT", `/payment-terms/${encodeURIComponent(code)}`, input)
 }
 
+/** The ledger's base (functional) currency and the account that absorbs
+ *  realized exchange gains/losses, mirroring master.Settings. base_currency is
+ *  frozen by the database once journal entries exist. */
+export interface Settings {
+  base_currency: string
+  fx_gain_loss_account_id: number | null
+}
+
+export function getSettings(): Promise<Settings> {
+  return get<Settings>("/settings")
+}
+
+/** Replace the ledger settings. Admin-only; the FX account must be postable
+ *  and active, and the base currency can only change on an empty ledger. */
+export function updateSettings(input: Settings): Promise<void> {
+  return send("PUT", "/settings", input)
+}
+
+/** A manually maintained exchange rate (natural key: currency_code +
+ *  rate_date), mirroring master.ExchangeRate. rate is how many base-currency
+ *  units one unit of currency_code buys; posting uses the latest rate on or
+ *  before a document's date. */
+export interface ExchangeRate {
+  currency_code: string
+  rate_date: string
+  rate: string
+}
+
+export interface ExchangeRateInput {
+  currency_code: string
+  rate_date: string
+  rate: string
+}
+
+export function listExchangeRates(): Promise<ExchangeRate[]> {
+  return get<ExchangeRate[]>("/exchange-rates")
+}
+
+export function createExchangeRate(
+  input: ExchangeRateInput,
+): Promise<{ currency_code: string; rate_date: string }> {
+  return post<{ currency_code: string; rate_date: string }>(
+    "/exchange-rates",
+    input,
+  )
+}
+
+export function updateExchangeRate(
+  currency: string,
+  date: string,
+  input: ExchangeRateInput,
+): Promise<void> {
+  return send(
+    "PUT",
+    `/exchange-rates/${encodeURIComponent(currency)}/${encodeURIComponent(date)}`,
+    input,
+  )
+}
+
+export function deleteExchangeRate(
+  currency: string,
+  date: string,
+): Promise<void> {
+  return del(
+    `/exchange-rates/${encodeURIComponent(currency)}/${encodeURIComponent(date)}`,
+  )
+}
+
 /** A fiscal year, mirroring master.FiscalYear. Dates are YYYY-MM-DD strings. */
 export interface FiscalYear {
   id: number
@@ -1203,15 +1271,14 @@ export function deleteStockMovement(id: number): Promise<void> {
   return del(`/stock-movements/${id}`)
 }
 
-/** Post a movement to the GL. currency is required; credit_account_id is the
- *  clearing account a receipt credits (ignored for issues). */
+/** Post a movement to the GL. Stock movements carry no currency of their own
+ *  and post in the base currency; credit_account_id is the clearing account a
+ *  receipt credits (ignored for issues). */
 export function postStockMovement(
   id: number,
-  currency: string,
   creditAccountId: number | null,
 ): Promise<{ journal_entry_id: number }> {
   return post<{ journal_entry_id: number }>(`/stock-movements/${id}/post`, {
-    currency,
     credit_account_id: creditAccountId ?? 0,
   })
 }
@@ -1322,14 +1389,19 @@ export function getCashFlow(from: string, to: string): Promise<CashFlow> {
 
 /** One posted journal line on an account's ledger, mirroring
  *  reporting.LedgerRow. memo prefers the line's own memo, falling back to
- *  the entry's. */
+ *  the entry's. debit/credit are the entry's transaction-currency amounts;
+ *  base_debit/base_credit are the base-currency conversions the reported
+ *  balance sums. */
 export interface LedgerRow {
   journal_entry_id: number
   entry_date: string
   reference: string | null
   memo: string | null
+  currency_code: string
   debit: string
   credit: string
+  base_debit: string
+  base_credit: string
 }
 
 /** An account's posted journal lines in entry order over the inclusive
@@ -1348,7 +1420,9 @@ export function getAccountLedger(
   )
 }
 
-/** One line of a journal entry, mirroring reporting.JournalEntryLine. */
+/** One line of a journal entry, mirroring reporting.JournalEntryLine.
+ *  debit/credit are transaction-currency amounts; base_debit/base_credit are
+ *  their base-currency conversions. */
 export interface JournalEntryLine {
   line_no: number
   account_id: number
@@ -1357,13 +1431,18 @@ export interface JournalEntryLine {
   memo: string | null
   debit: string
   credit: string
+  base_debit: string
+  base_credit: string
 }
 
-/** A journal entry with all of its lines, mirroring reporting.JournalEntry. */
+/** A journal entry with all of its lines, mirroring reporting.JournalEntry.
+ *  exchange_rate is the rate the entry's currency was converted to base at
+ *  (1 for base-currency entries). */
 export interface JournalEntry {
   id: number
   entry_date: string
   currency_code: string
+  exchange_rate: string
   reference: string | null
   memo: string | null
   status: string

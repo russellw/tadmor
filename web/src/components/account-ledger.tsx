@@ -60,15 +60,23 @@ export function AccountLedger() {
     }
   }, [accountId, from, to])
 
-  // Running balance, debit-positive (matching the trial balance's convention).
+  // Running balance, debit-positive and in the base currency, matching the
+  // trial balance (which sums base amounts across currencies).
   const balances: string[] = []
   if (rows !== null) {
     let running = "0.0000"
     for (const r of rows) {
-      running = sumAmounts([running, r.debit, negateAmount(r.credit)])
+      running = sumAmounts([running, r.base_debit, negateAmount(r.base_credit)])
       balances.push(running)
     }
   }
+
+  // Only surface the transaction-vs-base split when the account actually holds
+  // foreign-currency activity; a pure base-currency ledger stays a plain
+  // debit/credit/balance table.
+  const hasFx =
+    rows !== null &&
+    rows.some((r) => r.debit !== r.base_debit || r.credit !== r.base_credit)
 
   return (
     <section className="mx-auto w-full max-w-5xl p-6">
@@ -140,8 +148,15 @@ export function AccountLedger() {
               <TableHead className="w-32">Date</TableHead>
               <TableHead className="w-24">Entry</TableHead>
               <TableHead>Memo</TableHead>
+              {hasFx && <TableHead className="w-16">Cur</TableHead>}
               <TableHead className="text-right">Debit</TableHead>
               <TableHead className="text-right">Credit</TableHead>
+              {hasFx && (
+                <>
+                  <TableHead className="text-right">Base Dr</TableHead>
+                  <TableHead className="text-right">Base Cr</TableHead>
+                </>
+              )}
               <TableHead className="text-right">Balance</TableHead>
             </TableRow>
           </TableHeader>
@@ -160,17 +175,43 @@ export function AccountLedger() {
                 <TableCell className="text-muted-foreground">
                   {r.memo ?? r.reference ?? "—"}
                 </TableCell>
+                {hasFx && (
+                  <TableCell className="font-mono text-muted-foreground">
+                    {r.currency_code}
+                  </TableCell>
+                )}
                 <AmountCell value={r.debit} />
                 <AmountCell value={r.credit} />
+                {hasFx && (
+                  <>
+                    <AmountCell value={r.base_debit} />
+                    <AmountCell value={r.base_credit} />
+                  </>
+                )}
                 <AmountCell value={balances[i]} />
               </TableRow>
             ))}
           </TableBody>
           <TableFooter>
             <TableRow>
-              <TableCell colSpan={3}>Total</TableCell>
-              <AmountCell value={sumAmounts(rows.map((r) => r.debit))} />
-              <AmountCell value={sumAmounts(rows.map((r) => r.credit))} />
+              <TableCell colSpan={hasFx ? 4 : 3}>
+                {hasFx ? "Total (base)" : "Total"}
+              </TableCell>
+              {hasFx ? (
+                <>
+                  <TableCell />
+                  <TableCell />
+                  <AmountCell value={sumAmounts(rows.map((r) => r.base_debit))} />
+                  <AmountCell
+                    value={sumAmounts(rows.map((r) => r.base_credit))}
+                  />
+                </>
+              ) : (
+                <>
+                  <AmountCell value={sumAmounts(rows.map((r) => r.debit))} />
+                  <AmountCell value={sumAmounts(rows.map((r) => r.credit))} />
+                </>
+              )}
               <AmountCell value={balances[balances.length - 1]} />
             </TableRow>
           </TableFooter>

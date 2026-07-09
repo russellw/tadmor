@@ -18,6 +18,20 @@ import (
 // ErrNotFound is returned when a requested record does not exist.
 var ErrNotFound = errors.New("not found")
 
+// ErrInvalid marks a business-rule violation the caller could fix by changing
+// the input (as opposed to a plain not-found). The HTTP layer maps it to 422
+// and surfaces the message. Test membership with errors.Is and read the
+// user-facing text with Error().
+var ErrInvalid = errors.New("invalid input")
+
+type invalidError struct{ msg string }
+
+func (e invalidError) Error() string      { return e.msg }
+func (invalidError) Is(target error) bool { return target == ErrInvalid }
+
+// errInvalid builds an ErrInvalid carrying a specific, user-facing message.
+func errInvalid(msg string) error { return invalidError{msg} }
+
 // Querier is satisfied by both *pgxpool.Pool and pgx.Tx.
 type Querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)

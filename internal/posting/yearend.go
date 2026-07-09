@@ -84,7 +84,7 @@ func CloseFiscalYear(ctx context.Context, tx pgx.Tx, fiscalYearID, retainedEarni
 	// cumulative over all posted entries up to the year end (equal to the
 	// year's own activity because every earlier year is already swept).
 	const balancesSQL = `
-		SELECT jl.account_id, sum(jl.debit - jl.credit) AS bal
+		SELECT jl.account_id, sum(jl.base_debit - jl.base_credit) AS bal
 		FROM journal_lines jl
 		JOIN journal_entries je ON je.id = jl.journal_entry_id
 		JOIN accounts a ON a.id = jl.account_id
@@ -92,7 +92,7 @@ func CloseFiscalYear(ctx context.Context, tx pgx.Tx, fiscalYearID, retainedEarni
 		  AND a.account_type IN ('revenue', 'expense')
 		  AND je.entry_date <= $1::date
 		GROUP BY jl.account_id
-		HAVING sum(jl.debit - jl.credit) <> 0`
+		HAVING sum(jl.base_debit - jl.base_credit) <> 0`
 
 	var toSweep int
 	if err := tx.QueryRow(ctx,
@@ -101,15 +101,11 @@ func CloseFiscalYear(ctx context.Context, tx pgx.Tx, fiscalYearID, retainedEarni
 	}
 
 	if toSweep > 0 {
-		// The entry itself is currency-neutral (it restates GL balances), but
-		// the header needs a currency: use the one most of the ledger is in.
-		var currency string
-		if err := tx.QueryRow(ctx,
-			`SELECT currency_code FROM journal_entries
-			 WHERE status = 'posted' AND entry_date <= $1::date
-			 GROUP BY currency_code ORDER BY count(*) DESC, currency_code LIMIT 1`,
-			endDate).Scan(&currency); err != nil {
-			return res, err
+		// The sweep restates base-currency balances, so the entry is posted
+		// in the base currency.
+		currency, cErr := baseCurrency(ctx, tx)
+		if cErr != nil {
+			return res, cErr
 		}
 
 		// Land the entry in the period covering the year-end date. A closed
@@ -145,7 +141,8 @@ func CloseFiscalYear(ctx context.Context, tx pgx.Tx, fiscalYearID, retainedEarni
 		}
 
 		// One line per swept account on its balancing side, then the retained-
-		// earnings line for the net income (credit) or net loss (debit).
+		// earnings line for the net income (credit) or net loss (debit). The
+		// swept balances are base amounts, so both amount pairs are equal.
 		if _, err := tx.Exec(ctx,
 			`WITH bal AS (`+balancesSQL+`),
 			 lines AS (
@@ -162,8 +159,8 @@ func CloseFiscalYear(ctx context.Context, tx pgx.Tx, fiscalYearID, retainedEarni
 			     FROM (SELECT sum(bal) AS total FROM bal) t
 			     WHERE t.total <> 0
 			 )
-			 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo)
-			 SELECT $2, row_number() OVER (ORDER BY ord, account_id), account_id, debit, credit, memo
+			 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
+			 SELECT $2, row_number() OVER (ORDER BY ord, account_id), account_id, debit, credit, memo, debit, credit
 			 FROM lines`, endDate, je, retainedEarningsAccountID, name); err != nil {
 			return res, err
 		}

@@ -75,8 +75,8 @@ type AccountActivityRow struct {
 func ProfitAndLoss(ctx context.Context, q Querier, from, to *string) ([]AccountActivityRow, error) {
 	return accountActivityRows(ctx, q,
 		`SELECT a.id, a.code, a.name, a.account_type,
-		        sum(CASE WHEN a.account_type = 'revenue' THEN jl.credit - jl.debit
-		                 ELSE jl.debit - jl.credit END)::numeric(19,4)::text
+		        sum(CASE WHEN a.account_type = 'revenue' THEN jl.base_credit - jl.base_debit
+		                 ELSE jl.base_debit - jl.base_credit END)::numeric(19,4)::text
 		 FROM journal_lines jl
 		 JOIN journal_entries je ON je.id = jl.journal_entry_id
 		 JOIN accounts a ON a.id = jl.account_id
@@ -104,8 +104,8 @@ type BalanceSheet struct {
 func BalanceSheetAsOf(ctx context.Context, q Querier, asOf *string) (BalanceSheet, error) {
 	rows, err := accountActivityRows(ctx, q,
 		`SELECT a.id, a.code, a.name, a.account_type,
-		        sum(CASE WHEN a.account_type = 'asset' THEN jl.debit - jl.credit
-		                 ELSE jl.credit - jl.debit END)::numeric(19,4)::text
+		        sum(CASE WHEN a.account_type = 'asset' THEN jl.base_debit - jl.base_credit
+		                 ELSE jl.base_credit - jl.base_debit END)::numeric(19,4)::text
 		 FROM journal_lines jl
 		 JOIN journal_entries je ON je.id = jl.journal_entry_id
 		 JOIN accounts a ON a.id = jl.account_id
@@ -119,7 +119,7 @@ func BalanceSheetAsOf(ctx context.Context, q Querier, asOf *string) (BalanceShee
 	}
 	bs := BalanceSheet{Rows: rows}
 	err = q.QueryRow(ctx,
-		`SELECT COALESCE(sum(jl.credit - jl.debit), 0)::numeric(19,4)::text
+		`SELECT COALESCE(sum(jl.base_credit - jl.base_debit), 0)::numeric(19,4)::text
 		 FROM journal_lines jl
 		 JOIN journal_entries je ON je.id = jl.journal_entry_id
 		 JOIN accounts a ON a.id = jl.account_id
@@ -167,7 +167,7 @@ func CashFlowStatement(ctx context.Context, q Querier, from, to *string) (CashFl
 	// Net income over the range, credit-positive: the operating section's
 	// starting point.
 	err := q.QueryRow(ctx,
-		`SELECT COALESCE(sum(jl.credit - jl.debit), 0)::numeric(19,4)::text
+		`SELECT COALESCE(sum(jl.base_credit - jl.base_debit), 0)::numeric(19,4)::text
 		 FROM journal_lines jl
 		 JOIN journal_entries je ON je.id = jl.journal_entry_id
 		 JOIN accounts a ON a.id = jl.account_id
@@ -185,7 +185,7 @@ func CashFlowStatement(ctx context.Context, q Querier, from, to *string) (CashFl
 	// as 0.0000.
 	rows, err := q.Query(ctx,
 		`SELECT a.id, a.code, a.name, a.cash_flow_activity,
-		        sum(jl.credit - jl.debit)::numeric(19,4)::text
+		        sum(jl.base_credit - jl.base_debit)::numeric(19,4)::text
 		 FROM journal_lines jl
 		 JOIN journal_entries je ON je.id = jl.journal_entry_id
 		 JOIN accounts a ON a.id = jl.account_id
@@ -217,12 +217,12 @@ func CashFlowStatement(ctx context.Context, q Querier, from, to *string) (CashFl
 	// The cash accounts themselves, debit-positive: balance before the range,
 	// movement inside it, and balance at its end.
 	return cf, q.QueryRow(ctx,
-		`SELECT COALESCE(sum(jl.debit - jl.credit)
+		`SELECT COALESCE(sum(jl.base_debit - jl.base_credit)
 		            FILTER (WHERE $1::date IS NOT NULL AND je.entry_date < $1::date), 0)::numeric(19,4)::text,
-		        COALESCE(sum(jl.debit - jl.credit)
+		        COALESCE(sum(jl.base_debit - jl.base_credit)
 		            FILTER (WHERE ($1::date IS NULL OR je.entry_date >= $1::date)
 		                      AND ($2::date IS NULL OR je.entry_date <= $2::date)), 0)::numeric(19,4)::text,
-		        COALESCE(sum(jl.debit - jl.credit)
+		        COALESCE(sum(jl.base_debit - jl.base_credit)
 		            FILTER (WHERE $2::date IS NULL OR je.entry_date <= $2::date), 0)::numeric(19,4)::text
 		 FROM journal_lines jl
 		 JOIN journal_entries je ON je.id = jl.journal_entry_id
@@ -250,14 +250,19 @@ func accountActivityRows(ctx context.Context, q Querier, sql string, args ...any
 }
 
 // LedgerRow is one posted journal line on an account's ledger. Memo prefers
-// the line's own memo, falling back to the entry's.
+// the line's own memo, falling back to the entry's. Debit/Credit are the
+// entry's transaction-currency amounts; BaseDebit/BaseCredit are what the
+// account's reported balance sums.
 type LedgerRow struct {
 	JournalEntryID int     `json:"journal_entry_id"`
 	EntryDate      string  `json:"entry_date"`
 	Reference      *string `json:"reference"`
 	Memo           *string `json:"memo"`
+	Currency       string  `json:"currency_code"`
 	Debit          string  `json:"debit"`
 	Credit         string  `json:"credit"`
+	BaseDebit      string  `json:"base_debit"`
+	BaseCredit     string  `json:"base_credit"`
 }
 
 // AccountLedger returns an account's posted journal lines in entry order over
@@ -274,7 +279,9 @@ func AccountLedger(ctx context.Context, q Querier, accountID int, from, to *stri
 	}
 	rows, err := q.Query(ctx,
 		`SELECT je.id, je.entry_date::text, je.reference, COALESCE(jl.memo, je.memo),
-		        jl.debit::numeric(19,4)::text, jl.credit::numeric(19,4)::text
+		        je.currency_code,
+		        jl.debit::numeric(19,4)::text, jl.credit::numeric(19,4)::text,
+		        jl.base_debit::numeric(19,4)::text, jl.base_credit::numeric(19,4)::text
 		 FROM journal_lines jl
 		 JOIN journal_entries je ON je.id = jl.journal_entry_id
 		 WHERE jl.account_id = $1
@@ -291,7 +298,7 @@ func AccountLedger(ctx context.Context, q Querier, accountID int, from, to *stri
 	for rows.Next() {
 		var r LedgerRow
 		if err := rows.Scan(&r.JournalEntryID, &r.EntryDate, &r.Reference, &r.Memo,
-			&r.Debit, &r.Credit); err != nil {
+			&r.Currency, &r.Debit, &r.Credit, &r.BaseDebit, &r.BaseCredit); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -300,6 +307,8 @@ func AccountLedger(ctx context.Context, q Querier, accountID int, from, to *stri
 }
 
 // JournalEntryLine is one line of a journal entry with its account resolved.
+// Debit/Credit are transaction-currency amounts, BaseDebit/BaseCredit their
+// base-currency conversions.
 type JournalEntryLine struct {
 	LineNo      int     `json:"line_no"`
 	AccountID   int     `json:"account_id"`
@@ -308,26 +317,31 @@ type JournalEntryLine struct {
 	Memo        *string `json:"memo"`
 	Debit       string  `json:"debit"`
 	Credit      string  `json:"credit"`
+	BaseDebit   string  `json:"base_debit"`
+	BaseCredit  string  `json:"base_credit"`
 }
 
-// JournalEntry is one journal entry with all of its lines.
+// JournalEntry is one journal entry with all of its lines. ExchangeRate is
+// the rate the entry's currency was converted to base at (1 for base-currency
+// entries).
 type JournalEntry struct {
-	ID        int                `json:"id"`
-	EntryDate string             `json:"entry_date"`
-	Currency  string             `json:"currency_code"`
-	Reference *string            `json:"reference"`
-	Memo      *string            `json:"memo"`
-	Status    string             `json:"status"`
-	Lines     []JournalEntryLine `json:"lines"`
+	ID           int                `json:"id"`
+	EntryDate    string             `json:"entry_date"`
+	Currency     string             `json:"currency_code"`
+	ExchangeRate string             `json:"exchange_rate"`
+	Reference    *string            `json:"reference"`
+	Memo         *string            `json:"memo"`
+	Status       string             `json:"status"`
+	Lines        []JournalEntryLine `json:"lines"`
 }
 
 // JournalEntryByID returns a journal entry and its lines, or ErrNotFound.
 func JournalEntryByID(ctx context.Context, q Querier, entryID int) (JournalEntry, error) {
 	var e JournalEntry
 	err := q.QueryRow(ctx,
-		`SELECT id, entry_date::text, currency_code, reference, memo, status
+		`SELECT id, entry_date::text, currency_code, trim_scale(exchange_rate)::text, reference, memo, status
 		 FROM journal_entries WHERE id = $1`, entryID).Scan(
-		&e.ID, &e.EntryDate, &e.Currency, &e.Reference, &e.Memo, &e.Status)
+		&e.ID, &e.EntryDate, &e.Currency, &e.ExchangeRate, &e.Reference, &e.Memo, &e.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return e, ErrNotFound
 	}
@@ -336,7 +350,8 @@ func JournalEntryByID(ctx context.Context, q Querier, entryID int) (JournalEntry
 	}
 	rows, err := q.Query(ctx,
 		`SELECT jl.line_no, jl.account_id, a.code, a.name, jl.memo,
-		        jl.debit::numeric(19,4)::text, jl.credit::numeric(19,4)::text
+		        jl.debit::numeric(19,4)::text, jl.credit::numeric(19,4)::text,
+		        jl.base_debit::numeric(19,4)::text, jl.base_credit::numeric(19,4)::text
 		 FROM journal_lines jl
 		 JOIN accounts a ON a.id = jl.account_id
 		 WHERE jl.journal_entry_id = $1
@@ -350,7 +365,7 @@ func JournalEntryByID(ctx context.Context, q Querier, entryID int) (JournalEntry
 	for rows.Next() {
 		var l JournalEntryLine
 		if err := rows.Scan(&l.LineNo, &l.AccountID, &l.AccountCode, &l.AccountName,
-			&l.Memo, &l.Debit, &l.Credit); err != nil {
+			&l.Memo, &l.Debit, &l.Credit, &l.BaseDebit, &l.BaseCredit); err != nil {
 			return e, err
 		}
 		e.Lines = append(e.Lines, l)

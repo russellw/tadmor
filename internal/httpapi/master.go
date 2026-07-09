@@ -61,6 +61,73 @@ func (s *Server) registerMasterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /accounting-periods", s.createAccountingPeriod)
 	mux.HandleFunc("GET /accounting-periods/{id}", s.getAccountingPeriod)
 	mux.HandleFunc("PUT /accounting-periods/{id}", s.updateAccountingPeriod)
+
+	// Ledger settings (base currency + FX account). Changing them rewrites how
+	// every report reads, so the update is admin-only, like unpost.
+	mux.HandleFunc("GET /settings", s.getSettings)
+	mux.HandleFunc("PUT /settings", s.admin(s.updateSettings))
+
+	// Exchange rates, keyed by currency + date. Any authenticated user may
+	// maintain them; posting reads the latest on or before the document date.
+	mux.HandleFunc("GET /exchange-rates", s.listExchangeRates)
+	mux.HandleFunc("POST /exchange-rates", s.createExchangeRate)
+	mux.HandleFunc("PUT /exchange-rates/{currency}/{date}", s.updateExchangeRate)
+	mux.HandleFunc("DELETE /exchange-rates/{currency}/{date}", s.deleteExchangeRate)
+}
+
+// ---- ledger settings (singleton) ----
+
+func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
+	v, err := master.GetSettings(r.Context(), s.pool)
+	s.okJSON(w, v, err)
+}
+
+func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
+	var in master.Settings
+	if !decodeValid(w, r, &in) {
+		return
+	}
+	s.updated(w, master.UpdateSettings(r.Context(), s.pool, in))
+}
+
+// ---- exchange rates (natural key: currency + date) ----
+
+func (s *Server) listExchangeRates(w http.ResponseWriter, r *http.Request) {
+	v, err := master.ListExchangeRates(r.Context(), s.pool)
+	s.okJSON(w, v, err)
+}
+
+func (s *Server) createExchangeRate(w http.ResponseWriter, r *http.Request) {
+	var in master.ExchangeRateInput
+	if !decodeValid(w, r, &in) {
+		return
+	}
+	if err := master.CreateExchangeRate(r.Context(), s.pool, in); err != nil {
+		s.writeMasterError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"currency_code": in.CurrencyCode, "rate_date": in.RateDate})
+}
+
+func (s *Server) updateExchangeRate(w http.ResponseWriter, r *http.Request) {
+	currency, date := r.PathValue("currency"), r.PathValue("date")
+	var in master.ExchangeRateInput
+	in.CurrencyCode, in.RateDate = currency, date
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	in.CurrencyCode, in.RateDate = currency, date // path wins over body
+	if msg := in.Validate(); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	s.updated(w, master.UpdateExchangeRate(r.Context(), s.pool, currency, date, in))
+}
+
+func (s *Server) deleteExchangeRate(w http.ResponseWriter, r *http.Request) {
+	s.updated(w, master.DeleteExchangeRate(r.Context(), s.pool,
+		r.PathValue("currency"), r.PathValue("date")))
 }
 
 // ---- response helpers ----
@@ -115,6 +182,10 @@ func (s *Server) updated(w http.ResponseWriter, err error) {
 func (s *Server) writeMasterError(w http.ResponseWriter, err error) {
 	if errors.Is(err, master.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if errors.Is(err, master.ErrInvalid) {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	var pgErr *pgconn.PgError
