@@ -1671,3 +1671,168 @@ export function receivePurchaseOrder(
 ): Promise<{ movement_ids: number[] }> {
   return post<{ movement_ids: number[] }>(`/purchase-orders/${id}/receive`, input)
 }
+
+// ---------------------------------------------------------------------------
+// Bank reconciliation
+// ---------------------------------------------------------------------------
+
+/** A bank statement header with derived matching progress, mirroring
+ *  reporting.BankStatementSummary. lines_total is the signed sum of the line
+ *  amounts (deposits positive); difference is opening + lines_total - closing,
+ *  so "0.0000" means the statement adds up. */
+export interface BankStatement {
+  id: number
+  account_id: number
+  account_code: string
+  account_name: string
+  statement_date: string
+  opening_balance: string
+  closing_balance: string
+  reference: string | null
+  status: string
+  line_count: number
+  matched_count: number
+  lines_total: string
+  difference: string
+}
+
+/** The writable header of a bank statement, mirroring banking.StatementInput. */
+export interface BankStatementInput {
+  account_id: number
+  statement_date: string
+  opening_balance: string
+  closing_balance: string
+  reference: string | null
+}
+
+/** One statement transaction, mirroring reporting.BankStatementLine. The
+ *  journal fields are set when the line is matched. */
+export interface BankStatementLine {
+  id: number
+  line_no: number
+  txn_date: string
+  description: string
+  reference: string | null
+  amount: string
+  journal_line_id: number | null
+  journal_entry_id: number | null
+  entry_date: string | null
+  entry_memo: string | null
+}
+
+/** Input for one statement transaction, mirroring banking.LineInput. Amount
+ *  is signed from the book's perspective: deposits positive. */
+export interface BankStatementLineInput {
+  txn_date: string
+  description: string
+  reference: string | null
+  amount: string
+}
+
+/** A posted journal line on the statement's account that no statement line
+ *  has claimed yet, mirroring reporting.BankMatchCandidate. Amount is signed
+ *  debit-positive, matching the statement-line convention. */
+export interface BankMatchCandidate {
+  journal_line_id: number
+  journal_entry_id: number
+  entry_date: string
+  reference: string | null
+  memo: string | null
+  amount: string
+}
+
+export function listBankStatements(): Promise<BankStatement[]> {
+  return get<BankStatement[]>("/bank-statements")
+}
+
+export function getBankStatement(id: number): Promise<BankStatement> {
+  return get<BankStatement>(`/bank-statements/${id}`)
+}
+
+export function getBankStatementLines(
+  id: number,
+): Promise<BankStatementLine[]> {
+  return get<BankStatementLine[]>(`/bank-statements/${id}/lines`)
+}
+
+export function getBankMatchCandidates(
+  id: number,
+): Promise<BankMatchCandidate[]> {
+  return get<BankMatchCandidate[]>(`/bank-statements/${id}/candidates`)
+}
+
+export function createBankStatement(
+  input: BankStatementInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>("/bank-statements", input)
+}
+
+/** Rewrite an open statement's header. */
+export function updateBankStatement(
+  id: number,
+  input: BankStatementInput,
+): Promise<void> {
+  return send("PUT", `/bank-statements/${id}`, input)
+}
+
+/** Delete an open statement; its lines go with it. */
+export function deleteBankStatement(id: number): Promise<void> {
+  return del(`/bank-statements/${id}`)
+}
+
+/** Append one transaction to an open statement. */
+export function addBankStatementLine(
+  id: number,
+  input: BankStatementLineInput,
+): Promise<{ id: number }> {
+  return post<{ id: number }>(`/bank-statements/${id}/lines`, input)
+}
+
+/** Append transactions parsed from CSV text: date (YYYY-MM-DD), description,
+ *  amount, optional reference. A header row is skipped automatically. */
+export function importBankStatementCSV(
+  id: number,
+  csv: string,
+): Promise<{ imported: number }> {
+  return post<{ imported: number }>(`/bank-statements/${id}/import`, { csv })
+}
+
+/** Pair each unmatched line with the unused posted journal line of the same
+ *  amount nearest in date; lines with no candidate are skipped. */
+export function autoMatchBankStatement(
+  id: number,
+): Promise<{ matched: number }> {
+  return post<{ matched: number }>(`/bank-statements/${id}/auto-match`, {})
+}
+
+/** Finalize a fully matched statement whose lines add up to the closing
+ *  balance. */
+export function reconcileBankStatement(id: number): Promise<void> {
+  return send("POST", `/bank-statements/${id}/reconcile`, {})
+}
+
+/** Return a reconciled statement to open so it can be corrected (admin-only). */
+export function reopenBankStatement(id: number): Promise<void> {
+  return send("POST", `/bank-statements/${id}/reopen`, {})
+}
+
+/** Pair one statement line with a posted journal line on the statement's
+ *  account carrying the same signed amount. */
+export function matchBankStatementLine(
+  lineId: number,
+  journalLineId: number,
+): Promise<void> {
+  return send("POST", `/bank-statement-lines/${lineId}/match`, {
+    journal_line_id: journalLineId,
+  })
+}
+
+/** Release a statement line's match. */
+export function unmatchBankStatementLine(lineId: number): Promise<void> {
+  return send("POST", `/bank-statement-lines/${lineId}/unmatch`, {})
+}
+
+/** Remove a transaction from an open statement (releasing its match). */
+export function deleteBankStatementLine(lineId: number): Promise<void> {
+  return del(`/bank-statement-lines/${lineId}`)
+}

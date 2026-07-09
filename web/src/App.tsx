@@ -9,6 +9,9 @@ import { AccountForm } from "@/components/account-form"
 import { AccountLedger } from "@/components/account-ledger"
 import { APAging, ARAging } from "@/components/aging-report"
 import { BalanceSheetReport } from "@/components/balance-sheet"
+import { BankStatementDetail } from "@/components/bank-statement-detail"
+import { BankStatementForm } from "@/components/bank-statement-form"
+import { BankStatements } from "@/components/bank-statements"
 import { BillForm } from "@/components/bill-form"
 import { CashFlowStatement } from "@/components/cash-flow"
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
@@ -127,6 +130,7 @@ const navGroups = [
     label: "Accounting",
     items: [
       { to: "/accounts", label: "Chart of Accounts" },
+      { to: "/bank-statements", label: "Bank Reconciliation" },
       { to: "/periods", label: "Periods" },
     ],
   },
@@ -335,6 +339,19 @@ export default function App() {
           <Route
             path="/warehouses/:id"
             element={<WarehouseForm mode="edit" />}
+          />
+          <Route path="/bank-statements" element={<BankStatements />} />
+          <Route
+            path="/bank-statements/new"
+            element={<BankStatementForm mode="create" />}
+          />
+          <Route
+            path="/bank-statements/:id"
+            element={<BankStatementDetail />}
+          />
+          <Route
+            path="/bank-statements/:id/edit"
+            element={<BankStatementForm mode="edit" />}
           />
           <Route path="/periods" element={<Periods />} />
           <Route path="/periods/new" element={<PeriodForm mode="create" />} />

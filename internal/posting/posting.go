@@ -40,6 +40,7 @@ var (
 	ErrYearNotClosed   = errors.New("fiscal year is not closed")
 	ErrPriorYearOpen   = errors.New("an earlier fiscal year is still open")
 	ErrLaterYearClosed = errors.New("a later fiscal year has already been closed")
+	ErrBankMatched     = errors.New("journal entry has lines matched to a bank statement")
 )
 
 // periodForDate returns the id of the open accounting period containing date.

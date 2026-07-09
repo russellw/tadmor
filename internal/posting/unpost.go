@@ -34,6 +34,20 @@ func reverseEntry(ctx context.Context, tx pgx.Tx, origID int) (int, error) {
 		return 0, fmt.Errorf("posting: journal entry %d: %w", origID, ErrAlreadyReversed)
 	}
 
+	// A line matched on a bank statement pins the entry: reversing it would
+	// leave the reconciliation pointing at history the books have disowned.
+	// The match must be released (or its statement reopened) first.
+	var matched bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM bank_statement_lines b
+		               JOIN journal_lines jl ON jl.id = b.journal_line_id
+		               WHERE jl.journal_entry_id = $1)`, origID).Scan(&matched); err != nil {
+		return 0, err
+	}
+	if matched {
+		return 0, fmt.Errorf("posting: journal entry %d: %w", origID, ErrBankMatched)
+	}
+
 	// Reverse into the open period containing the original date; if that period
 	// is now closed, periodForDate reports no open period.
 	period, err := periodForDate(ctx, tx, date)

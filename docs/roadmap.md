@@ -55,8 +55,15 @@ sections, deferred decisions, and a gap review against the project goal.
   accounts *are* cash; seeded/backfilled by name) and `cash_flow_activity`
   (which section a non-cash account's movements belong to), both editable on
   the account form.
-- **Bank reconciliation** — payments post to the GL, but there's no statement
-  import or matching.
+- ~~**Bank reconciliation**~~ — done 2026-07-09: statements are captured per
+  cash account at Accounting → Bank Reconciliation (CSV import —
+  `date,description,amount[,reference]` — or manual lines), matched 1:1
+  against posted journal lines on the account (auto-match pairs equal amounts
+  preferring the nearest entry date; a per-line picker resolves the rest),
+  and reconciled once every line is matched and opening + lines = closing.
+  Database triggers enforce the invariants (cash accounts only, match
+  amount/account/posted checks, reconciled statements frozen); unpost refuses
+  entries with matched lines, and reopen is admin-only.
 - **Document output** — PDFs done 2026-07-09: all six printable documents
   (sales invoices, bills, credit notes both ways, sales and purchase orders)
   render as PDFs (`GET /api/<collection>/{id}/pdf`, PDF button on each detail

@@ -124,6 +124,26 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("POST /fiscal-years/{id}/close", s.admin(s.closeFiscalYear))
 	api.HandleFunc("POST /fiscal-years/{id}/reopen", s.admin(s.reopenFiscalYear))
 
+	// Bank reconciliation: capture a statement for a cash account (manually
+	// or by CSV import), match its lines against posted journal lines, and
+	// reconcile it. Reopen is admin-only — like unpost, it unwinds a
+	// finalized state.
+	api.HandleFunc("POST /bank-statements", s.createBankStatement)
+	api.HandleFunc("GET /bank-statements", s.listBankStatements)
+	api.HandleFunc("GET /bank-statements/{id}", s.getBankStatement)
+	api.HandleFunc("PUT /bank-statements/{id}", s.updateBankStatement)
+	api.HandleFunc("DELETE /bank-statements/{id}", s.deleteBankStatement)
+	api.HandleFunc("GET /bank-statements/{id}/lines", s.getBankStatementLines)
+	api.HandleFunc("POST /bank-statements/{id}/lines", s.addBankStatementLine)
+	api.HandleFunc("GET /bank-statements/{id}/candidates", s.getBankMatchCandidates)
+	api.HandleFunc("POST /bank-statements/{id}/import", s.importBankStatement)
+	api.HandleFunc("POST /bank-statements/{id}/auto-match", s.autoMatchBankStatement)
+	api.HandleFunc("POST /bank-statements/{id}/reconcile", s.reconcileBankStatement)
+	api.HandleFunc("POST /bank-statements/{id}/reopen", s.admin(s.reopenBankStatement))
+	api.HandleFunc("POST /bank-statement-lines/{id}/match", s.matchBankStatementLine)
+	api.HandleFunc("POST /bank-statement-lines/{id}/unmatch", s.unmatchBankStatementLine)
+	api.HandleFunc("DELETE /bank-statement-lines/{id}", s.deleteBankStatementLine)
+
 	// Master data CRUD.
 	s.registerMasterRoutes(api)
 
@@ -907,6 +927,7 @@ func postingStatus(err error) int {
 		errors.Is(err, posting.ErrAlreadyPosted),
 		errors.Is(err, posting.ErrAlreadyReversed),
 		errors.Is(err, posting.ErrHasApplications),
+		errors.Is(err, posting.ErrBankMatched),
 		errors.Is(err, posting.ErrYearNotOpen),
 		errors.Is(err, posting.ErrYearNotClosed):
 		return http.StatusConflict
