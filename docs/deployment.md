@@ -79,6 +79,15 @@ sit inside the *single*-quoted `sh -c` string: root has to expand it — the
 env file is mode 600 root:root, so a double-quoted version fails with
 "Permission denied" because the unprivileged login shell expands it first.)
 
+Add `-admin=false` to provision an ordinary (non-admin) login instead — this is
+how the demo's public `guest@demo` account is created:
+
+```bash
+printf '%s\n' guest123 | \
+  ssh vps 'sudo sh -c '\''export $(cat /etc/tadmor/env) && \
+    /opt/tadmor/server -adduser -admin=false -email guest@demo -name "Guest"'\'''
+```
+
 ### 2.2 Nightly demo reseed
 
 The public guest account (`guest@demo`, see the README) lets anyone edit the

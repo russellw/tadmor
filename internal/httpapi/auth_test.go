@@ -28,7 +28,7 @@ func TestAuthFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	if _, err := auth.UpsertUser(ctx, pool, "alice@example.com", "Alice", hash); err != nil {
+	if _, err := auth.UpsertUser(ctx, pool, "alice@example.com", "Alice", hash, true); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 
@@ -144,7 +144,7 @@ func TestSessionOfDeactivatedUser(t *testing.T) {
 	defer cleanup()
 	dbtest.Reset(ctx, t, pool)
 
-	id, err := auth.UpsertUser(ctx, pool, "bob@example.com", "Bob", "unused")
+	id, err := auth.UpsertUser(ctx, pool, "bob@example.com", "Bob", "unused", true)
 	if err != nil {
 		t.Fatalf("seed user: %v", err)
 	}

@@ -32,9 +32,12 @@ sections, deferred decisions, and a gap review against the project goal.
 - **belunaro.com mail records** — the old OVH MX/SPF records were kept "for
   now" when DNS moved; keep, replace, or drop mail on the domain is still
   undecided.
-- **`-adduser` only creates admins** — the guest demo account had to be
-  provisioned by a hand-rolled SQL upsert. Let the CLI (or an admin screen
-  path) create non-admin users properly.
+- ~~**`-adduser` only creates admins**~~ — done 2026-07-10: `-adduser` gained
+  an `-admin` flag (defaults to true, preserving the bootstrap behavior);
+  `-admin=false` provisions an ordinary login, and `UpsertUser` now carries the
+  flag through (resetting an existing user's admin status to match on conflict).
+  This replaces the hand-rolled SQL upsert the demo's `guest@demo` account
+  needed; `docs/deployment.md` §2.1 documents the guest-account invocation.
 
 ## Functional gaps toward "comprehensive business management"
 

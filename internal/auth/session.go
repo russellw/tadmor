@@ -55,19 +55,20 @@ func Credentials(ctx context.Context, db DB, email string) (User, string, error)
 	return u, hash, nil
 }
 
-// UpsertUser creates a user or, when the email already exists, resets its name
-// and password and reactivates it. Returns the user id. The user is always an
-// administrator: this is the CLI bootstrap path, and whoever runs it on the
-// server can already do anything to the database.
-func UpsertUser(ctx context.Context, db DB, email, fullName, passwordHash string) (int, error) {
+// UpsertUser creates a user or, when the email already exists, resets its name,
+// password, and admin flag and reactivates it. Returns the user id. This is the
+// CLI bootstrap path; isAdmin lets it provision non-admin logins too (e.g. the
+// demo's guest account), and whoever runs it on the server can already do
+// anything to the database.
+func UpsertUser(ctx context.Context, db DB, email, fullName, passwordHash string, isAdmin bool) (int, error) {
 	var id int
 	err := db.QueryRow(ctx,
-		`INSERT INTO users (email, full_name, password_hash, is_admin) VALUES ($1, $2, $3, true)
+		`INSERT INTO users (email, full_name, password_hash, is_admin) VALUES ($1, $2, $3, $4)
 		 ON CONFLICT (email) DO UPDATE
 		 SET full_name = EXCLUDED.full_name, password_hash = EXCLUDED.password_hash,
-		     is_active = true, is_admin = true
+		     is_active = true, is_admin = EXCLUDED.is_admin
 		 RETURNING id`,
-		email, fullName, passwordHash).Scan(&id)
+		email, fullName, passwordHash, isAdmin).Scan(&id)
 	return id, err
 }
 

@@ -1,10 +1,13 @@
 // Command server runs the tadmor backend: it connects to Postgres, applies any
 // pending schema migrations, and serves the HTTP API until interrupted.
 //
-// With -adduser it instead creates (or resets the password of) an
-// administrator login and exits; use this to bootstrap the first account:
+// With -adduser it instead creates (or resets the password of) a login and
+// exits; use this to bootstrap the first account. The user is an administrator
+// unless -admin=false is given, which provisions an ordinary login (e.g. the
+// demo's guest account):
 //
 //	echo 'the-password' | server -adduser -email you@example.com -name 'Your Name'
+//	echo 'the-password' | server -adduser -admin=false -email guest@example.com -name 'Guest'
 package main
 
 import (
@@ -34,11 +37,12 @@ func main() {
 	adduser := flag.Bool("adduser", false, "create or update a login user (password read from stdin), then exit")
 	email := flag.String("email", "", "email of the user to add (with -adduser)")
 	name := flag.String("name", "", "full name of the user to add (with -adduser)")
+	admin := flag.Bool("admin", true, "make the added user an administrator (with -adduser); -admin=false for an ordinary login")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	if *adduser {
-		if err := runAddUser(*email, *name); err != nil {
+		if err := runAddUser(*email, *name, *admin); err != nil {
 			logger.Error("adduser failed", "err", err)
 			os.Exit(1)
 		}
@@ -52,7 +56,7 @@ func main() {
 
 // runAddUser reads a password from the first line of stdin and upserts the
 // user, applying pending migrations first so it works on a fresh database.
-func runAddUser(email, name string) error {
+func runAddUser(email, name string, isAdmin bool) error {
 	if email == "" || name == "" {
 		return errors.New("-adduser requires -email and -name")
 	}
@@ -83,11 +87,15 @@ func runAddUser(email, name string) error {
 	if err != nil {
 		return err
 	}
-	id, err := auth.UpsertUser(ctx, pool, email, name, hash)
+	id, err := auth.UpsertUser(ctx, pool, email, name, hash, isAdmin)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("user %d (%s) ready\n", id, email)
+	role := "admin"
+	if !isAdmin {
+		role = "user"
+	}
+	fmt.Printf("%s %d (%s) ready\n", role, id, email)
 	return nil
 }
 
