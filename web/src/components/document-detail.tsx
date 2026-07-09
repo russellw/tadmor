@@ -125,6 +125,7 @@ export function BillDetail() {
       post={postPurchaseBill}
       unpost={unpostPurchaseBill}
       deleteDocument={deletePurchaseBill}
+      pdfBasePath="/api/purchase-bills"
     />
   )
 }
@@ -147,6 +148,7 @@ export function CreditNoteDetail() {
       appliedDocLabel="Invoice"
       appliedDocBasePath="/invoices"
       applyHint="Apply allocates the unapplied credit to the customer's open invoices, oldest first."
+      pdfBasePath="/api/sales-credit-notes"
     />
   )
 }
@@ -169,6 +171,7 @@ export function SupplierCreditDetail() {
       appliedDocLabel="Bill"
       appliedDocBasePath="/bills"
       applyHint="Apply allocates the unapplied credit to the supplier's open bills, oldest first."
+      pdfBasePath="/api/purchase-credit-notes"
     />
   )
 }

@@ -142,7 +142,7 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /sales-invoices", s.listSalesInvoices)
 	api.HandleFunc("GET /sales-invoices/{id}", s.getSalesInvoice)
 	api.HandleFunc("GET /sales-invoices/{id}/lines", s.getSalesInvoiceLines)
-	api.HandleFunc("GET /sales-invoices/{id}/pdf", s.getSalesInvoicePDF)
+	api.HandleFunc("GET /sales-invoices/{id}/pdf", s.pdfHandler("invoice", printing.SalesInvoicePDF))
 	api.HandleFunc("GET /customer-payments", s.listCustomerPayments)
 	api.HandleFunc("GET /customer-payments/{id}", s.getCustomerPayment)
 	api.HandleFunc("GET /customer-payments/{id}/applications", s.getCustomerPaymentApplications)
@@ -152,20 +152,25 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /purchase-bills", s.listPurchaseBills)
 	api.HandleFunc("GET /purchase-bills/{id}", s.getPurchaseBill)
 	api.HandleFunc("GET /purchase-bills/{id}/lines", s.getPurchaseBillLines)
+	api.HandleFunc("GET /purchase-bills/{id}/pdf", s.pdfHandler("bill", printing.PurchaseBillPDF))
 	api.HandleFunc("GET /sales-credit-notes", s.listSalesCreditNotes)
 	api.HandleFunc("GET /sales-credit-notes/{id}", s.getSalesCreditNote)
 	api.HandleFunc("GET /sales-credit-notes/{id}/lines", s.getSalesCreditNoteLines)
 	api.HandleFunc("GET /sales-credit-notes/{id}/applications", s.getSalesCreditNoteApplications)
+	api.HandleFunc("GET /sales-credit-notes/{id}/pdf", s.pdfHandler("credit-note", printing.SalesCreditNotePDF))
 	api.HandleFunc("GET /purchase-credit-notes", s.listPurchaseCreditNotes)
 	api.HandleFunc("GET /purchase-credit-notes/{id}", s.getPurchaseCreditNote)
 	api.HandleFunc("GET /purchase-credit-notes/{id}/lines", s.getPurchaseCreditNoteLines)
 	api.HandleFunc("GET /purchase-credit-notes/{id}/applications", s.getPurchaseCreditNoteApplications)
+	api.HandleFunc("GET /purchase-credit-notes/{id}/pdf", s.pdfHandler("supplier-credit", printing.PurchaseCreditNotePDF))
 	api.HandleFunc("GET /sales-orders", s.listSalesOrders)
 	api.HandleFunc("GET /sales-orders/{id}", s.getSalesOrder)
 	api.HandleFunc("GET /sales-orders/{id}/lines", s.getSalesOrderLines)
+	api.HandleFunc("GET /sales-orders/{id}/pdf", s.pdfHandler("sales-order", printing.SalesOrderPDF))
 	api.HandleFunc("GET /purchase-orders", s.listPurchaseOrders)
 	api.HandleFunc("GET /purchase-orders/{id}", s.getPurchaseOrder)
 	api.HandleFunc("GET /purchase-orders/{id}/lines", s.getPurchaseOrderLines)
+	api.HandleFunc("GET /purchase-orders/{id}/pdf", s.pdfHandler("purchase-order", printing.PurchaseOrderPDF))
 
 	// User administration (admins only).
 	api.HandleFunc("GET /users", s.admin(s.listUsers))
@@ -398,23 +403,27 @@ func (s *Server) getSalesInvoice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, inv)
 }
 
-func (s *Server) getSalesInvoicePDF(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r)
-	if !ok {
-		return
+// pdfHandler serves a printable document: render produces the bytes and the
+// document number, prefix names the download file.
+func (s *Server) pdfHandler(prefix string, render func(context.Context, reporting.Querier, int) ([]byte, string, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := pathID(w, r)
+		if !ok {
+			return
+		}
+		out, number, err := render(r.Context(), s.pool, id)
+		if err != nil {
+			s.writeReadError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `inline; filename="`+pdfFilename(prefix, number)+`"`)
+		_, _ = w.Write(out)
 	}
-	out, number, err := printing.SalesInvoicePDF(r.Context(), s.pool, id)
-	if err != nil {
-		s.writeReadError(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", `inline; filename="`+pdfFilename(number)+`"`)
-	_, _ = w.Write(out)
 }
 
-// pdfFilename derives a safe download filename from an invoice number.
-func pdfFilename(number string) string {
+// pdfFilename derives a safe download filename from a document number.
+func pdfFilename(prefix, number string) string {
 	safe := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
@@ -423,7 +432,7 @@ func pdfFilename(number string) string {
 			return '-'
 		}
 	}, number)
-	return "invoice-" + safe + ".pdf"
+	return prefix + "-" + safe + ".pdf"
 }
 
 func (s *Server) listCustomerPayments(w http.ResponseWriter, r *http.Request) {

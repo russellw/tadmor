@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"tadmor/internal/pdf"
-	"tadmor/internal/reporting"
 )
 
 func TestFormatAmount(t *testing.T) {
@@ -82,20 +81,19 @@ func extractText(t *testing.T, out []byte) string {
 func strp(s string) *string { return &s }
 
 func TestRenderInvoice(t *testing.T) {
-	d := invoiceData{
+	d := docData{
+		kind:     "Invoice",
 		number:   "INV-42",
-		date:     "2026-07-01",
-		dueDate:  strp("2026-07-31"),
-		currency: "USD",
 		status:   "posted",
-		subtotal: "1500.0000",
-		taxTotal: "123.7500",
-		total:    "1623.7500",
-		applied:  "600.0000",
-		balance:  "1023.7500",
-		ref:      strp("PO-777"),
-		memo:     strp("Thank you for your business."),
-		customer: partyBlock{
+		currency: "USD",
+		meta: []metaItem{
+			{"Invoice no.", "INV-42"},
+			{"Invoice date", "2026-07-01"},
+			{"Due date", "2026-07-31"},
+			{"Currency", "USD"},
+		},
+		partyLabel: "BILL TO",
+		party: partyBlock{
 			name:    "Acme Corp",
 			legal:   strp("Acme Corporation Ltd"),
 			taxID:   strp("US12-3456789"),
@@ -105,16 +103,25 @@ func TestRenderInvoice(t *testing.T) {
 			name:    "Tadmor Trading",
 			address: []string{"5 Oasis Rd", "Palmyra"},
 		},
+		unitLabel:    "UNIT PRICE",
+		subtotal:     "1500.0000",
+		taxTotal:     "123.7500",
+		total:        "1623.7500",
+		applied:      "600.0000",
+		balance:      "1023.7500",
+		appliedLabel: "Amount paid",
+		balanceLabel: "Balance due",
+		ref:          strp("PO-777"),
+		memo:         strp("Thank you for your business."),
 	}
 	for i := 1; i <= 3; i++ {
-		d.lines = append(d.lines, reporting.SalesInvoiceLine{
-			LineNo: i, Description: fmt.Sprintf("Item %d", i),
-			Quantity: "2.0000", UnitPrice: "250.0000", TaxRate: "8.2500",
-			LineSubtotal: "500.0000", TaxAmount: "41.2500", LineTotal: "541.2500",
+		d.lines = append(d.lines, docLine{
+			no: i, desc: fmt.Sprintf("Item %d", i),
+			qty: "2.0000", unit: "250.0000", taxRate: "8.2500", subtotal: "500.0000",
 		})
 	}
 
-	out := renderInvoice(d)
+	out := renderDoc(d)
 	if !bytes.HasPrefix(out, []byte("%PDF-")) {
 		t.Fatal("output is not a PDF")
 	}
@@ -122,6 +129,7 @@ func TestRenderInvoice(t *testing.T) {
 	for _, want := range []string{
 		"INVOICE", "INV-42", "2026-07-31",
 		"Tadmor Trading", "Acme Corp", "US12-3456789",
+		"UNIT PRICE", "BILL TO",
 		"Item 3", "1,500.00", "USD 1,623.75", "Amount paid", "USD 1,023.75",
 		"Reference: PO-777", "Thank you for your business.",
 		"Page 1 of 1",
@@ -134,7 +142,7 @@ func TestRenderInvoice(t *testing.T) {
 	// A draft is labelled as such, and unpaid invoices show no payment rows.
 	d.status = "draft"
 	d.applied = "0.0000"
-	text = extractText(t, renderInvoice(d))
+	text = extractText(t, renderDoc(d))
 	if !strings.Contains(text, "DRAFT INVOICE") {
 		t.Error("draft invoice not labelled DRAFT")
 	}
@@ -144,17 +152,97 @@ func TestRenderInvoice(t *testing.T) {
 
 	// Enough lines to spill onto a second page repeats the table header.
 	for i := 4; i <= 60; i++ {
-		d.lines = append(d.lines, reporting.SalesInvoiceLine{
-			LineNo: i, Description: fmt.Sprintf("Item %d", i),
-			Quantity: "1.0000", UnitPrice: "10.0000", TaxRate: "0.0000",
-			LineSubtotal: "10.0000", TaxAmount: "0.0000", LineTotal: "10.0000",
+		d.lines = append(d.lines, docLine{
+			no: i, desc: fmt.Sprintf("Item %d", i),
+			qty: "1.0000", unit: "10.0000", taxRate: "0.0000", subtotal: "10.0000",
 		})
 	}
-	text = extractText(t, renderInvoice(d))
+	text = extractText(t, renderDoc(d))
 	if !strings.Contains(text, "Page 2 of") {
 		t.Error("long invoice did not paginate")
 	}
 	if strings.Count(text, "DESCRIPTION") < 2 {
 		t.Errorf("table header should repeat on the next page, found %d", strings.Count(text, "DESCRIPTION"))
+	}
+}
+
+// TestRenderOrder covers what orders do differently: no application rows even
+// with the fields unset, the purchasing unit label, and the cancelled title.
+func TestRenderOrder(t *testing.T) {
+	d := docData{
+		kind:     "Purchase Order",
+		number:   "PO-7",
+		status:   "open",
+		currency: "EUR",
+		meta: []metaItem{
+			{"Order no.", "PO-7"},
+			{"Order date", "2026-07-01"},
+			{"Expected receipt", "2026-07-20"},
+			{"Currency", "EUR"},
+		},
+		partyLabel: "SUPPLIER",
+		party:      partyBlock{name: "Beta GmbH"},
+		unitLabel:  "UNIT COST",
+		subtotal:   "100.0000",
+		taxTotal:   "0.0000",
+		total:      "100.0000",
+		lines: []docLine{
+			{no: 1, desc: "Widget", qty: "4.0000", unit: "25.0000", taxRate: "0.0000", subtotal: "100.0000"},
+		},
+	}
+
+	text := extractText(t, renderDoc(d))
+	for _, want := range []string{
+		"PURCHASE ORDER", "PO-7", "Expected receipt", "2026-07-20",
+		"SUPPLIER", "Beta GmbH", "UNIT COST", "EUR 100.00",
+		"Purchase Order PO-7", // footer
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("rendered order is missing %q", want)
+		}
+	}
+	if strings.Contains(text, "Amount paid") || strings.Contains(text, "Balance due") {
+		t.Error("order shows application rows")
+	}
+	if strings.Contains(text, "OPEN") {
+		t.Error("open order title should carry no status prefix")
+	}
+
+	d.status = "cancelled"
+	if text := extractText(t, renderDoc(d)); !strings.Contains(text, "CANCELLED PURCHASE ORDER") {
+		t.Error("cancelled order not labelled CANCELLED")
+	}
+}
+
+// TestRenderCreditNote checks the credit-note application labels.
+func TestRenderCreditNote(t *testing.T) {
+	d := docData{
+		kind:         "Credit Note",
+		number:       "CN-1",
+		status:       "posted",
+		currency:     "USD",
+		meta:         []metaItem{{"Credit note no.", "CN-1"}},
+		partyLabel:   "CREDIT TO",
+		party:        partyBlock{name: "Acme Corp"},
+		unitLabel:    "UNIT PRICE",
+		subtotal:     "50.0000",
+		taxTotal:     "0.0000",
+		total:        "50.0000",
+		applied:      "20.0000",
+		balance:      "30.0000",
+		appliedLabel: "Amount applied",
+		balanceLabel: "Unapplied",
+		lines: []docLine{
+			{no: 1, desc: "Returned goods", qty: "1.0000", unit: "50.0000", taxRate: "0.0000", subtotal: "50.0000"},
+		},
+	}
+
+	text := extractText(t, renderDoc(d))
+	for _, want := range []string{
+		"CREDIT NOTE", "CREDIT TO", "Amount applied", "Unapplied", "USD 30.00",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("rendered credit note is missing %q", want)
+		}
 	}
 }

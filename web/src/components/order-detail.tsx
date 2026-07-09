@@ -516,6 +516,15 @@ function OrderDetail({ config }: { config: OrderConfig }) {
             </Button>
           )}
           <Button variant="outline" asChild>
+            <a
+              href={`/api${config.basePath}/${orderId}/pdf`}
+              target="_blank"
+              rel="noopener"
+            >
+              PDF
+            </a>
+          </Button>
+          <Button variant="outline" asChild>
             <Link to={config.basePath}>Back</Link>
           </Button>
         </div>

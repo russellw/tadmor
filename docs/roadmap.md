@@ -57,14 +57,14 @@ sections, deferred decisions, and a gap review against the project goal.
   the account form.
 - **Bank reconciliation** — payments post to the GL, but there's no statement
   import or matching.
-- **Document output** — partially done 2026-07-09: sales invoices render as
-  PDFs (`GET /api/sales-invoices/{id}/pdf`, PDF button on the invoice screen)
-  via a stdlib-only writer in `internal/pdf` (standard-14 Helvetica, widths
-  generated from the Adobe AFMs) and layout/queries in `internal/printing`.
-  The issuer block comes from the organization flagged `is_self` (checkbox on
-  the organization form; at most one). Still open: emailing, and PDFs for the
-  other documents (bills, credit notes, orders) if wanted — the writer and
-  layout generalize.
+- **Document output** — PDFs done 2026-07-09: all six printable documents
+  (sales invoices, bills, credit notes both ways, sales and purchase orders)
+  render as PDFs (`GET /api/<collection>/{id}/pdf`, PDF button on each detail
+  screen) via a stdlib-only writer in `internal/pdf` (standard-14 Helvetica,
+  widths generated from the Adobe AFMs) and one shared layout in
+  `internal/printing` driven by a per-document spec (labels + queries). The
+  issuer block comes from the organization flagged `is_self` (checkbox on the
+  organization form; at most one). Still open: emailing.
 - ~~**New-month period creation is manual ops.**~~ — done 2026-07-08: posting
   now auto-creates the calendar-month period (clipped to the fiscal year's
   bounds) when the document date falls inside an open fiscal year that has no
