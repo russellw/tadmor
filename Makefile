@@ -47,6 +47,8 @@ deploy: release ## Build and deploy to the VPS (see docs/deployment.md)
 	scp bin/server vps:/tmp/tadmor-server
 	ssh vps 'sudo install -m 755 -o root -g root /tmp/tadmor-server /opt/tadmor/server && rm /tmp/tadmor-server && sudo systemctl restart tadmor'
 	sleep 2 && curl -fsS https://tadmor.belunaro.com/readyz && echo
+	@echo 'Reminder: curated demo-data changes made in prod are reverted by the'
+	@echo "nightly reseed unless captured with 'make demo-snapshot'."
 
 demo-snapshot: ## Snapshot the prod DB as the baseline the nightly demo reseed restores
 	ssh vps "sudo -u postgres sh -c 'pg_dump --exclude-table-data=sessions tadmor > /var/lib/tadmor-demo/seed.sql.tmp && mv /var/lib/tadmor-demo/seed.sql.tmp /var/lib/tadmor-demo/seed.sql'"

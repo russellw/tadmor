@@ -110,6 +110,6 @@ sections, deferred decisions, and a gap review against the project goal.
 
 - **README front-matter is stale**: it still says a front end is "to come",
   and its layout section omits `web/`, `deploy/`, and `docs/`.
-- **Demo dataset upkeep**: any curated prod-data change must be followed by
-  `make demo-snapshot` or the nightly reseed reverts it. A guard (e.g. a
-  reminder in the deploy target) could help if this keeps causing surprises.
+- ~~**Demo dataset upkeep**~~ — done 2026-07-09: any curated prod-data change
+  must be followed by `make demo-snapshot` or the nightly reseed reverts it.
+  The `deploy` target now prints that reminder on success as a guard.
