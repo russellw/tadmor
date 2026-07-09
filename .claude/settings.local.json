@@ -13,7 +13,9 @@
       "Bash(curl -s https://tadmor.belunaro.com/)",
       "Bash(./e2e/run-local.sh)",
       "Bash(pkill -f 'bin/server')",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(./run-local.sh)",
+      "Bash(command -v migrate)"
     ]
   }
 }
