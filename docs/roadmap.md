@@ -110,8 +110,11 @@ sections, deferred decisions, and a gap review against the project goal.
 
 ## Smaller housekeeping
 
-- **README front-matter is stale**: it still says a front end is "to come",
-  and its layout section omits `web/`, `deploy/`, and `docs/`.
+- ~~**README front-matter is stale**~~ — done 2026-07-09 (commit e847809): the
+  tagline no longer calls the front end "to come", the layout block now lists
+  `web/`, `deploy/`, `docs/`, and `db/seed/`, and the build section notes that
+  `make build` embeds the current `web/dist` (use `make release` / `make
+  web-build` after a front-end change).
 - ~~**Demo dataset upkeep**~~ — done 2026-07-09: any curated prod-data change
   must be followed by `make demo-snapshot` or the nightly reseed reverts it.
   The `deploy` target now prints that reminder on success as a guard.
