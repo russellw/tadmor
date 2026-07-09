@@ -42,7 +42,7 @@ func TestEmailDocumentEndpoint(t *testing.T) {
 	exec(`INSERT INTO organizations (name, tax_id, is_self) VALUES ('Tadmor Trading', 'TT-1', true)`)
 	exec(`INSERT INTO addresses (organization_id, line1, city, country_code)
 	      SELECT id, '5 Oasis Rd', 'Palmyra', 'US' FROM organizations WHERE is_self`)
-	exec(`WITH o AS (INSERT INTO organizations (name) VALUES ('Acme') RETURNING id)
+	exec(`WITH o AS (INSERT INTO organizations (name, email) VALUES ('Acme', 'billing@acme.example') RETURNING id)
 	      INSERT INTO customers (organization_id, ar_account_id)
 	      SELECT o.id, (SELECT id FROM accounts WHERE code='1100') FROM o`)
 	exec(`INSERT INTO addresses (organization_id, line1, city, country_code)
@@ -106,6 +106,51 @@ func TestEmailDocumentEndpoint(t *testing.T) {
 		}
 		if cap.last != nil {
 			t.Error("mailer was called for a missing document")
+		}
+	})
+
+	// With no "to" in the body the recipient falls back to the counterparty
+	// organization's email (Acme's, seeded above).
+	t.Run("falls back to counterparty email", func(t *testing.T) {
+		cap := &captureMailer{}
+		srv := httptest.NewServer(httpapi.NewServer(pool, log, httpapi.WithMailer(cap)).Handler(nil))
+		defer srv.Close()
+
+		status, body := postJSON(t, srv.URL+"/api/sales-invoices/"+itoa(invoiceID)+"/email", `{}`)
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body: %s", status, body)
+		}
+		if cap.last == nil {
+			t.Fatal("mailer received no message")
+		}
+		if len(cap.last.To) != 1 || cap.last.To[0] != "billing@acme.example" {
+			t.Errorf("To = %v, want [billing@acme.example]", cap.last.To)
+		}
+	})
+
+	// A counterparty with no email and no explicit "to" is a 422, and nothing
+	// is sent.
+	t.Run("no recipient available", func(t *testing.T) {
+		exec(`WITH o AS (INSERT INTO organizations (name) VALUES ('No-Email Co') RETURNING id)
+		      INSERT INTO customers (organization_id, ar_account_id)
+		      SELECT o.id, (SELECT id FROM accounts WHERE code='1100') FROM o`)
+		exec(`INSERT INTO sales_invoices (invoice_number, customer_id, invoice_date, currency_code)
+		      VALUES ('INV/2026 02', (SELECT id FROM customers ORDER BY id DESC LIMIT 1), '2026-06-16', 'USD')`)
+		var noEmailID int
+		if err := pool.QueryRow(ctx, `SELECT id FROM sales_invoices WHERE invoice_number = 'INV/2026 02'`).Scan(&noEmailID); err != nil {
+			t.Fatalf("scan invoice id: %v", err)
+		}
+
+		cap := &captureMailer{}
+		srv := httptest.NewServer(httpapi.NewServer(pool, log, httpapi.WithMailer(cap)).Handler(nil))
+		defer srv.Close()
+
+		status, _ := postJSON(t, srv.URL+"/api/sales-invoices/"+itoa(noEmailID)+"/email", `{}`)
+		if status != http.StatusUnprocessableEntity {
+			t.Fatalf("status = %d, want 422", status)
+		}
+		if cap.last != nil {
+			t.Error("mailer was called despite no recipient")
 		}
 	})
 }

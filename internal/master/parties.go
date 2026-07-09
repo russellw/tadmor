@@ -13,6 +13,7 @@ type Organization struct {
 	TaxID           *string `db:"tax_id" json:"tax_id"`
 	CountryCode     *string `db:"country_code" json:"country_code"`
 	DefaultCurrency *string `db:"default_currency" json:"default_currency"`
+	Email           *string `db:"email" json:"email"`
 	IsSelf          bool    `db:"is_self" json:"is_self"`
 }
 
@@ -22,6 +23,7 @@ type OrganizationInput struct {
 	TaxID           *string `json:"tax_id"`
 	CountryCode     *string `json:"country_code"`
 	DefaultCurrency *string `json:"default_currency"`
+	Email           *string `json:"email"`
 	IsSelf          bool    `json:"is_self"`
 }
 
@@ -32,7 +34,7 @@ func (in OrganizationInput) Validate() string {
 	return ""
 }
 
-const organizationColumns = `id, name, legal_name, tax_id, country_code, default_currency, is_self`
+const organizationColumns = `id, name, legal_name, tax_id, country_code, default_currency, email, is_self`
 
 func ListOrganizations(ctx context.Context, q Querier) ([]Organization, error) {
 	return collectList[Organization](ctx, q, `SELECT `+organizationColumns+` FROM organizations ORDER BY name`)
@@ -45,16 +47,16 @@ func GetOrganization(ctx context.Context, q Querier, id int) (Organization, erro
 func CreateOrganization(ctx context.Context, q Querier, in OrganizationInput) (int, error) {
 	var id int
 	err := q.QueryRow(ctx,
-		`INSERT INTO organizations (name, legal_name, tax_id, country_code, default_currency, is_self)
-		 VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-		in.Name, in.LegalName, in.TaxID, in.CountryCode, in.DefaultCurrency, in.IsSelf).Scan(&id)
+		`INSERT INTO organizations (name, legal_name, tax_id, country_code, default_currency, email, is_self)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+		in.Name, in.LegalName, in.TaxID, in.CountryCode, in.DefaultCurrency, in.Email, in.IsSelf).Scan(&id)
 	return id, err
 }
 
 func UpdateOrganization(ctx context.Context, q Querier, id int, in OrganizationInput) error {
 	return affected(q.Exec(ctx,
-		`UPDATE organizations SET name=$2, legal_name=$3, tax_id=$4, country_code=$5, default_currency=$6, is_self=$7 WHERE id=$1`,
-		id, in.Name, in.LegalName, in.TaxID, in.CountryCode, in.DefaultCurrency, in.IsSelf))
+		`UPDATE organizations SET name=$2, legal_name=$3, tax_id=$4, country_code=$5, default_currency=$6, email=$7, is_self=$8 WHERE id=$1`,
+		id, in.Name, in.LegalName, in.TaxID, in.CountryCode, in.DefaultCurrency, in.Email, in.IsSelf))
 }
 
 // ---------------------------------------------------------------------------

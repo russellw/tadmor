@@ -30,6 +30,9 @@ type docSpec struct {
 	balanceLabel string
 	headerSQL    string
 	addressSQL   string
+	// recipientSQL returns one row, one column: the counterparty
+	// organization's email (nullable), keyed on the document id ($1).
+	recipientSQL string
 	lines        func(context.Context, reporting.Querier, int) ([]docLine, error)
 }
 
@@ -72,6 +75,49 @@ func docPDF(ctx context.Context, q reporting.Querier, spec docSpec, id int) ([]b
 		return nil, "", err
 	}
 	return renderDoc(d), d.number, nil
+}
+
+// Recipient resolvers, one per document type, mirroring the PDF renderers.
+// Each returns the counterparty organization's email, "" when the organization
+// has none on file, and reporting.ErrNotFound when the document does not exist.
+
+func SalesInvoiceRecipient(ctx context.Context, q reporting.Querier, id int) (string, error) {
+	return docRecipient(ctx, q, salesInvoiceSpec, id)
+}
+
+func PurchaseBillRecipient(ctx context.Context, q reporting.Querier, id int) (string, error) {
+	return docRecipient(ctx, q, purchaseBillSpec, id)
+}
+
+func SalesCreditNoteRecipient(ctx context.Context, q reporting.Querier, id int) (string, error) {
+	return docRecipient(ctx, q, salesCreditNoteSpec, id)
+}
+
+func PurchaseCreditNoteRecipient(ctx context.Context, q reporting.Querier, id int) (string, error) {
+	return docRecipient(ctx, q, purchaseCreditNoteSpec, id)
+}
+
+func SalesOrderRecipient(ctx context.Context, q reporting.Querier, id int) (string, error) {
+	return docRecipient(ctx, q, salesOrderSpec, id)
+}
+
+func PurchaseOrderRecipient(ctx context.Context, q reporting.Querier, id int) (string, error) {
+	return docRecipient(ctx, q, purchaseOrderSpec, id)
+}
+
+func docRecipient(ctx context.Context, q reporting.Querier, spec docSpec, id int) (string, error) {
+	var email *string
+	err := q.QueryRow(ctx, spec.recipientSQL, id).Scan(&email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", reporting.ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if email == nil {
+		return "", nil
+	}
+	return *email, nil
 }
 
 func fetchDoc(ctx context.Context, q reporting.Querier, spec docSpec, id int) (docData, error) {
@@ -232,6 +278,12 @@ var salesInvoiceSpec = docSpec{
 		    (SELECT id FROM addresses WHERE organization_id = c.organization_id ORDER BY id LIMIT 1))
 		LEFT JOIN countries co ON co.code = a.country_code
 		WHERE si.id = $1`,
+	recipientSQL: `
+		SELECT o.email
+		FROM sales_invoices si
+		JOIN customers c     ON c.id = si.customer_id
+		JOIN organizations o ON o.id = c.organization_id
+		WHERE si.id = $1`,
 	lines: salesLines(reporting.SalesInvoiceLines),
 }
 
@@ -262,6 +314,12 @@ var purchaseBillSpec = docSpec{
 		LEFT JOIN countries co ON co.code = a.country_code
 		WHERE pb.id = $1
 		ORDER BY a.id LIMIT 1`,
+	recipientSQL: `
+		SELECT o.email
+		FROM purchase_bills pb
+		JOIN suppliers s     ON s.id = pb.supplier_id
+		JOIN organizations o ON o.id = s.organization_id
+		WHERE pb.id = $1`,
 	lines: purchaseLines(reporting.PurchaseBillLines),
 }
 
@@ -291,6 +349,12 @@ var salesCreditNoteSpec = docSpec{
 		LEFT JOIN countries co ON co.code = a.country_code
 		WHERE cn.id = $1
 		ORDER BY a.id LIMIT 1`,
+	recipientSQL: `
+		SELECT o.email
+		FROM sales_credit_notes cn
+		JOIN customers c     ON c.id = cn.customer_id
+		JOIN organizations o ON o.id = c.organization_id
+		WHERE cn.id = $1`,
 	lines: salesLines(reporting.SalesCreditNoteLines),
 }
 
@@ -320,6 +384,12 @@ var purchaseCreditNoteSpec = docSpec{
 		LEFT JOIN countries co ON co.code = a.country_code
 		WHERE cn.id = $1
 		ORDER BY a.id LIMIT 1`,
+	recipientSQL: `
+		SELECT o.email
+		FROM purchase_credit_notes cn
+		JOIN suppliers s     ON s.id = cn.supplier_id
+		JOIN organizations o ON o.id = s.organization_id
+		WHERE cn.id = $1`,
 	lines: purchaseLines(reporting.PurchaseCreditNoteLines),
 }
 
@@ -347,6 +417,12 @@ var salesOrderSpec = docSpec{
 		LEFT JOIN countries co ON co.code = a.country_code
 		WHERE so.id = $1
 		ORDER BY a.id LIMIT 1`,
+	recipientSQL: `
+		SELECT o.email
+		FROM sales_orders so
+		JOIN customers c     ON c.id = so.customer_id
+		JOIN organizations o ON o.id = c.organization_id
+		WHERE so.id = $1`,
 	lines: salesOrderDocLines,
 }
 
@@ -374,5 +450,11 @@ var purchaseOrderSpec = docSpec{
 		LEFT JOIN countries co ON co.code = a.country_code
 		WHERE po.id = $1
 		ORDER BY a.id LIMIT 1`,
+	recipientSQL: `
+		SELECT o.email
+		FROM purchase_orders po
+		JOIN suppliers s     ON s.id = po.supplier_id
+		JOIN organizations o ON o.id = s.organization_id
+		WHERE po.id = $1`,
 	lines: purchaseOrderDocLines,
 }

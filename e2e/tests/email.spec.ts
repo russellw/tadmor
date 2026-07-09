@@ -25,10 +25,13 @@ test.describe("email a document", () => {
     await page.getByRole("button", { name: "Email" }).click()
 
     const panel = page.getByRole("form", { name: "Email" })
-    // A recipient is required until organizations carry an email address.
+    // The fixture's counterparty has no email on file, so sending with the
+    // field blank surfaces the 422 no-recipient guard rather than a send.
     await panel.getByRole("button", { name: "Send" }).click()
     await expect(
-      panel.getByText("Enter at least one recipient email address."),
+      panel.getByText("this counterparty has no email address on file", {
+        exact: false,
+      }),
     ).toBeVisible()
 
     await panel.getByLabel("To").fill("client@example.com")

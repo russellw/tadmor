@@ -24,6 +24,7 @@ interface FormState {
   taxId: string
   countryCode: string
   defaultCurrency: string
+  email: string
   isSelf: boolean
 }
 
@@ -33,6 +34,7 @@ const blankForm: FormState = {
   taxId: "",
   countryCode: "",
   defaultCurrency: "",
+  email: "",
   isSelf: false,
 }
 
@@ -69,6 +71,7 @@ export function OrganizationForm({ mode }: { mode: Mode }) {
             taxId: org.tax_id ?? "",
             countryCode: org.country_code ?? "",
             defaultCurrency: org.default_currency ?? "",
+            email: org.email ?? "",
             isSelf: org.is_self,
           })
         } else {
@@ -102,6 +105,7 @@ export function OrganizationForm({ mode }: { mode: Mode }) {
       tax_id: emptyToNull(form.taxId),
       country_code: country === "" ? null : country,
       default_currency: currency === "" ? null : currency,
+      email: emptyToNull(form.email),
       is_self: form.isSelf,
     }
     setSaving(true)
@@ -176,6 +180,17 @@ export function OrganizationForm({ mode }: { mode: Mode }) {
               placeholder="VAT/EIN/etc."
               value={form.taxId}
               onChange={(e) => setForm({ ...form, taxId: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="Default recipient for emailed documents"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
           </div>
 

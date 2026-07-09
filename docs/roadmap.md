@@ -96,17 +96,22 @@ sections, deferred decisions, and a gap review against the project goal.
   whenever `SMTP_ADDR` is unset — so the demo, which sets no SMTP environment,
   never sends. `POST /api/<collection>/{id}/email` renders the same PDF as the
   download endpoint and attaches it; with no mailer configured it returns 501.
-  Turning it on in production is a config flip (`SMTP_ADDR`, `SMTP_USER`,
-  `SMTP_PASS`, `MAIL_FROM`) plus two follow-ups: an `organizations.email`
-  column so the recipient resolves from the counterparty (today it comes from
-  an optional `to` in the request body), and the belunaro.com mail records
-  (SPF/DKIM) the deferred mail-records decision covers. Front-end button done
-  2026-07-09: an Email button on each of the six detail screens (shared
-  `EmailDocumentPanel`, wired into both `document-detail` and `order-detail`)
-  opens an inline panel to type recipient(s) and send; with no SMTP it surfaces
-  the 501 "email sending is not configured" inline, so it's a no-op on the demo
-  (covered by `e2e/tests/email.spec.ts`). The recipient field is required until
-  the `organizations.email` follow-up gives it a counterparty fallback.
+  Turning it on in production is now a single config flip (`SMTP_ADDR`,
+  `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`); the one remaining follow-up is the
+  belunaro.com mail records (SPF/DKIM) the deferred mail-records decision
+  covers. Front-end button done 2026-07-09: an Email button on each of the six
+  detail screens (shared `EmailDocumentPanel`, wired into both
+  `document-detail` and `order-detail`) opens an inline panel to type
+  recipient(s) and send; with no SMTP it surfaces the 501 "email sending is not
+  configured" inline, so it's a no-op on the demo (covered by
+  `e2e/tests/email.spec.ts`). Counterparty-email fallback done 2026-07-09:
+  organizations gained a nullable `email` column (migration 000019, editable on
+  the organization form); a `/email` request with an empty `to` now resolves
+  the recipient from the customer or supplier organization and echoes the
+  address it used, an explicit `to` still overrides it, and a counterparty with
+  no email on file and no `to` is a 422. The recipient field is therefore
+  optional in the panel ("leave blank to use the counterparty's email on
+  file").
 - ~~**New-month period creation is manual ops.**~~ — done 2026-07-08: posting
   now auto-creates the calendar-month period (clipped to the fiscal year's
   bounds) when the document date falls inside an open fiscal year that has no

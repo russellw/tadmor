@@ -121,12 +121,12 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	// Email a printable document to its counterparty as a PDF attachment.
 	// Inert unless SMTP is configured: without it these report 501 "not
 	// configured" and send nothing.
-	api.HandleFunc("POST /sales-invoices/{id}/email", s.emailHandler("invoice", "Invoice", printing.SalesInvoicePDF))
-	api.HandleFunc("POST /purchase-bills/{id}/email", s.emailHandler("bill", "Bill", printing.PurchaseBillPDF))
-	api.HandleFunc("POST /sales-credit-notes/{id}/email", s.emailHandler("credit-note", "Credit Note", printing.SalesCreditNotePDF))
-	api.HandleFunc("POST /purchase-credit-notes/{id}/email", s.emailHandler("supplier-credit", "Credit Note", printing.PurchaseCreditNotePDF))
-	api.HandleFunc("POST /sales-orders/{id}/email", s.emailHandler("sales-order", "Sales Order", printing.SalesOrderPDF))
-	api.HandleFunc("POST /purchase-orders/{id}/email", s.emailHandler("purchase-order", "Purchase Order", printing.PurchaseOrderPDF))
+	api.HandleFunc("POST /sales-invoices/{id}/email", s.emailHandler("invoice", "Invoice", printing.SalesInvoicePDF, printing.SalesInvoiceRecipient))
+	api.HandleFunc("POST /purchase-bills/{id}/email", s.emailHandler("bill", "Bill", printing.PurchaseBillPDF, printing.PurchaseBillRecipient))
+	api.HandleFunc("POST /sales-credit-notes/{id}/email", s.emailHandler("credit-note", "Credit Note", printing.SalesCreditNotePDF, printing.SalesCreditNoteRecipient))
+	api.HandleFunc("POST /purchase-credit-notes/{id}/email", s.emailHandler("supplier-credit", "Credit Note", printing.PurchaseCreditNotePDF, printing.PurchaseCreditNoteRecipient))
+	api.HandleFunc("POST /sales-orders/{id}/email", s.emailHandler("sales-order", "Sales Order", printing.SalesOrderPDF, printing.SalesOrderRecipient))
+	api.HandleFunc("POST /purchase-orders/{id}/email", s.emailHandler("purchase-order", "Purchase Order", printing.PurchaseOrderPDF, printing.PurchaseOrderRecipient))
 
 	// Auto-apply a payment or credit note to the counterparty's open
 	// documents, oldest first.
@@ -470,14 +470,16 @@ func (s *Server) pdfHandler(prefix string, render func(context.Context, reportin
 }
 
 // emailHandler emails a printable document to its counterparty as a PDF
-// attachment. render produces the same bytes as the PDF endpoint; prefix names
-// the attachment file and label is the human document name for the subject.
+// attachment. render produces the same bytes as the PDF endpoint; recipient
+// resolves the counterparty organization's email; prefix names the attachment
+// file and label is the human document name for the subject.
 //
-// Recipients come from an optional {"to": [...]} request body; resolving the
-// counterparty's address from the organization is a follow-up that awaits the
-// organizations.email column. When no mailer is configured the send reports
-// ErrNotConfigured before any of that matters, so this stays inert on the demo.
-func (s *Server) emailHandler(prefix, label string, render func(context.Context, reporting.Querier, int) ([]byte, string, error)) http.HandlerFunc {
+// Recipients come from an optional {"to": [...]} request body; when it is
+// empty they fall back to the counterparty's organizations.email address. A
+// document whose counterparty has no email on file and no explicit "to" is a
+// 422. When no mailer is configured the send reports ErrNotConfigured, so this
+// stays inert on the demo.
+func (s *Server) emailHandler(prefix, label string, render func(context.Context, reporting.Querier, int) ([]byte, string, error), recipient func(context.Context, reporting.Querier, int) (string, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathID(w, r)
 		if !ok {
@@ -490,13 +492,27 @@ func (s *Server) emailHandler(prefix, label string, render func(context.Context,
 			writeError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
+		to := body.To
+		if len(to) == 0 {
+			addr, err := recipient(r.Context(), s.pool, id)
+			if err != nil {
+				s.writeReadError(w, err)
+				return
+			}
+			if addr == "" {
+				writeError(w, http.StatusUnprocessableEntity,
+					"this counterparty has no email address on file; supply a recipient or set one on the organization")
+				return
+			}
+			to = []string{addr}
+		}
 		out, number, err := render(r.Context(), s.pool, id)
 		if err != nil {
 			s.writeReadError(w, err)
 			return
 		}
 		msg := mailer.Message{
-			To:      body.To,
+			To:      to,
 			Subject: fmt.Sprintf("%s %s", label, number),
 			Body:    fmt.Sprintf("Please find attached %s %s.", strings.ToLower(label), number),
 			Attachments: []mailer.Attachment{{
@@ -509,7 +525,7 @@ func (s *Server) emailHandler(prefix, label string, render func(context.Context,
 			s.writeMailError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "sent", "to": to})
 	}
 }
 

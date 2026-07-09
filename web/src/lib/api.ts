@@ -217,6 +217,7 @@ export interface Organization {
   tax_id: string | null
   country_code: string | null
   default_currency: string | null
+  email: string | null
   is_self: boolean
 }
 
@@ -228,6 +229,7 @@ export interface OrganizationInput {
   tax_id: string | null
   country_code: string | null
   default_currency: string | null
+  email: string | null
   is_self: boolean
 }
 
@@ -688,15 +690,18 @@ export function updateProduct(id: number, input: ProductInput): Promise<void> {
 /** Email a printable document to its counterparty as a PDF attachment.
  *  `collection` is the API path segment shared with the PDF endpoint (e.g.
  *  "sales-invoices", "purchase-orders"); `to` lists the recipient addresses.
- *  Until organizations carry an email address the caller supplies them.
- *  Rejects with a 501 ApiError ("email sending is not configured") when SMTP is
- *  off, so the button stays inert on the demo. */
+ *  An empty `to` falls back to the counterparty organization's email; the
+ *  response echoes the addresses actually used. Rejects with a 422 when no
+ *  recipient can be resolved, or a 501 ApiError ("email sending is not
+ *  configured") when SMTP is off, so the button stays inert on the demo. */
 export function emailDocument(
   collection: string,
   id: number,
   to: string[],
-): Promise<{ status: string }> {
-  return post<{ status: string }>(`/${collection}/${id}/email`, { to })
+): Promise<{ status: string; to: string[] }> {
+  return post<{ status: string; to: string[] }>(`/${collection}/${id}/email`, {
+    to,
+  })
 }
 
 /** An invoice's or bill's balance view, mirroring reporting.DocumentBalance.

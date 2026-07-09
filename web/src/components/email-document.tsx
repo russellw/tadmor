@@ -6,11 +6,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 // Inline panel to email a printable document to its counterparty as a PDF
-// attachment — the same PDF the download button produces. Recipients are typed
-// here because organizations don't yet carry an email address (a documented
-// follow-up); once they do, a blank field can fall back to the counterparty's
-// address. Sending is inert unless SMTP is configured: the demo returns 501
-// "email sending is not configured", surfaced here as the error.
+// attachment — the same PDF the download button produces. A blank recipient
+// falls back to the counterparty organization's email; the server echoes the
+// address it used for the confirmation. Sending is inert unless SMTP is
+// configured: the demo returns 501 "email sending is not configured", surfaced
+// here as the error.
 export function EmailDocumentPanel({
   collection,
   documentId,
@@ -35,16 +35,14 @@ export function EmailDocumentPanel({
       .split(",")
       .map((s) => s.trim())
       .filter((s) => s !== "")
-    if (recipients.length === 0) {
-      setError("Enter at least one recipient email address.")
-      return
-    }
     setBusy(true)
     setError(null)
+    // An empty list is intentional: the server resolves the counterparty's
+    // email and returns the address it used.
     emailDocument(collection, documentId, recipients)
-      .then(() => {
+      .then((res) => {
         setBusy(false)
-        setSentTo(recipients)
+        setSentTo(res.to)
       })
       .catch((err: unknown) => {
         setBusy(false)
@@ -82,7 +80,8 @@ export function EmailDocumentPanel({
               onChange={(e) => setTo(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Comma-separate multiple recipients.
+              Comma-separate multiple recipients. Leave blank to use the
+              counterparty's email on file.
             </p>
           </div>
           {error !== null && (
