@@ -28,6 +28,7 @@ import {
   fetchCustomerNames,
   fetchSupplierNames,
 } from "@/components/document-list"
+import { EmailDocumentPanel } from "@/components/email-document"
 import { FulfilmentBadge, OrderStatusBadge } from "@/components/order-list"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -311,8 +312,9 @@ function OrderDetail({ config }: { config: OrderConfig }) {
   const [error, setError] = useState<string | null>(null)
   const [acting, setActing] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  // Which inline fulfilment panel is open, and a note after a stock movement.
-  const [panel, setPanel] = useState<"none" | "doc" | "move">("none")
+  // Which inline panel is open (fulfilment or email), and a note after a stock
+  // movement.
+  const [panel, setPanel] = useState<"none" | "doc" | "move" | "email">("none")
   const [movementNote, setMovementNote] = useState<number[] | null>(null)
 
   const load = useCallback(async () => {
@@ -524,6 +526,17 @@ function OrderDetail({ config }: { config: OrderConfig }) {
               PDF
             </a>
           </Button>
+          <Button
+            variant="outline"
+            disabled={acting}
+            onClick={() => {
+              setPanel(panel === "email" ? "none" : "email")
+              setActionError(null)
+              setMovementNote(null)
+            }}
+          >
+            Email
+          </Button>
           <Button variant="outline" asChild>
             <Link to={config.basePath}>Back</Link>
           </Button>
@@ -577,6 +590,15 @@ function OrderDetail({ config }: { config: OrderConfig }) {
             setMovementNote(ids)
             reload()
           }}
+        />
+      )}
+
+      {panel === "email" && (
+        <EmailDocumentPanel
+          collection={config.basePath.replace(/^\//, "")}
+          documentId={orderId}
+          label={config.titlePrefix}
+          onClose={() => setPanel("none")}
         />
       )}
 

@@ -138,7 +138,7 @@ The dev environment is WSL2 (Ubuntu 24.04), which shaped a couple of details:
 
 ## 6. Test structure and the "no hard-delete" finding
 
-Tests live in `e2e/tests/`. Twenty-two files today:
+Tests live in `e2e/tests/`. Twenty-three files today:
 
 - **`smoke.spec.ts`** — the app boots and representative screens render (the
   Home dashboard, the Chart of Accounts heading, and five sidebar nav links).
@@ -194,6 +194,11 @@ Tests live in `e2e/tests/`. Twenty-two files today:
   it reverses the journal entry and returns an invoice (and its AP mirror, a
   bill) to draft, ready to be posted again. Posting is done via the API so each
   test drives only the unpost through the UI.
+- **`email.spec.ts`** — the **Email** button on the printable-document screens.
+  The e2e server configures no SMTP, so a send reports 501 "email sending is
+  not configured"; the test drives the whole button → panel → API path (and the
+  empty-recipient guard) and asserts that inert state on an invoice (via
+  `DocumentDetail`) and a sales order (via `OrderDetail`).
 
 **Authentication.** The API requires a login session, so a `globalSetup`
 (`global-setup.ts`) runs before any test: it upserts a dedicated
@@ -317,29 +322,30 @@ BASE_URL=http://localhost:8080 corepack pnpm test
   `E2E_DATABASE_URL` says otherwise — see the §6 database note. The
   self-contained `make e2e` path uses the dedicated `tadmor_e2e` database.
 - **Coverage** — the master-data screens, the reports, all eight document
-  screens (both fulfilment axes of orders), direct stock movements, and the
-  admin-only unpost action now have specs. What remains optional is more
-  breadth (e.g. partial fulfilment, transfer/adjustment movement types, the
-  self-service email button once it exists), not a whole uncovered screen.
+  screens (both fulfilment axes of orders), direct stock movements, the
+  admin-only unpost action, and the document email button now have specs. What
+  remains optional is more breadth (e.g. partial fulfilment, transfer/
+  adjustment movement types, a successful email send once SMTP is wired in a
+  test), not a whole uncovered screen.
 
 ---
 
 ## 9. Status and next step
 
 Done: `e2e/` scaffolded and committed with the hardened pnpm config and Makefile
-targets; Chromium installed; twenty-two spec files covering auth, smoke, the
+targets; Chromium installed; twenty-three spec files covering auth, smoke, the
 master-data screens (customers, suppliers, products, payment terms, tax codes,
 warehouses, periods, users), the financial-statement reports, all eight
 document screens — invoices, bills, customer and supplier payments, credit
 notes and supplier credits, sales and purchase orders, including posting to
 the ledger and payment/credit application — plus direct stock movements
 (create/post/unpost/delete), the stock axis of order fulfilment (ship/receive),
-and the admin-only document unpost (see §6) — with teardown confirmed to leave
-zero test rows, including journal entries and stock movements. The
-self-contained `make e2e` run targets a dedicated `tadmor_e2e` database
-(created on first run) with setup/teardown pinned to it via `E2E_DATABASE_URL`,
-so the suite never touches dev data.
+the admin-only document unpost, and the document email button (see §6) — with
+teardown confirmed to leave zero test rows, including journal entries and stock
+movements. The self-contained `make e2e` run targets a dedicated `tadmor_e2e`
+database (created on first run) with setup/teardown pinned to it via
+`E2E_DATABASE_URL`, so the suite never touches dev data.
 
 Next (when wanted): more depth rather than new screens — partial ship/receive
 and partial invoice/bill, the non-postable movement types (transfer,
-adjustment), and the document email button once the front end grows one.
+adjustment), and a successful email send once a test wires an SMTP capture.

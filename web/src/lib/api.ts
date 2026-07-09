@@ -685,6 +685,20 @@ export function updateProduct(id: number, input: ProductInput): Promise<void> {
 // Subledger documents. Creation makes a draft; posting to the GL and
 // unposting (reversal back to draft) are separate lifecycle calls.
 
+/** Email a printable document to its counterparty as a PDF attachment.
+ *  `collection` is the API path segment shared with the PDF endpoint (e.g.
+ *  "sales-invoices", "purchase-orders"); `to` lists the recipient addresses.
+ *  Until organizations carry an email address the caller supplies them.
+ *  Rejects with a 501 ApiError ("email sending is not configured") when SMTP is
+ *  off, so the button stays inert on the demo. */
+export function emailDocument(
+  collection: string,
+  id: number,
+  to: string[],
+): Promise<{ status: string }> {
+  return post<{ status: string }>(`/${collection}/${id}/email`, { to })
+}
+
 /** An invoice's or bill's balance view, mirroring reporting.DocumentBalance.
  *  Monetary values are exact decimal strings. */
 export interface DocumentBalance {

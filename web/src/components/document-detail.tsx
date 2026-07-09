@@ -39,6 +39,7 @@ import {
   PaymentBadge,
   StatusBadge,
 } from "@/components/document-list"
+import { EmailDocumentPanel } from "@/components/email-document"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -231,6 +232,11 @@ function DocumentDetail({
   const [acting, setActing] = useState(false)
   const currentUser = useCurrentUser()
   const [actionError, setActionError] = useState<string | null>(null)
+  const [emailOpen, setEmailOpen] = useState(false)
+  // The email endpoint shares the PDF endpoint's collection segment (drop the
+  // "/api/" the PDF href carries): the same six documents are printable and
+  // emailable.
+  const emailCollection = pdfBasePath?.replace(/^\/api\//, "")
 
   const load = useCallback(async () => {
     const [doc, lns, apps, names] = await Promise.all([
@@ -392,6 +398,15 @@ function DocumentDetail({
                   </a>
                 </Button>
               )}
+              {emailCollection !== undefined && (
+                <Button
+                  variant="outline"
+                  disabled={acting}
+                  onClick={() => setEmailOpen((open) => !open)}
+                >
+                  Email
+                </Button>
+              )}
               {document.status === "posted" && currentUser.is_admin && (
                 <Button
                   variant="outline"
@@ -411,6 +426,15 @@ function DocumentDetail({
             <p className="mb-4 text-sm text-destructive" role="alert">
               {actionError}
             </p>
+          )}
+
+          {emailOpen && emailCollection !== undefined && (
+            <EmailDocumentPanel
+              collection={emailCollection}
+              documentId={documentId}
+              label={titlePrefix}
+              onClose={() => setEmailOpen(false)}
+            />
           )}
 
           {lines.length === 0 && (

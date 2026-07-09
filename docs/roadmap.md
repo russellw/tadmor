@@ -100,7 +100,13 @@ sections, deferred decisions, and a gap review against the project goal.
   `SMTP_PASS`, `MAIL_FROM`) plus two follow-ups: an `organizations.email`
   column so the recipient resolves from the counterparty (today it comes from
   an optional `to` in the request body), and the belunaro.com mail records
-  (SPF/DKIM) the deferred mail-records decision covers. No front-end button yet.
+  (SPF/DKIM) the deferred mail-records decision covers. Front-end button done
+  2026-07-09: an Email button on each of the six detail screens (shared
+  `EmailDocumentPanel`, wired into both `document-detail` and `order-detail`)
+  opens an inline panel to type recipient(s) and send; with no SMTP it surfaces
+  the 501 "email sending is not configured" inline, so it's a no-op on the demo
+  (covered by `e2e/tests/email.spec.ts`). The recipient field is required until
+  the `organizations.email` follow-up gives it a counterparty fallback.
 - ~~**New-month period creation is manual ops.**~~ — done 2026-07-08: posting
   now auto-creates the calendar-month period (clipped to the fiscal year's
   bounds) when the document date falls inside an open fiscal year that has no
