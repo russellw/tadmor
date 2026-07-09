@@ -82,25 +82,34 @@ func UpdateProduct(ctx context.Context, q Querier, id int, in ProductInput) erro
 // Accounts (chart of accounts)
 // ---------------------------------------------------------------------------
 
+// IsCash marks a cash (or cash-equivalent) account — the cash-flow statement
+// explains the change in these accounts' combined balance. CashFlowActivity
+// classifies a non-cash balance-sheet account's movements as operating,
+// investing, or financing activity; it is ignored for revenue/expense
+// accounts, whose movements reach the statement through net income.
 type Account struct {
-	ID           int     `db:"id" json:"id"`
-	Code         string  `db:"code" json:"code"`
-	Name         string  `db:"name" json:"name"`
-	AccountType  string  `db:"account_type" json:"account_type"`
-	ParentID     *int    `db:"parent_id" json:"parent_id"`
-	CurrencyCode *string `db:"currency_code" json:"currency_code"`
-	IsPostable   bool    `db:"is_postable" json:"is_postable"`
-	IsActive     bool    `db:"is_active" json:"is_active"`
+	ID               int     `db:"id" json:"id"`
+	Code             string  `db:"code" json:"code"`
+	Name             string  `db:"name" json:"name"`
+	AccountType      string  `db:"account_type" json:"account_type"`
+	ParentID         *int    `db:"parent_id" json:"parent_id"`
+	CurrencyCode     *string `db:"currency_code" json:"currency_code"`
+	IsPostable       bool    `db:"is_postable" json:"is_postable"`
+	IsActive         bool    `db:"is_active" json:"is_active"`
+	IsCash           bool    `db:"is_cash" json:"is_cash"`
+	CashFlowActivity string  `db:"cash_flow_activity" json:"cash_flow_activity"`
 }
 
 type AccountInput struct {
-	Code         string  `json:"code"`
-	Name         string  `json:"name"`
-	AccountType  string  `json:"account_type"`
-	ParentID     *int    `json:"parent_id"`
-	CurrencyCode *string `json:"currency_code"`
-	IsPostable   bool    `json:"is_postable"`
-	IsActive     bool    `json:"is_active"`
+	Code             string  `json:"code"`
+	Name             string  `json:"name"`
+	AccountType      string  `json:"account_type"`
+	ParentID         *int    `json:"parent_id"`
+	CurrencyCode     *string `json:"currency_code"`
+	IsPostable       bool    `json:"is_postable"`
+	IsActive         bool    `json:"is_active"`
+	IsCash           bool    `json:"is_cash"`
+	CashFlowActivity string  `json:"cash_flow_activity"` // default "operating"
 }
 
 func (in AccountInput) Validate() string {
@@ -115,7 +124,7 @@ func (in AccountInput) Validate() string {
 	return ""
 }
 
-const accountColumns = `id, code, name, account_type, parent_id, currency_code, is_postable, is_active`
+const accountColumns = `id, code, name, account_type, parent_id, currency_code, is_postable, is_active, is_cash, cash_flow_activity`
 
 func ListAccounts(ctx context.Context, q Querier) ([]Account, error) {
 	return collectList[Account](ctx, q, `SELECT `+accountColumns+` FROM accounts ORDER BY code`)
@@ -128,18 +137,21 @@ func GetAccount(ctx context.Context, q Querier, id int) (Account, error) {
 func CreateAccount(ctx context.Context, q Querier, in AccountInput) (int, error) {
 	var id int
 	err := q.QueryRow(ctx,
-		`INSERT INTO accounts (code, name, account_type, parent_id, currency_code, is_postable)
-		 VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-		in.Code, in.Name, in.AccountType, in.ParentID, in.CurrencyCode, in.IsPostable).Scan(&id)
+		`INSERT INTO accounts (code, name, account_type, parent_id, currency_code, is_postable,
+		     is_cash, cash_flow_activity)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+		in.Code, in.Name, in.AccountType, in.ParentID, in.CurrencyCode, in.IsPostable,
+		in.IsCash, orDefault(in.CashFlowActivity, "operating")).Scan(&id)
 	return id, err
 }
 
 func UpdateAccount(ctx context.Context, q Querier, id int, in AccountInput) error {
 	return affected(q.Exec(ctx,
 		`UPDATE accounts SET code=$2, name=$3, account_type=$4, parent_id=$5,
-		     currency_code=$6, is_postable=$7, is_active=$8
+		     currency_code=$6, is_postable=$7, is_active=$8, is_cash=$9, cash_flow_activity=$10
 		 WHERE id=$1`,
-		id, in.Code, in.Name, in.AccountType, in.ParentID, in.CurrencyCode, in.IsPostable, in.IsActive))
+		id, in.Code, in.Name, in.AccountType, in.ParentID, in.CurrencyCode, in.IsPostable, in.IsActive,
+		in.IsCash, orDefault(in.CashFlowActivity, "operating")))
 }
 
 // ---------------------------------------------------------------------------

@@ -129,6 +129,108 @@ func BalanceSheetAsOf(ctx context.Context, q Querier, asOf *string) (BalanceShee
 	return bs, err
 }
 
+// CashFlowRow is one non-cash balance-sheet account's line on the cash-flow
+// statement. Amount is the account's cash impact over the range — credit
+// minus debit, so a source of cash (an increase in a liability, a decrease in
+// a receivable) is positive and a use of cash is negative. Activity is the
+// account's cash_flow_activity classification.
+type CashFlowRow struct {
+	AccountID int    `json:"account_id"`
+	Code      string `json:"code"`
+	Name      string `json:"name"`
+	Activity  string `json:"activity"`
+	Amount    string `json:"amount"`
+}
+
+// CashFlow is the statement of cash flows over an inclusive [from, to]
+// entry-date range (nil = unbounded), built by the indirect method: net
+// income plus the cash impact of every non-cash balance-sheet account,
+// grouped by activity. Because every posted entry balances, net income plus
+// the rows always equals NetCashFlow, the change in the is_cash accounts'
+// combined balance, and OpeningCash + NetCashFlow = ClosingCash.
+type CashFlow struct {
+	NetIncome   string        `json:"net_income"`
+	Rows        []CashFlowRow `json:"rows"`
+	NetCashFlow string        `json:"net_cash_flow"`
+	OpeningCash string        `json:"opening_cash"`
+	ClosingCash string        `json:"closing_cash"`
+}
+
+// CashFlowStatement returns the cash-flow statement for the inclusive
+// [from, to] entry-date range. Year-end closing entries (and their reversals)
+// are excluded throughout: they only shuffle net income into retained
+// earnings, never touch cash, and would otherwise double-count the closed
+// year's income as financing activity.
+func CashFlowStatement(ctx context.Context, q Querier, from, to *string) (CashFlow, error) {
+	var cf CashFlow
+
+	// Net income over the range, credit-positive: the operating section's
+	// starting point.
+	err := q.QueryRow(ctx,
+		`SELECT COALESCE(sum(jl.credit - jl.debit), 0)::numeric(19,4)::text
+		 FROM journal_lines jl
+		 JOIN journal_entries je ON je.id = jl.journal_entry_id
+		 JOIN accounts a ON a.id = jl.account_id
+		 WHERE je.status = 'posted'
+		   AND NOT je.is_closing
+		   AND a.account_type IN ('revenue', 'expense')
+		   AND ($1::date IS NULL OR je.entry_date >= $1::date)
+		   AND ($2::date IS NULL OR je.entry_date <= $2::date)`, from, to).Scan(&cf.NetIncome)
+	if err != nil {
+		return cf, err
+	}
+
+	// Cash impact of every non-cash balance-sheet account with activity in
+	// range. Accounts with no activity are omitted; offsetting activity shows
+	// as 0.0000.
+	rows, err := q.Query(ctx,
+		`SELECT a.id, a.code, a.name, a.cash_flow_activity,
+		        sum(jl.credit - jl.debit)::numeric(19,4)::text
+		 FROM journal_lines jl
+		 JOIN journal_entries je ON je.id = jl.journal_entry_id
+		 JOIN accounts a ON a.id = jl.account_id
+		 WHERE je.status = 'posted'
+		   AND NOT je.is_closing
+		   AND NOT a.is_cash
+		   AND a.account_type IN ('asset', 'liability', 'equity')
+		   AND ($1::date IS NULL OR je.entry_date >= $1::date)
+		   AND ($2::date IS NULL OR je.entry_date <= $2::date)
+		 GROUP BY a.id, a.code, a.name, a.cash_flow_activity
+		 ORDER BY a.code`, from, to)
+	if err != nil {
+		return cf, err
+	}
+	defer rows.Close()
+
+	cf.Rows = []CashFlowRow{}
+	for rows.Next() {
+		var r CashFlowRow
+		if err := rows.Scan(&r.AccountID, &r.Code, &r.Name, &r.Activity, &r.Amount); err != nil {
+			return cf, err
+		}
+		cf.Rows = append(cf.Rows, r)
+	}
+	if err := rows.Err(); err != nil {
+		return cf, err
+	}
+
+	// The cash accounts themselves, debit-positive: balance before the range,
+	// movement inside it, and balance at its end.
+	return cf, q.QueryRow(ctx,
+		`SELECT COALESCE(sum(jl.debit - jl.credit)
+		            FILTER (WHERE $1::date IS NOT NULL AND je.entry_date < $1::date), 0)::numeric(19,4)::text,
+		        COALESCE(sum(jl.debit - jl.credit)
+		            FILTER (WHERE ($1::date IS NULL OR je.entry_date >= $1::date)
+		                      AND ($2::date IS NULL OR je.entry_date <= $2::date)), 0)::numeric(19,4)::text,
+		        COALESCE(sum(jl.debit - jl.credit)
+		            FILTER (WHERE $2::date IS NULL OR je.entry_date <= $2::date), 0)::numeric(19,4)::text
+		 FROM journal_lines jl
+		 JOIN journal_entries je ON je.id = jl.journal_entry_id
+		 JOIN accounts a ON a.id = jl.account_id
+		 WHERE je.status = 'posted'
+		   AND a.is_cash`, from, to).Scan(&cf.OpeningCash, &cf.NetCashFlow, &cf.ClosingCash)
+}
+
 func accountActivityRows(ctx context.Context, q Querier, sql string, args ...any) ([]AccountActivityRow, error) {
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {

@@ -30,6 +30,17 @@ test.describe("financial statements", () => {
     ).toBeVisible()
   })
 
+  test("cash flow filters by date range", async ({ page }) => {
+    await page.goto("/reports/cash-flow")
+    await expect(page.getByRole("heading", { name: "Cash Flow" })).toBeVisible()
+
+    await page.getByLabel("From").fill("1990-01-01")
+    await page.getByLabel("To").fill("1990-01-31")
+    await expect(
+      page.getByText("No posted activity in this range."),
+    ).toBeVisible()
+  })
+
   test("trial balance drills down to an account ledger", async ({ page }) => {
     await page.goto("/reports/trial-balance")
     // The seeded chart of accounts guarantees a Cash row; its name links to

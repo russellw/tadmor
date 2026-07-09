@@ -131,6 +131,7 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /trial-balance", s.getTrialBalance)
 	api.HandleFunc("GET /profit-and-loss", s.getProfitAndLoss)
 	api.HandleFunc("GET /balance-sheet", s.getBalanceSheet)
+	api.HandleFunc("GET /cash-flow", s.getCashFlow)
 	api.HandleFunc("GET /accounts/{id}/ledger", s.getAccountLedger)
 	api.HandleFunc("GET /journal-entries/{id}", s.getJournalEntry)
 	api.HandleFunc("GET /ar-aging", s.getARaging)
@@ -279,6 +280,23 @@ func (s *Server) getBalanceSheet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, bs)
+}
+
+func (s *Server) getCashFlow(w http.ResponseWriter, r *http.Request) {
+	from, ok := dateParam(w, r, "from")
+	if !ok {
+		return
+	}
+	to, ok := dateParam(w, r, "to")
+	if !ok {
+		return
+	}
+	cf, err := reporting.CashFlowStatement(r.Context(), s.pool, from, to)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cf)
 }
 
 func (s *Server) getAccountLedger(w http.ResponseWriter, r *http.Request) {

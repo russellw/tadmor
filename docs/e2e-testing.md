@@ -160,8 +160,8 @@ Tests live in `e2e/tests/`. Nineteen files today:
   days) on payment terms.
 - **`periods.spec.ts`** — fiscal-year and period creation, and the
   close/reopen toggle.
-- **`reports.spec.ts`** — P&L and balance-sheet date filtering, and the trial
-  balance drill-down into an account ledger.
+- **`reports.spec.ts`** — P&L, balance-sheet, and cash-flow date filtering,
+  and the trial balance drill-down into an account ledger.
 - **`users.spec.ts`** — user/administrator creation, edit + deactivate,
   password reset, the self-deactivation and self-demotion refusals, and that
   non-admins don't see the Users screen.

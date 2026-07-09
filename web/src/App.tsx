@@ -10,6 +10,7 @@ import { AccountLedger } from "@/components/account-ledger"
 import { APAging, ARAging } from "@/components/aging-report"
 import { BalanceSheetReport } from "@/components/balance-sheet"
 import { BillForm } from "@/components/bill-form"
+import { CashFlowStatement } from "@/components/cash-flow"
 import { ChartOfAccounts } from "@/components/chart-of-accounts"
 import { CustomerForm } from "@/components/customer-form"
 import { Customers } from "@/components/customers"
@@ -115,6 +116,7 @@ const navGroups = [
     items: [
       { to: "/reports/profit-and-loss", label: "Profit & Loss" },
       { to: "/reports/balance-sheet", label: "Balance Sheet" },
+      { to: "/reports/cash-flow", label: "Cash Flow" },
       { to: "/reports/trial-balance", label: "Trial Balance" },
       { to: "/reports/ar-aging", label: "AR Aging" },
       { to: "/reports/ap-aging", label: "AP Aging" },
@@ -447,6 +449,7 @@ export default function App() {
             path="/reports/balance-sheet"
             element={<BalanceSheetReport />}
           />
+          <Route path="/reports/cash-flow" element={<CashFlowStatement />} />
           <Route path="/reports/trial-balance" element={<TrialBalance />} />
           <Route path="/reports/ar-aging" element={<ARAging />} />
           <Route path="/reports/ap-aging" element={<APAging />} />

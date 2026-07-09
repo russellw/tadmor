@@ -143,7 +143,11 @@ export function setUserPassword(id: number, password: string): Promise<void> {
   return send("POST", `/users/${id}/password`, { password })
 }
 
-/** A general-ledger account, mirroring master.Account on the backend. */
+/** A general-ledger account, mirroring master.Account on the backend.
+ *  is_cash marks cash/cash-equivalent accounts (assets only) — the cash-flow
+ *  statement explains the change in their combined balance. cash_flow_activity
+ *  classifies a non-cash balance-sheet account's movements for that statement;
+ *  it is ignored for revenue/expense accounts. */
 export interface Account {
   id: number
   code: string
@@ -153,6 +157,8 @@ export interface Account {
   currency_code: string | null
   is_postable: boolean
   is_active: boolean
+  is_cash: boolean
+  cash_flow_activity: string
 }
 
 /** The writable fields of an account (Account without its id), mirroring
@@ -165,6 +171,8 @@ export interface AccountInput {
   currency_code: string | null
   is_postable: boolean
   is_active: boolean
+  is_cash: boolean
+  cash_flow_activity: string
 }
 
 // The fixed account_types lookup (db/migrations/000004). A closed set with no
@@ -175,6 +183,14 @@ export const ACCOUNT_TYPES = [
   { code: "equity", name: "Equity" },
   { code: "revenue", name: "Revenue" },
   { code: "expense", name: "Expense" },
+] as const
+
+// The cash-flow statement's activity sections (db/migrations/000015). A
+// closed set with no list endpoint, so it's mirrored here rather than fetched.
+export const CASH_FLOW_ACTIVITIES = [
+  { code: "operating", name: "Operating" },
+  { code: "investing", name: "Investing" },
+  { code: "financing", name: "Financing" },
 ] as const
 
 export function listAccounts(): Promise<Account[]> {
@@ -1267,6 +1283,39 @@ export function getBalanceSheet(asOf: string): Promise<BalanceSheet> {
   return get<BalanceSheet>(
     asOf === "" ? "/balance-sheet" : `/balance-sheet?as_of=${asOf}`,
   )
+}
+
+/** One non-cash balance-sheet account's line on the cash-flow statement,
+ *  mirroring reporting.CashFlowRow. amount is the account's cash impact —
+ *  credit minus debit, so a source of cash is positive and a use of cash is
+ *  negative. */
+export interface CashFlowRow {
+  account_id: number
+  code: string
+  name: string
+  activity: string
+  amount: string
+}
+
+/** The cash-flow statement, mirroring reporting.CashFlow (indirect method).
+ *  net_income plus the rows always equals net_cash_flow, the movement of the
+ *  cash accounts, and opening_cash + net_cash_flow = closing_cash. */
+export interface CashFlow {
+  net_income: string
+  rows: CashFlowRow[]
+  net_cash_flow: string
+  opening_cash: string
+  closing_cash: string
+}
+
+/** The cash-flow statement over the inclusive [from, to] entry-date range;
+ *  an empty bound is unbounded. */
+export function getCashFlow(from: string, to: string): Promise<CashFlow> {
+  const params = new URLSearchParams()
+  if (from !== "") params.set("from", from)
+  if (to !== "") params.set("to", to)
+  const qs = params.toString()
+  return get<CashFlow>(`/cash-flow${qs === "" ? "" : `?${qs}`}`)
 }
 
 /** One posted journal line on an account's ledger, mirroring

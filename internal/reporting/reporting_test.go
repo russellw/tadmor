@@ -507,4 +507,73 @@ func TestPaymentQueries(t *testing.T) {
 			t.Errorf("applications: error = %v, want ErrNotFound", err)
 		}
 	})
+
+	// The cash-flow statement lives here rather than in TestReportingQueries
+	// because this setup is the one with actual cash movements: 130.0000 in
+	// (customer payment) and 15.0000 out (supplier payment).
+	t.Run("cash flow statement", func(t *testing.T) {
+		cf, err := reporting.CashFlowStatement(ctx, tx, nil, nil)
+		if err != nil {
+			t.Fatalf("cash flow: %v", err)
+		}
+		if cf.NetIncome != "60.0000" {
+			t.Errorf("net income = %s, want 60.0000", cf.NetIncome)
+		}
+		rows := map[string]reporting.CashFlowRow{}
+		for _, r := range cf.Rows {
+			rows[r.Code] = r
+		}
+		// Cash impact: A/R rose 100 then fell 130 (+30), A/P rose 40 then
+		// fell 15 (+25); both default to operating activity.
+		if r := rows["1100"]; r.Activity != "operating" || r.Amount != "30.0000" {
+			t.Errorf("A/R row = %+v, want operating 30.0000", r)
+		}
+		if r := rows["2000"]; r.Activity != "operating" || r.Amount != "25.0000" {
+			t.Errorf("A/P row = %+v, want operating 25.0000", r)
+		}
+		// The cash account itself never appears as a row (the migration
+		// backfill flagged the seeded Cash account is_cash); revenue and
+		// expense reach the statement only through net income.
+		for _, code := range []string{"1000", "4000", "6000"} {
+			if _, found := rows[code]; found {
+				t.Errorf("account %s appeared as a cash-flow row", code)
+			}
+		}
+		// Net income + rows = net cash flow = the cash accounts' movement.
+		if cf.NetCashFlow != "115.0000" || cf.OpeningCash != "0.0000" || cf.ClosingCash != "115.0000" {
+			t.Errorf("cash = %s / %s / %s, want opening 0.0000, net 115.0000, closing 115.0000",
+				cf.OpeningCash, cf.NetCashFlow, cf.ClosingCash)
+		}
+
+		// A range starting after the customer payment: only the supplier
+		// payment is inside it, and the receipt shows up as opening cash.
+		var from string
+		if err := tx.QueryRow(ctx, `SELECT (current_date - 4)::text`).Scan(&from); err != nil {
+			t.Fatalf("boundary date: %v", err)
+		}
+		cf, err = reporting.CashFlowStatement(ctx, tx, &from, nil)
+		if err != nil {
+			t.Fatalf("cash flow from %s: %v", from, err)
+		}
+		if cf.NetIncome != "0.0000" {
+			t.Errorf("in-range net income = %s, want 0.0000", cf.NetIncome)
+		}
+		if len(cf.Rows) != 1 || cf.Rows[0].Code != "2000" || cf.Rows[0].Amount != "-15.0000" {
+			t.Errorf("in-range rows = %+v, want only A/P -15.0000", cf.Rows)
+		}
+		if cf.OpeningCash != "130.0000" || cf.NetCashFlow != "-15.0000" || cf.ClosingCash != "115.0000" {
+			t.Errorf("in-range cash = %s / %s / %s, want opening 130.0000, net -15.0000, closing 115.0000",
+				cf.OpeningCash, cf.NetCashFlow, cf.ClosingCash)
+		}
+
+		// A range before all activity is an all-zero statement.
+		past := "1990-12-31"
+		cf, err = reporting.CashFlowStatement(ctx, tx, nil, &past)
+		if err != nil {
+			t.Fatalf("cash flow to %s: %v", past, err)
+		}
+		if len(cf.Rows) != 0 || cf.NetIncome != "0.0000" || cf.NetCashFlow != "0.0000" {
+			t.Errorf("out-of-range statement = %+v, want all zero", cf)
+		}
+	})
 }

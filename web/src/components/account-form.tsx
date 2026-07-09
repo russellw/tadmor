@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import {
   ACCOUNT_TYPES,
   ApiError,
+  CASH_FLOW_ACTIVITIES,
   createAccount,
   getAccount,
   listAccounts,
@@ -39,6 +40,8 @@ interface FormState {
   currencyCode: string
   isPostable: boolean
   isActive: boolean
+  isCash: boolean
+  cashFlowActivity: string
 }
 
 const blankForm: FormState = {
@@ -49,6 +52,8 @@ const blankForm: FormState = {
   currencyCode: "",
   isPostable: true,
   isActive: true,
+  isCash: false,
+  cashFlowActivity: "operating",
 }
 
 export function AccountForm({ mode }: { mode: Mode }) {
@@ -88,6 +93,8 @@ export function AccountForm({ mode }: { mode: Mode }) {
             currencyCode: account.currency_code ?? "",
             isPostable: account.is_postable,
             isActive: account.is_active,
+            isCash: account.is_cash,
+            cashFlowActivity: account.cash_flow_activity,
           })
         } else {
           const accounts = await listAccounts()
@@ -128,6 +135,9 @@ export function AccountForm({ mode }: { mode: Mode }) {
       currency_code: currency === "" ? null : currency,
       is_postable: form.isPostable,
       is_active: form.isActive,
+      // Only an asset can be cash (a DB check enforces it).
+      is_cash: form.accountType === "asset" && form.isCash,
+      cash_flow_activity: form.cashFlowActivity,
     }
     setSaving(true)
     setSaveError(null)
@@ -247,6 +257,50 @@ export function AccountForm({ mode }: { mode: Mode }) {
               }
             />
           </div>
+
+          {form.accountType === "asset" && (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="is_cash"
+                checked={form.isCash}
+                onCheckedChange={(c) =>
+                  setForm({ ...form, isCash: c === true })
+                }
+              />
+              <Label htmlFor="is_cash">
+                Cash or bank account (the cash-flow statement explains these
+                accounts' movement)
+              </Label>
+            </div>
+          )}
+
+          {["asset", "liability", "equity"].includes(form.accountType) &&
+            !(form.accountType === "asset" && form.isCash) && (
+              <div className="space-y-2">
+                <Label htmlFor="cash_flow_activity">Cash Flow Activity</Label>
+                <Select
+                  value={form.cashFlowActivity}
+                  onValueChange={(v) =>
+                    setForm({ ...form, cashFlowActivity: v })
+                  }
+                >
+                  <SelectTrigger id="cash_flow_activity" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CASH_FLOW_ACTIVITIES.map((a) => (
+                      <SelectItem key={a.code} value={a.code}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  Which section of the cash-flow statement this account's
+                  movements belong to.
+                </p>
+              </div>
+            )}
 
           <div className="flex items-center gap-2">
             <Checkbox

@@ -88,8 +88,15 @@ func TestMasterCRUD(t *testing.T) {
 	if _, err := master.GetSupplier(ctx, tx, supID); err != nil {
 		t.Fatalf("get supplier: %v", err)
 	}
-	if _, err := master.CreateAccount(ctx, tx, master.AccountInput{Code: "9000", Name: "Suspense", AccountType: "asset", IsPostable: true}); err != nil {
+	acctID, err := master.CreateAccount(ctx, tx, master.AccountInput{
+		Code: "9000", Name: "Suspense", AccountType: "asset", IsPostable: true,
+		IsCash: true, CashFlowActivity: "investing",
+	})
+	if err != nil {
 		t.Fatalf("create account: %v", err)
+	}
+	if a, err := master.GetAccount(ctx, tx, acctID); err != nil || !a.IsCash || a.CashFlowActivity != "investing" {
+		t.Fatalf("get account = %+v, %v; want is_cash investing", a, err)
 	}
 	if _, err := master.CreateWarehouse(ctx, tx, master.WarehouseInput{Code: "W1", Name: "Main"}); err != nil {
 		t.Fatalf("create warehouse: %v", err)

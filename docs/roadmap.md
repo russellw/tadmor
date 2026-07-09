@@ -1,8 +1,8 @@
 # Roadmap
 
 What's still to do, as of 2026-07-09. The core loop is in place — master data,
-GL with P&L / balance sheet / trial balance / ledgers / aging / inventory
-valuation, invoices, bills, credit notes, payments, sales and purchase orders
+GL with P&L / balance sheet / cash flow / trial balance / ledgers / aging /
+inventory valuation, invoices, bills, credit notes, payments, sales and purchase orders
 with partial fulfilment, stock movements with GRNI, auth + roles — and the demo
 is live at https://tadmor.belunaro.com with a nightly reseed. The items below
 are what's known to be missing, gathered from the docs' "status and next step"
@@ -48,8 +48,13 @@ sections, deferred decisions, and a gap review against the project goal.
   handlers references exchange rates — all documents are effectively
   single-currency. If foreign-currency customers/suppliers are in scope, this
   is a large schema-and-posting-logic item.
-- **Cash-flow statement** — the one classic financial statement missing
-  alongside P&L and balance sheet.
+- ~~**Cash-flow statement**~~ — done 2026-07-09: indirect-method statement at
+  Reports → Cash Flow (`GET /api/cash-flow`): net income plus each non-cash
+  balance-sheet account's cash impact, grouped operating/investing/financing
+  and reconciled to opening/closing cash. Accounts gained `is_cash` (which
+  accounts *are* cash; seeded/backfilled by name) and `cash_flow_activity`
+  (which section a non-cash account's movements belong to), both editable on
+  the account form.
 - **Bank reconciliation** — payments post to the GL, but there's no statement
   import or matching.
 - **Document output** — no PDF/print rendering or emailing of invoices; the
