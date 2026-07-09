@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,7 @@ import (
 	"tadmor/internal/db"
 	"tadmor/internal/documents"
 	"tadmor/internal/posting"
+	"tadmor/internal/printing"
 	"tadmor/internal/reporting"
 )
 
@@ -140,6 +142,7 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /sales-invoices", s.listSalesInvoices)
 	api.HandleFunc("GET /sales-invoices/{id}", s.getSalesInvoice)
 	api.HandleFunc("GET /sales-invoices/{id}/lines", s.getSalesInvoiceLines)
+	api.HandleFunc("GET /sales-invoices/{id}/pdf", s.getSalesInvoicePDF)
 	api.HandleFunc("GET /customer-payments", s.listCustomerPayments)
 	api.HandleFunc("GET /customer-payments/{id}", s.getCustomerPayment)
 	api.HandleFunc("GET /customer-payments/{id}/applications", s.getCustomerPaymentApplications)
@@ -393,6 +396,34 @@ func (s *Server) getSalesInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, inv)
+}
+
+func (s *Server) getSalesInvoicePDF(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	out, number, err := printing.SalesInvoicePDF(r.Context(), s.pool, id)
+	if err != nil {
+		s.writeReadError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", `inline; filename="`+pdfFilename(number)+`"`)
+	_, _ = w.Write(out)
+}
+
+// pdfFilename derives a safe download filename from an invoice number.
+func pdfFilename(number string) string {
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			return r
+		default:
+			return '-'
+		}
+	}, number)
+	return "invoice-" + safe + ".pdf"
 }
 
 func (s *Server) listCustomerPayments(w http.ResponseWriter, r *http.Request) {

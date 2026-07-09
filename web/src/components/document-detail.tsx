@@ -108,6 +108,7 @@ export function InvoiceDetail() {
       post={postSalesInvoice}
       unpost={unpostSalesInvoice}
       deleteDocument={deleteSalesInvoice}
+      pdfBasePath="/api/sales-invoices"
     />
   )
 }
@@ -194,6 +195,7 @@ function DocumentDetail({
   appliedDocLabel = "",
   appliedDocBasePath = "",
   applyHint = "",
+  pdfBasePath,
 }: {
   titlePrefix: string
   backPath: string
@@ -210,6 +212,9 @@ function DocumentDetail({
   appliedDocLabel?: string
   appliedDocBasePath?: string
   applyHint?: string
+  /** API base path for a printable PDF; when set, a PDF button opens
+   *  `${pdfBasePath}/${id}/pdf` in a new tab. */
+  pdfBasePath?: string
 }) {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -373,6 +378,17 @@ function DocumentDetail({
                     {acting ? "Applying…" : "Apply"}
                   </Button>
                 )}
+              {pdfBasePath !== undefined && (
+                <Button variant="outline" asChild>
+                  <a
+                    href={`${pdfBasePath}/${documentId}/pdf`}
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    PDF
+                  </a>
+                </Button>
+              )}
               {document.status === "posted" && currentUser.is_admin && (
                 <Button
                   variant="outline"

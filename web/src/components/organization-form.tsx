@@ -9,6 +9,7 @@ import {
   type OrganizationInput,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
@@ -23,6 +24,7 @@ interface FormState {
   taxId: string
   countryCode: string
   defaultCurrency: string
+  isSelf: boolean
 }
 
 const blankForm: FormState = {
@@ -31,6 +33,7 @@ const blankForm: FormState = {
   taxId: "",
   countryCode: "",
   defaultCurrency: "",
+  isSelf: false,
 }
 
 function emptyToNull(s: string): string | null {
@@ -66,6 +69,7 @@ export function OrganizationForm({ mode }: { mode: Mode }) {
             taxId: org.tax_id ?? "",
             countryCode: org.country_code ?? "",
             defaultCurrency: org.default_currency ?? "",
+            isSelf: org.is_self,
           })
         } else {
           setForm(blankForm)
@@ -98,6 +102,7 @@ export function OrganizationForm({ mode }: { mode: Mode }) {
       tax_id: emptyToNull(form.taxId),
       country_code: country === "" ? null : country,
       default_currency: currency === "" ? null : currency,
+      is_self: form.isSelf,
     }
     setSaving(true)
     setSaveError(null)
@@ -199,6 +204,18 @@ export function OrganizationForm({ mode }: { mode: Mode }) {
                 }
               />
             </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="is_self"
+              checked={form.isSelf}
+              onCheckedChange={(c) => setForm({ ...form, isSelf: c === true })}
+            />
+            <Label htmlFor="is_self">
+              This is our own company (its name, tax ID, and address appear as
+              the issuer on printed documents; only one organization can be it)
+            </Label>
           </div>
 
           {saveError !== null && (

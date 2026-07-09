@@ -217,6 +217,7 @@ export interface Organization {
   tax_id: string | null
   country_code: string | null
   default_currency: string | null
+  is_self: boolean
 }
 
 /** The writable fields of an organization (Organization without its id),
@@ -227,6 +228,7 @@ export interface OrganizationInput {
   tax_id: string | null
   country_code: string | null
   default_currency: string | null
+  is_self: boolean
 }
 
 export function listOrganizations(): Promise<Organization[]> {
