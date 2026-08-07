@@ -133,7 +133,8 @@ ssh vps 'sudo install -m 755 -o root -g root /tmp/reseed.sh /opt/tadmor/reseed.s
 ## 3. One-time box setup (already done; recorded for rebuild)
 
 The box-level hardening (ufw default-deny with only 22/80/443, SSH key-only,
-unattended-upgrades) predates tadmor and is not repeated here.
+unattended-upgrades) predates tadmor and is not repeated here. The one later
+addition is fail2ban, in §3.5.
 
 ### 3.1 Postgres
 
@@ -235,6 +236,54 @@ for ip, n in c.most_common(10): print(f"{n:8d}  {ip}")'
 
 Note that these logs record client IP addresses and user agents, so they are
 personal data under GDPR; the 90-day `roll_keep_for` is the retention bound.
+
+### 3.5 fail2ban
+
+Installed 2026-08-07 (`fail2ban` 1.1.0-8, Debian main — same repo-preference
+call as Caddy and Postgres). The box was absorbing ~65k failed SSH auths a
+month from ~1,400 IPs; key-only auth meant none could succeed, but the noise
+was 244k of the 387k journald lines per month.
+
+Debian's `/etc/fail2ban/jail.d/defaults-debian.conf` enables the `sshd` jail
+with `backend = systemd`. Local tuning lives in `/etc/fail2ban/jail.local`:
+
+```ini
+[DEFAULT]
+banaction          = ufw
+banaction_allports = ufw
+ignoreip           = 127.0.0.1/8 ::1 37.228.228.68
+bantime            = 1h
+findtime           = 10m
+maxretry           = 3
+bantime.increment  = true
+bantime.factor     = 2
+bantime.maxtime    = 1w
+```
+
+Two things about this that are easy to get wrong:
+
+- **`banaction = ufw` is required, not a preference.** Debian defaults to
+  `banaction = nftables`, but the `nftables` package is not installed here, so
+  every ban died with `nft: not found` — while `fail2ban-client status` still
+  cheerfully reported the IP as banned. Always confirm a ban reaches the
+  firewall, never trust the jail status alone.
+- **`ignoreip` carries the operator's ISP address** so a fumbled key cannot
+  lock you out. If that address changes, update it. Recovery if it ever does
+  bite: bans expire on their own, or use the OVH console.
+
+Verify end-to-end with a documentation IP — the point is that the ban appears
+in `ufw status`, not merely in fail2ban's own bookkeeping:
+
+```sh
+ssh vps 'sudo fail2ban-client set sshd banip 203.0.113.99 && sleep 2 \
+         && sudo ufw status | grep 203.0.113.99 \
+         && sudo fail2ban-client set sshd unbanip 203.0.113.99'
+```
+
+Day-to-day: `sudo fail2ban-client status sshd`, and `sudo grep -i error
+/var/log/fail2ban.log` after any config change. Bans are runtime-only — they
+are not written to `/etc/ufw/user.rules`, and fail2ban re-applies active ones
+from its sqlite database on start, so reboots do not accumulate stale rules.
 
 ---
 
