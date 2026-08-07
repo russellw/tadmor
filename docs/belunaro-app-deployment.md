@@ -173,8 +173,26 @@ Append to `/etc/caddy/Caddyfile` on the box:
 ```
 foo.belunaro.com {
 	reverse_proxy 127.0.0.1:8082
+	log {
+		output file /var/log/caddy/foo.access.log {
+			roll_size 20MiB
+			roll_keep 12
+			roll_keep_for 90d
+		}
+		format json
+	}
 }
 ```
+
+The `log` block is not optional boilerplate: Caddy has access logging **off by
+default**, so a vhost without it leaves no record of any request it served —
+only TLS/runtime events reach `journalctl -u caddy`. Give every new vhost its
+own log file, named after the app.
+
+Rotation is handled by Caddy's own roller (the `roll_*` options above), **not
+by logrotate**. Do not add a logrotate config for these files: logrotate would
+rename the file while Caddy keeps writing to the old inode, silently sending
+every subsequent request to a deleted file until the next reload.
 
 Then — **always in this order**, since a bad Caddyfile takes down every site
 on the box:

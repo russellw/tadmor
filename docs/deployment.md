@@ -178,11 +178,63 @@ In `/etc/caddy/Caddyfile` on the box:
 ```
 tadmor.belunaro.com {
 	reverse_proxy 127.0.0.1:8081
+	log {
+		output file /var/log/caddy/tadmor.access.log {
+			roll_size 20MiB
+			roll_keep 12
+			roll_keep_for 90d
+		}
+		format json
+	}
 }
 ```
 
 then `sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl
 reload caddy`. Caddy obtains and renews the certificate automatically.
+
+### 3.4 Access logs
+
+Every vhost on the box writes a JSON access log to `/var/log/caddy/<app>.access.log`.
+Caddy logs no requests at all without an explicit `log` block, so this is
+required for any traffic visibility — `journalctl -u caddy` carries only
+TLS and runtime events.
+
+Rotation comes from Caddy's built-in roller (`roll_size` / `roll_keep` /
+`roll_keep_for`), which caps each log at 20 MiB and keeps 12 rotated files for
+90 days. **Do not add a logrotate config** for these paths: logrotate renames
+the file out from under Caddy, which holds the open descriptor and would keep
+writing to the deleted inode until the next reload.
+
+One JSON object per request. Neither the box nor a typical dev machine has
+`jq` installed, and `python3` is on both, so the recipes below use it — the
+pipeline runs locally, only `cat` runs over SSH.
+
+Requests per day:
+
+```sh
+ssh vps 'sudo cat /var/log/caddy/tadmor.access.log' | python3 -c '
+import sys, json, collections, time
+c = collections.Counter()
+for line in sys.stdin:
+    if line.strip():
+        c[time.strftime("%Y-%m-%d", time.gmtime(json.loads(line)["ts"]))] += 1
+for day in sorted(c): print(f"{c[day]:8d}  {day}")'
+```
+
+Top client IPs across every site:
+
+```sh
+ssh vps 'sudo cat /var/log/caddy/*.access.log' | python3 -c '
+import sys, json, collections
+c = collections.Counter()
+for line in sys.stdin:
+    if line.strip():
+        c[json.loads(line)["request"]["remote_ip"]] += 1
+for ip, n in c.most_common(10): print(f"{n:8d}  {ip}")'
+```
+
+Note that these logs record client IP addresses and user agents, so they are
+personal data under GDPR; the 90-day `roll_keep_for` is the retention bound.
 
 ---
 
