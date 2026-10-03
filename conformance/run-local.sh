@@ -76,4 +76,4 @@ for _ in $(seq 1 30); do
 done
 
 echo "==> Running the conformance suite"
-go run ./conformance -base-url "http://$HTTP_ADDR" -email "$email" -password "$password" "$@"
+(cd conformance && go run . -base-url "http://$HTTP_ADDR" -email "$email" -password "$password" "$@")

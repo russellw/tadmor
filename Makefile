@@ -62,9 +62,11 @@ seed-iso: ## Load the full ISO country/currency lists (additive; see db/seed/)
 
 test: ## Run the full test suite from scratch (integration tests reset the DB)
 	TEST_DATABASE_URL=$(TEST_DATABASE_URL) go test -count=1 ./...
+	cd conformance && go test -count=1 ./...  # its own module; see spec/README.md
 
 vet: ## Run go vet
 	go vet ./...
+	cd conformance && go vet ./...
 
 fmt: ## Format all Go sources
 	gofmt -w cmd internal conformance

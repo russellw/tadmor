@@ -67,7 +67,7 @@ non-overlapping periods, the frozen base currency), so a used database
 gives meaningless results.
 
 ```sh
-go run ./conformance -base-url http://127.0.0.1:8090 \
+cd conformance && go run . -base-url http://127.0.0.1:8090 \
     -email admin@example.com -password 'the-password'
 ```
 
@@ -76,9 +76,27 @@ database, starts the server, bootstraps the admin, runs the suite, and
 tears everything down. A counterpart should provide its own equivalent
 wrapper. See [`conformance/README.md`](../conformance/README.md).
 
-## Freezing and versioning
+## Counterparts and versioning
 
-The spec describes tadmor as of the commit that last touched this
-directory. Counterparts target a specific spec commit. If tadmor's
-behavior changes, update the spec and the suite in the same commit, so
-the three never drift apart.
+Each counterpart lives in **its own repository** and carries a **copy** of
+`spec/` and `conformance/` taken at a specific tadmor commit:
+
+```sh
+spec/export.sh ../tadmor-counterpart     # from the tadmor repo
+```
+
+The export script replaces both directories in the destination wholesale,
+leaves out tadmor-only files (`conformance/run-local.sh`, the script
+itself), and writes `spec/UPSTREAM` naming the source commit. It refuses
+to export uncommitted changes.
+
+- **tadmor owns the spec.** The copies are never edited in place. A change
+  to the spec or the suite is made in tadmor, in the same commit as any
+  behavior change, and re-exported. tadmor must keep passing the suite.
+- **A counterpart targets one spec commit.** It records which commit in
+  `spec/UPSTREAM` and upgrades by re-exporting, deliberately, when it is
+  ready to catch up. Comparisons between implementations should name the
+  spec commit each one passes.
+- **The suite is self-contained.** `conformance/` is its own Go module with
+  no dependencies, so `cd conformance && go run . ...` works in any
+  repository with a Go toolchain, whatever stack the counterpart uses.

@@ -134,6 +134,12 @@ sections, deferred decisions, and a gap review against the project goal.
   statement, plus a posting bug: a document whose lines netted negative on
   one account (e.g. a discount line on its own revenue account) answered
   500. All are fixed; such an account now posts on the opposite side.
+- **Where counterparts live** — decided 2026-10-03: each counterpart is a
+  separate repository carrying a copy of `spec/` and `conformance/` taken at
+  a known tadmor commit by `spec/export.sh` (recorded in `spec/UPSTREAM`).
+  tadmor owns the spec, and copies are re-exported, never edited in place.
+  `conformance/` is its own dependency-free Go module so the copy runs
+  anywhere (`spec/README.md`).
 - **Next:** pick the first counterpart stack and the comparison metrics
   before building it.
 

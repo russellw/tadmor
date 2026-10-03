@@ -5,8 +5,10 @@ talks to a running server only over HTTP, so it can judge any
 implementation, including counterparts on other stacks.
 
 **Supply chain.** The suite is one Go program that imports only the
-standard library, and `imports_test.go` enforces that. Running it needs a
-Go toolchain and nothing else, which is no more trust than the reference
+standard library, and `imports_test.go` enforces that. It is its own Go
+module with no dependencies, so a counterpart repository can carry a copy
+(exported by `spec/export.sh`) and run it unchanged. Running it needs a Go
+toolchain and nothing else, which is no more trust than the reference
 implementation already asks for.
 
 ## Running it against tadmor
@@ -27,12 +29,15 @@ make conformance ARGS='-run banking'
 1. Start the implementation against a **fresh** database: schema and seed
    data per `spec/api.md` §4, plus exactly one administrator login.
 2. Disable outbound email, so the email endpoints answer 501.
-3. Run the suite:
+3. Run the suite from the `conformance/` directory:
 
    ```sh
-   go run ./conformance -base-url http://127.0.0.1:8091 \
+   cd conformance && go run . -base-url http://127.0.0.1:8091 \
        -email admin@example.com -password 'the-password' [-v] [-run regexp]
    ```
+
+   A counterpart should wrap steps 1 to 3 in its own one-shot script, the
+   equivalent of tadmor's `run-local.sh`.
 
 The exit status is 0 only if every selected case passes. To run only some
 cases, pass `-run` a regular expression over case names. Group prefixes
