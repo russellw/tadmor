@@ -103,7 +103,7 @@ export function StockMovementForm({
           setProductId(String(movement.product_id))
           setWarehouseId(String(movement.warehouse_id))
           setMovementType(movement.movement_type)
-          setDate(movement.date)
+          setDate(movement.movement_date)
           // The form takes a magnitude for signed types (adjustments pass
           // through as stored).
           setQuantity(

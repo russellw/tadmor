@@ -86,8 +86,9 @@ Invoices, bills, both kinds of credit note, and both kinds of payment move
 document to `draft`. `void` exists in the data model but nothing produces
 it (§14).
 
-A stock movement has no status: it is posted exactly when its
-`journal_entry_id` is set. Only receipts and issues post.
+A stock movement's status is derived: it is `posted` exactly when its
+`journal_entry_id` is set, and `draft` otherwise. Only receipts and issues
+post.
 
 ### 4.2 Posting checks
 
@@ -202,7 +203,7 @@ For credit notes:
 
 - `amount_applied` is the sum of the note's applications.
 - `balance = total − amount_applied`.
-- `payment_status` carries the application status: `open`, `partial`, or
+- `application_status` is `open`, `partial`, or
   `applied`, by the same rule.
 
 For payments, `unapplied = amount − amount_applied`.

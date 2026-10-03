@@ -19,10 +19,10 @@ ought to match but that nothing checks.
 - Request bodies are JSON (`Content-Type: application/json`). Unknown
   request fields are ignored.
 - Responses with a body are JSON (`Content-Type: application/json`),
-  except PDFs (§5.11) and unknown routes. An unknown path or method under
-  `/api/` returns 404 or 405 once the caller is authenticated, with any
-  body. Without a session it returns 401 (§3), because authentication
-  wraps the whole API.
+  except PDFs (§5.11). An unknown path, or a known path with an unknown
+  method, under `/api/` is a JSON 404 once the caller is authenticated.
+  Without a session it returns 401 (§3), because authentication wraps the
+  whole API.
 
 ### 1.2 Value types
 
@@ -38,17 +38,28 @@ ought to match but that nothing checks.
 Every documented response field must be present, even when it is `null`.
 Responses may carry extra fields.
 
-### 1.3 Write semantics
+### 1.3 Read and write semantics
 
+- **One vocabulary.** A resource's read representation names its fields
+  exactly as its create/update body does: an invoice is written with
+  `invoice_number`, `customer_id`, and `invoice_date`, and read back with
+  the same names plus read-only extras (`status`, `total`, `balance`, and
+  so on). A client can edit what it read and send it back.
 - **Create** (`POST` to a collection) returns **201** with the new key:
   `{"id": n}` (synthetic keys), `{"code": "..."}` (tax codes, payment
   terms), or `{"currency_code": "...", "rate_date": "..."}` (exchange
-  rates).
+  rates). The key is echoed as stored, so a currency code comes back
+  upper-cased. The fulfilment operations, which create one resource from
+  another, name the key by its kind instead (§5.10).
 - **Update** (`PUT` to an item) is a **full replacement**. A boolean
   omitted from the body is `false`, and an omitted optional field becomes
-  `null`, so clients must send the whole record. Master-data and user
-  updates return **204** with no body. Draft-document and bank-statement
-  updates return **200** `{"status":"ok"}`.
+  `null`, so clients must send the whole record.
+- **Nothing to report means 204.** Every update, every delete, and every
+  state transition that produces no new data (confirming an order,
+  reconciling a statement, matching a line) returns **204 No Content**.
+  Operations that do produce data return 200 with it, for example posting
+  (the journal entry's id), applying (the applications created), or
+  importing (the number of lines).
 - **Delete** exists only where it is listed. Master data is never deleted,
   only deactivated (`is_active: false`), because it may carry history.
 - On create, `is_active` is ignored and new records start active. A
@@ -67,12 +78,12 @@ is:
 
 | Status | Meaning |
 | ------ | ------- |
-| 400 | Malformed request: unparseable JSON, a missing required field, a path id that is not a positive integer, or a failed field-level rule listed under the endpoint. |
+| 400 | The request cannot be interpreted: unparseable JSON, a missing required field, or a path id or query parameter that is malformed (an id that is not a positive integer, a date that is not `YYYY-MM-DD`). |
 | 401 | No session, or an invalid or expired session (§3). Also wrong login credentials. |
 | 403 | Authenticated, but the endpoint is administrator-only. |
 | 404 | The addressed record does not exist. |
 | 409 | Conflict with existing state: a duplicate unique key, or the record is in the wrong lifecycle state for the operation (not draft, not open, already posted, already matched, and so on). |
-| 422 | Well-formed, but violates a business rule or references something invalid: an unknown foreign key, a value out of range, an unparseable date or decimal, a missing GL account configuration, no open period, an unbalanced statement, and so on. |
+| 422 | The request is interpretable but a value in it is not acceptable: an unknown foreign key, a value out of range or badly formed (a negative `due_days`, an email without `@`, a password under 8 characters, an invalid date or decimal in the body), or a business rule (a missing GL account configuration, no open period, an unbalanced statement, an administrator deactivating themselves, and so on). |
 | 501 | The feature is present but disabled in this deployment (email, §5.11). |
 | 500 | Server fault. Never expected from any request in this spec. |
 
@@ -197,9 +208,9 @@ password hash never appears in any response.
 | ------------- | ---- | -------- |
 | `GET /users` | | 200 `[UserRecord]`, ordered by email. |
 | `GET /users/{id}` | | 200 `UserRecord`, 404. |
-| `POST /users` | `{"email", "full_name", "password", "is_admin"}` | 201 `{"id"}`. 400 if the email is empty or lacks `@`, the name is empty, or the password is under 8 characters. 409 for a duplicate email (case-insensitive). |
-| `PUT /users/{id}` | `{"email", "full_name", "is_active", "is_admin"}` | 204. 400 for the same field rules, or if the caller would deactivate or demote **themselves**. 404, or 409 for a duplicate email. |
-| `POST /users/{id}/password` | `{"password"}` | 204, and revokes all of that user's sessions. 400 if the password is under 8 characters. 404. |
+| `POST /users` | `{"email", "full_name", "password", "is_admin"}` | 201 `{"id"}`. 400 if the email, name, or password is missing. 422 if the email lacks `@` or the password is under 8 characters. 409 for a duplicate email (case-insensitive). |
+| `PUT /users/{id}` | `{"email", "full_name", "is_active", "is_admin"}` | 204. 400 or 422 for the same field rules. 422 if the caller would deactivate or demote **themselves**. 404, or 409 for a duplicate email. |
+| `POST /users/{id}/password` | `{"password"}` | 204, and revokes all of that user's sessions. 400 if the password is missing, 422 if it is under 8 characters. 404. |
 
 ### 5.2 Organizations
 
@@ -281,8 +292,8 @@ omitted), `investing`, `financing`.
 | `PUT /tax-codes/{code}` | 204. The path's code wins over the body's. 404, 422. |
 | `GET /payment-terms` | 200, ordered by `due_days` then code. |
 | `GET /payment-terms/{code}` | 200, 404. |
-| `POST /payment-terms` | 201 `{"code"}`. 400 without `code` or `name`, or for a negative `due_days`. 409 for a duplicate. |
-| `PUT /payment-terms/{code}` | 204. The path's code wins. 400, 404. |
+| `POST /payment-terms` | 201 `{"code"}`. 400 without `code` or `name`. 422 for a negative `due_days`. 409 for a duplicate. |
+| `PUT /payment-terms/{code}` | 204. The path's code wins. 400, 404, 422. |
 | `GET /warehouses` | 200, ordered by code. |
 | `GET /warehouses/{id}` | 200, 404. |
 | `POST /warehouses` | 201. 400 without `code` or `name`. 409 for a duplicate code. |
@@ -320,9 +331,9 @@ number of base-currency units bought by one unit of `currency_code`.
 | Method & path | Body | Response |
 | ------------- | ---- | -------- |
 | `GET /settings` | | 200 `Settings`. |
-| `PUT /settings` **(admin)** | `Settings` | 204. 400 unless `base_currency` is 3 letters (it is upper-cased). 422 for an unknown currency, an FX account that is not postable and active, or a change of base currency **once any journal entry exists**. |
+| `PUT /settings` **(admin)** | `Settings` | 204. The currency is upper-cased. 400 without `base_currency`. 422 for an unknown or malformed currency, an FX account that is not postable and active, or a change of base currency **once any journal entry exists**. |
 | `GET /exchange-rates` | | 200, ordered by currency, then date newest first. |
-| `POST /exchange-rates` | `ExchangeRate` | 201 `{"currency_code", "rate_date"}`. The currency is upper-cased. 400 unless the currency is 3 letters and the date and rate are present. 409 for a duplicate (currency, date). 422 for an unknown currency or a rate ≤ 0. |
+| `POST /exchange-rates` | `ExchangeRate` | 201 `{"currency_code", "rate_date"}`, with the currency upper-cased as stored. 400 if the currency, date, or rate is missing. 409 for a duplicate (currency, date). 422 for an unknown or malformed currency or a rate ≤ 0. |
 | `PUT /exchange-rates/{currency}/{date}` | `{"rate"}` | 204. 404 if no rate exists for that key. |
 | `DELETE /exchange-rates/{currency}/{date}` | | 204, 404. |
 
@@ -362,18 +373,25 @@ Validation (400) covers the required header fields (party > 0, number,
 date, currency, and amount for payments) and a non-empty `description` on
 every line.
 
-**Read shapes.**
+**Read shapes.** Each document is read with its own key fields, named as
+in its request body, followed by the fields all four share:
 
-`DocumentBalance`, used for invoices, bills, and both kinds of credit note:
-`{"id", "number", "party_id", "currency_code", "date", "due_date",
-"status", "total", "amount_applied", "balance", "payment_status",
-"journal_entry_id", "reference", "memo"}`.
+| Collection | Key fields |
+| ---------- | ---------- |
+| `sales-invoices` (`SalesInvoice`) | `id`, `invoice_number`, `customer_id`, `invoice_date`, `due_date`, `payment_status` |
+| `purchase-bills` (`PurchaseBill`) | `id`, `bill_number`, `supplier_id`, `bill_date`, `due_date`, `payment_status` |
+| `sales-credit-notes` (`SalesCreditNote`) | `id`, `credit_note_number`, `customer_id`, `credit_note_date`, `application_status` |
+| `purchase-credit-notes` (`PurchaseCreditNote`) | `id`, `credit_note_number`, `supplier_id`, `credit_note_date`, `application_status` |
+
+Shared: `"currency_code", "status", "total", "amount_applied", "balance",
+"journal_entry_id", "reference", "memo"`.
 
 - `status`: `draft`, `posted`, or `void`. Nothing in the API produces
   `void` today.
-- `payment_status` for invoices and bills: `unpaid`, `partial`, `paid`, or
-  `void`. For credit notes it carries the application status: `open`,
-  `partial`, `applied`, or `void`. Credit notes have `due_date: null`.
+- `payment_status` (invoices and bills): `unpaid`, `partial`, `paid`, or
+  `void`.
+- `application_status` (credit notes): `open`, `partial`, `applied`, or
+  `void`. Credit notes do not age, so they have no due date.
 - `journal_entry_id` is set while the document is posted.
 
 `InvoiceLine`: `{"line_no", "product_id", "description", "quantity",
@@ -382,9 +400,10 @@ every line.
 `unit_cost` and `expense_account_id` instead. Credit-note lines have the
 same shape with `order_line_id` always null.
 
-`Payment`: `{"id", "party_id", "date", "currency_code", "amount", "method",
-"reference", "status", "amount_applied", "unapplied", "journal_entry_id",
-"account_id"}`. `account_id` is the deposit or payment account.
+`CustomerPayment`: `{"id", "customer_id", "payment_date",
+"deposit_account_id", "currency_code", "amount", "method", "reference",
+"status", "amount_applied", "unapplied", "journal_entry_id"}`.
+`SupplierPayment` is the same with `supplier_id` and `payment_account_id`.
 
 `Application`: `{"document_id", "document_number", "amount_applied"}`.
 
@@ -393,15 +412,15 @@ same shape with `order_line_id` always null.
 | Method & path | Response |
 | ------------- | -------- |
 | `POST /{c}` | 201 `{"id"}`, created as a draft. 400 per the validation rules above. 409 for a duplicate number. 422 for unknown references, quantity 0, a due date before the document date, an invalid date or decimal, an amount ≤ 0, or an unknown method. |
-| `PUT /{c}/{id}` | 200 `{"status":"ok"}`. Replaces the header **and the full line set**. 400, 404. 409 if the document is not a draft, or was produced from an order (domain §6.4). 409 or 422 as for create. |
-| `DELETE /{c}/{id}` | 200 `{"status":"ok"}`. 404. 409 if the document is not a draft. Order-produced drafts **may** be deleted. |
-| `GET /{c}` | 200 `[DocumentBalance]` or `[Payment]`, ordered by date newest first, then id descending. |
-| `GET /{c}/{id}` | 200 `DocumentBalance` or `Payment`, 404. |
+| `PUT /{c}/{id}` | 204. Replaces the header **and the full line set**. 400, 404. 409 if the document is not a draft, or was produced from an order (domain §6.4). 409 or 422 as for create. |
+| `DELETE /{c}/{id}` | 204. 404. 409 if the document is not a draft. Order-produced drafts **may** be deleted. |
+| `GET /{c}` | 200, a list of the collection's read shape, ordered by date newest first, then id descending. |
+| `GET /{c}/{id}` | 200, the collection's read shape. 404. |
 | `GET /{c}/{id}/lines` (not payments) | 200 `[InvoiceLine]` or `[BillLine]`, ordered by line_no. 404 for an unknown document. |
 | `GET /{c}/{id}/applications` (payments and credit notes only) | 200 `[Application]` in creation order. 404 for an unknown document. |
 | `POST /{c}/{id}/post` | 200 `{"journal_entry_id"}`. See domain §4.2 for the checks and their codes. |
 | `POST /{c}/{id}/unpost` **(admin)** | 200 `{"reversal_entry_id"}`. See domain §4.4. |
-| `POST /{c}/{id}/apply` (payments and credit notes only) | 200 `{"applications": [{"document_id", "amount"}]}`, which may be empty. 404. 409 if the payment or note is not posted. 422 if a realized FX difference arises and no FX account is configured. See domain §5. |
+| `POST /{c}/{id}/apply` (payments and credit notes only) | 200 `{"applications": [{"document_id", "amount_applied"}]}`, which may be empty. 404. 409 if the payment or note is not posted. 422 if a realized FX difference arises and no FX account is configured. See domain §5. |
 
 ### 5.10 Sales and purchase orders
 
@@ -436,9 +455,9 @@ with `qty_billed`, `qty_received`, `qty_to_bill`, and `qty_to_receive`.
 | `POST /{c}`, `PUT /{c}/{id}`, `DELETE /{c}/{id}` | as for invoices and bills | As §5.9. Edit and delete are allowed only in `draft` (409 otherwise). |
 | `GET /{c}` | | 200, ordered by order date newest first, then id descending. |
 | `GET /{c}/{id}`, `GET /{c}/{id}/lines` | | 200, 404. |
-| `POST /{c}/{id}/confirm` | | 200 `{"status":"ok"}` (draft → open). 404. 409 if not a draft. 422 if the order has no lines. |
-| `POST /{c}/{id}/close` | | 200 (open → closed). 404. 409 if not open. |
-| `POST /{c}/{id}/cancel` | | 200 (draft or open → cancelled). 404. 409 if closed or cancelled, or if it is open but anything has been invoiced, billed, shipped, or received against it. |
+| `POST /{c}/{id}/confirm` | | 204 (draft → open). 404. 409 if not a draft. 422 if the order has no lines. |
+| `POST /{c}/{id}/close` | | 204 (open → closed). 404. 409 if not open. |
+| `POST /{c}/{id}/cancel` | | 204 (draft or open → cancelled). 404. 409 if closed or cancelled, or if it is open but anything has been invoiced, billed, shipped, or received against it. |
 | `POST /sales-orders/{id}/invoice` | `{"invoice_number", "invoice_date", "due_date", "lines": [{"order_line_id", "quantity"}]}` | 201 `{"invoice_id"}`, a draft invoice. 400 without a number or date. 404. 409 if the order is not open. 422 if there is nothing left to invoice. 409 for a duplicate invoice number. |
 | `POST /purchase-orders/{id}/bill` | `{"bill_number", "bill_date", "due_date", "lines"}` | 201 `{"bill_id"}`, the mirror of the above. |
 | `POST /sales-orders/{id}/ship` | `{"warehouse_id", "movement_date", "reference", "lines"}` | 201 `{"movement_ids": [...]}`, draft issue movements. 400 without a warehouse. 404, 409, 422 as above. |
@@ -468,23 +487,24 @@ domain §11.
 
 ### 5.12 Stock movements
 
-`StockMovement`: `{"id", "product_id", "warehouse_id", "date",
-"movement_type", "quantity", "unit_cost", "total_cost", "reference",
-"notes", "journal_entry_id", "source_type"}`.
+`StockMovement`: `{"id", "product_id", "warehouse_id", "movement_date",
+"movement_type", "status", "quantity", "unit_cost", "total_cost",
+"reference", "notes", "journal_entry_id", "source_type"}`.
 
 - `movement_type` is one of `receipt`, `issue`, `adjustment`,
   `transfer_in`, `transfer_out`.
 - `source_type` is null for hand-entered movements and
   `sales_order_line` or `purchase_order_line` for fulfilment.
-- A movement is posted exactly when `journal_entry_id` is non-null.
+- `status` is `posted` exactly when `journal_entry_id` is non-null, and
+  `draft` otherwise.
 
 | Method & path | Body | Response |
 | ------------- | ---- | -------- |
 | `GET /stock-movements` | | 200, ordered by date newest first, then id descending. |
 | `GET /stock-movements/{id}` | | 200, 404. |
 | `POST /stock-movements` | `{"product_id", "warehouse_id", "movement_type", "movement_date" (default today), "quantity" (signed), "unit_cost" (default 0), "reference", "notes"}` | 201. 400 for a missing product, warehouse, type, or quantity. 422 if the quantity sign disagrees with the type, the quantity is 0, the product is not inventory-tracked or not active, or `unit_cost` < 0. |
-| `PUT /stock-movements/{id}` | same | 200 `{"status":"ok"}`. 404. 409 if posted or produced by fulfilment. |
-| `DELETE /stock-movements/{id}` | | 200. 404. 409 if posted. Fulfilment movements may be deleted while unposted. |
+| `PUT /stock-movements/{id}` | same | 204. 404. 409 if posted or produced by fulfilment. |
+| `DELETE /stock-movements/{id}` | | 204. 404. 409 if posted. Fulfilment movements may be deleted while unposted. |
 | `POST /stock-movements/{id}/post` | `{"credit_account_id"}`, required for receipts and ignored otherwise. The body may be absent. | 200 `{"journal_entry_id"}`. 404. 409 if already posted. 422 for a type other than receipt or issue, zero cost, missing product accounts, a receipt without a valid postable credit account, or no open period. |
 | `POST /stock-movements/{id}/unpost` **(admin)** | | 200 `{"reversal_entry_id"}`. 404. 409 if not posted. |
 
@@ -513,18 +533,18 @@ Amounts are signed from the books' point of view: a deposit is positive
 | `GET /bank-statements` | | 200, ordered by statement date newest first, then id descending. |
 | `GET /bank-statements/{id}` | | 200, 404. |
 | `POST /bank-statements` | `{"account_id", "statement_date", "opening_balance", "closing_balance", "reference"}` | 201 `{"id"}`. 400 for a missing field. 422 unless the account is a postable, active, **cash** account. |
-| `PUT /bank-statements/{id}` | same | 200 `{"status":"ok"}`. 404. 409 if not open. 422 when changing the account while lines are matched. |
-| `DELETE /bank-statements/{id}` | | 200. 404. 409 if not open. |
+| `PUT /bank-statements/{id}` | same | 204. 404. 409 if not open. 422 when changing the account while lines are matched. |
+| `DELETE /bank-statements/{id}` | | 204. 404. 409 if not open. |
 | `GET /bank-statements/{id}/lines` | | 200, ordered by line_no. 404 for an unknown statement. |
 | `POST /bank-statements/{id}/lines` | `{"txn_date", "description", "reference", "amount"}` | 201 `{"id"}`, appended as the next line_no. 400 for a missing field. 404. 409 if not open. 422 for a zero amount. |
-| `POST /bank-statements/{id}/import` | `{"csv": "..."}` | 200 `{"imported": n}`. 400 for empty or invalid CSV (domain §8.2). 404. 409 if not open. |
+| `POST /bank-statements/{id}/import` | `{"csv": "..."}` | 200 `{"imported": n}`. 400 if `csv` is empty. 422 for invalid CSV content (domain §8.2). 404. 409 if not open. |
 | `GET /bank-statements/{id}/candidates` | | 200 `[MatchCandidate]`, ordered by entry date, then entry id, then line. 404. |
 | `POST /bank-statements/{id}/auto-match` | | 200 `{"matched": n}`. 404. 409 if not open. |
-| `POST /bank-statements/{id}/reconcile` | | 200. 404. 409 if not open. 422 if any line is unmatched or the statement does not balance. |
-| `POST /bank-statements/{id}/reopen` **(admin)** | | 200. 404. 409 if not reconciled. |
-| `POST /bank-statement-lines/{id}/match` | `{"journal_line_id"}` | 200. 400 without a journal line. 404. 409 if the statement is not open, the line is already matched, or the journal line already backs another statement line. 422 if the journal line does not exist, is not posted, is on another account, or has a different signed amount. |
-| `POST /bank-statement-lines/{id}/unmatch` | | 200, a no-op if unmatched. 404. 409 if the statement is not open. |
-| `DELETE /bank-statement-lines/{id}` | | 200. 404. 409 if the statement is not open. |
+| `POST /bank-statements/{id}/reconcile` | | 204. 404. 409 if not open. 422 if any line is unmatched or the statement does not balance. |
+| `POST /bank-statements/{id}/reopen` **(admin)** | | 204. 404. 409 if not reconciled. |
+| `POST /bank-statement-lines/{id}/match` | `{"journal_line_id"}` | 204. 400 without a journal line. 404. 409 if the statement is not open, the line is already matched, or the journal line already backs another statement line. 422 if the journal line does not exist, is not posted, is on another account, or has a different signed amount. |
+| `POST /bank-statement-lines/{id}/unmatch` | | 204, a no-op if unmatched. 404. 409 if the statement is not open. |
+| `DELETE /bank-statement-lines/{id}` | | 204. 404. 409 if the statement is not open. |
 
 ### 5.14 Journal and reports
 
@@ -540,7 +560,7 @@ All report figures are in the **base currency** (domain §7) and cover
 | `GET /balance-sheet?as_of=` | 200 `{"rows": [ActivityRow], "current_earnings"}`, covering asset, liability, and equity accounts with activity on or before the date, ordered by code. |
 | `GET /cash-flow?from=&to=` | 200 `CashFlow`. |
 | `GET /ar-aging`, `GET /ap-aging` | 200 `[AgingRow]` for each party with a positive outstanding posted balance, ordered by party id. |
-| `GET /inventory/valuation` | 200 `[ValuationRow]` for each product that has movements, ordered by sku. |
+| `GET /inventory-valuation` | 200 `[ValuationRow]` for each product that has movements, ordered by sku. |
 
 A malformed date parameter is 400. An absent bound is unbounded.
 

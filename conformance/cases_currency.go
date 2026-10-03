@@ -153,15 +153,15 @@ func testBankReconciliation(t *T) {
 	line1 := t.create(path("/api/bank-statements/%d/lines", st), J{"txn_date": d("05-02"), "description": "Deposit", "amount": "100"})
 
 	// CSV import: all-or-nothing.
+	t.status(400, "POST", path("/api/bank-statements/%d/import", st), J{"csv": ""})
 	for _, bad := range []string{
-		"",
 		"date,description,amount\n",
 		fmt.Sprintf("%s,Ok,1\nnot-a-date,Bad,1\n", d("05-04")),
 		fmt.Sprintf("%s,Zero,0.00\n", d("05-04")),
 		fmt.Sprintf("%s,Too few\n", d("05-04")),
 		fmt.Sprintf("%s,Not a number,1e3\n", d("05-04")),
 	} {
-		t.status(400, "POST", path("/api/bank-statements/%d/import", st), J{"csv": bad})
+		t.status(422, "POST", path("/api/bank-statements/%d/import", st), J{"csv": bad})
 	}
 	csv := fmt.Sprintf("date,description,amount,reference\n%s, Cheque to supplier ,-40,CHQ-1\n\n%s,Deposit,25\n", d("05-04"), d("05-21"))
 	r := t.obj(t.must(t.admin, 200, "POST", path("/api/bank-statements/%d/import", st), J{"csv": csv}))
@@ -200,14 +200,14 @@ func testBankReconciliation(t *T) {
 	t.status(422, "POST", path("/api/bank-statements/%d/reconcile", st), nil) // unmatched lines
 	t.status(400, "POST", path("/api/bank-statement-lines/%d/match", line1), J{})
 	t.status(422, "POST", path("/api/bank-statement-lines/%d/match", line1), J{"journal_line_id": jl40}) // amounts differ
-	t.must(t.admin, 200, "POST", path("/api/bank-statement-lines/%d/match", line1), J{"journal_line_id": jl100})
+	t.must(t.admin, 204, "POST", path("/api/bank-statement-lines/%d/match", line1), J{"journal_line_id": jl100})
 	t.status(409, "POST", path("/api/bank-statement-lines/%d/match", line1), J{"journal_line_id": jl100})
 
 	// A journal line backs at most one statement line, across statements.
 	other := t.create("/api/bank-statements", J{"account_id": bank, "statement_date": d("06-30"), "opening_balance": "0", "closing_balance": "0"})
 	dup := t.create(path("/api/bank-statements/%d/lines", other), J{"txn_date": d("05-02"), "description": "Again", "amount": "100"})
 	t.status(409, "POST", path("/api/bank-statement-lines/%d/match", dup), J{"journal_line_id": jl100})
-	t.must(t.admin, 200, "DELETE", path("/api/bank-statements/%d", other), nil)
+	t.must(t.admin, 204, "DELETE", path("/api/bank-statements/%d", other), nil)
 	t.status(404, "GET", path("/api/bank-statements/%d", other), nil)
 
 	r = t.obj(t.must(t.admin, 200, "POST", path("/api/bank-statements/%d/auto-match", st), nil))
@@ -220,14 +220,14 @@ func testBankReconciliation(t *T) {
 	}
 
 	// Must add up: 0 + 100 − 40 + 25 = 85.
-	t.must(t.admin, 200, "PUT", path("/api/bank-statements/%d", st), J{"account_id": bank, "statement_date": d("05-31"), "opening_balance": "0", "closing_balance": "90"})
+	t.must(t.admin, 204, "PUT", path("/api/bank-statements/%d", st), J{"account_id": bank, "statement_date": d("05-31"), "opening_balance": "0", "closing_balance": "90"})
 	t.status(422, "POST", path("/api/bank-statements/%d/reconcile", st), nil)
-	t.must(t.admin, 200, "PUT", path("/api/bank-statements/%d", st), J{"account_id": bank, "statement_date": d("05-31"), "opening_balance": "0", "closing_balance": "85", "reference": "MAY"})
+	t.must(t.admin, 204, "PUT", path("/api/bank-statements/%d", st), J{"account_id": bank, "statement_date": d("05-31"), "opening_balance": "0", "closing_balance": "85", "reference": "MAY"})
 	s = t.doc("bank-statements", st)
 	t.eq("matched_count", t.int(s, "matched_count"), 3)
 	t.eqDec(s, "lines_total", "85")
 	t.eqDec(s, "difference", "0")
-	t.must(t.admin, 200, "POST", path("/api/bank-statements/%d/reconcile", st), nil)
+	t.must(t.admin, 204, "POST", path("/api/bank-statements/%d/reconcile", st), nil)
 	t.eq("reconciled", t.str(t.doc("bank-statements", st), "status"), "reconciled")
 
 	// Reconciled statements are frozen, and so are the entries they match.
@@ -242,15 +242,15 @@ func testBankReconciliation(t *T) {
 	t.status(409, "POST", path("/api/customer-payments/%d/unpost", p1), nil)
 
 	t.expect(t.nonAdmin(), 403, "POST", path("/api/bank-statements/%d/reopen", st), nil)
-	t.must(t.admin, 200, "POST", path("/api/bank-statements/%d/reopen", st), nil)
+	t.must(t.admin, 204, "POST", path("/api/bank-statements/%d/reopen", st), nil)
 	t.status(409, "POST", path("/api/bank-statements/%d/reopen", st), nil)
 	t.eq("reopened", t.str(t.doc("bank-statements", st), "status"), "open")
 
 	// Once released, the entry may be unposted again.
-	t.must(t.admin, 200, "POST", path("/api/bank-statement-lines/%d/unmatch", line1), nil)
-	t.must(t.admin, 200, "POST", path("/api/bank-statement-lines/%d/unmatch", line1), nil) // no-op
+	t.must(t.admin, 204, "POST", path("/api/bank-statement-lines/%d/unmatch", line1), nil)
+	t.must(t.admin, 204, "POST", path("/api/bank-statement-lines/%d/unmatch", line1), nil) // no-op
 	t.must(t.admin, 200, "POST", path("/api/customer-payments/%d/unpost", p1), nil)
-	t.must(t.admin, 200, "DELETE", path("/api/bank-statement-lines/%d", line1), nil)
+	t.must(t.admin, 204, "DELETE", path("/api/bank-statement-lines/%d", line1), nil)
 	t.eq("line_count", t.int(t.doc("bank-statements", st), "line_count"), 2)
 
 	t.status(404, "GET", "/api/bank-statements/999999", nil)

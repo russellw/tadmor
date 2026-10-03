@@ -126,7 +126,7 @@ export function StockMovements() {
                   </Link>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {m.date}
+                  {m.movement_date}
                 </TableCell>
                 <TableCell>
                   <Badge variant="secondary">{m.movement_type}</Badge>

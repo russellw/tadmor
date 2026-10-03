@@ -149,9 +149,24 @@ sections, deferred decisions, and a gap review against the project goal.
   maintainers and builds hermetically (level 4); the front end and its
   toolchain carry nearly all of the surface (173 npm packages, 179
   maintainers across runtime and build; level 1).
+- **API consistency pass** — done 2026-10-03, before any counterpart
+  copies the API: reads use the same field names as writes (e.g.
+  `invoice_number`, not `number`); every update, delete, and data-less
+  state transition is a 204; 400 means "cannot interpret the request" and
+  value rules are 422; stock movements gained a derived `status`; the
+  valuation report moved to `/inventory-valuation`; unknown API routes
+  answer a JSON 404 (`spec/api.md` §1).
 - **Next:** pick the first counterpart stack.
 
 ## Smaller housekeeping
+
+- **Front-end dependency advisories** — found 2026-10-03: `pnpm audit`
+  reports 13 advisories (7 high), so `make web-check` fails. Shipped to
+  browsers: `react-router` (fixed in 7.18.2) and `echarts` (moderate,
+  fixed in 6.1.0, a major upgrade). Build-time only: `postcss`, `nanoid`,
+  `browserslist`, `baseline-browser-mapping` (via vite and
+  `@vitejs/plugin-react`). Upgrade under the cooldown policy
+  (`docs/frontend-stack.md`).
 
 - ~~**README front-matter is stale**~~ — done 2026-07-09 (commit e847809): the
   tagline no longer calls the front end "to come", the layout block now lists

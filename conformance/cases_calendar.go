@@ -68,7 +68,8 @@ func testFiscalYearsPeriods(t *T) {
 // spec/api.md §5.8. Uses CAD on dates far from every other case, and deletes
 // what it creates, so no posting elsewhere ever picks these rates up.
 func testExchangeRates(t *T) {
-	t.status(400, "POST", "/api/exchange-rates", J{"currency_code": "CA", "rate_date": "1901-01-01", "rate": "1.3"})
+	t.status(400, "POST", "/api/exchange-rates", J{"currency_code": "", "rate_date": "1901-01-01", "rate": "1.3"})
+	t.status(422, "POST", "/api/exchange-rates", J{"currency_code": "CA", "rate_date": "1901-01-01", "rate": "1.3"})
 	t.status(400, "POST", "/api/exchange-rates", J{"currency_code": "CAD", "rate_date": "", "rate": "1.3"})
 	t.status(400, "POST", "/api/exchange-rates", J{"currency_code": "CAD", "rate_date": "1901-01-01", "rate": ""})
 	t.status(422, "POST", "/api/exchange-rates", J{"currency_code": "ZZZ", "rate_date": "1901-01-01", "rate": "1.3"})
@@ -100,6 +101,11 @@ func testExchangeRates(t *T) {
 	t.status(404, "PUT", "/api/exchange-rates/CAD/1901-02-01", J{"rate": "1.5"})
 	t.status(204, "DELETE", "/api/exchange-rates/CAD/1901-01-01", nil)
 	t.status(204, "DELETE", "/api/exchange-rates/CAD/1901-01-02", nil)
+
+	// The created key is echoed as stored: currency codes are upper-cased.
+	k = t.obj(t.must(t.admin, 201, "POST", "/api/exchange-rates", J{"currency_code": "cad", "rate_date": "1901-01-03", "rate": "1.3"}))
+	t.eq("echoed currency", t.str(k, "currency_code"), "CAD")
+	t.status(204, "DELETE", "/api/exchange-rates/CAD/1901-01-03", nil)
 	t.status(404, "DELETE", "/api/exchange-rates/CAD/1901-01-01", nil)
 }
 
@@ -110,7 +116,8 @@ func testLedgerSettings(t *T) {
 	base, fx := t.str(s, "base_currency"), t.int(s, "fx_gain_loss_account_id")
 	summary := t.create("/api/accounts", J{"code": t.uniq("A"), "name": "Header", "account_type": "expense"})
 
-	t.status(400, "PUT", "/api/settings", J{"base_currency": "US", "fx_gain_loss_account_id": fx})
+	t.status(400, "PUT", "/api/settings", J{"base_currency": "", "fx_gain_loss_account_id": fx})
+	t.status(422, "PUT", "/api/settings", J{"base_currency": "US", "fx_gain_loss_account_id": fx})
 	t.status(422, "PUT", "/api/settings", J{"base_currency": base, "fx_gain_loss_account_id": summary})
 	t.status(422, "PUT", "/api/settings", J{"base_currency": base, "fx_gain_loss_account_id": 999999})
 

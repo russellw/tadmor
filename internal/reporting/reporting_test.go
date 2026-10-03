@@ -234,7 +234,7 @@ func TestReportingQueries(t *testing.T) {
 			t.Fatalf("invoice rows = %d, want 1", len(invs))
 		}
 		inv := invs[0]
-		if inv.ID != invID || inv.Number != "INV-1" || inv.Status != "posted" || inv.Total != "100.0000" {
+		if inv.ID != invID || inv.InvoiceNumber != "INV-1" || inv.Status != "posted" || inv.Total != "100.0000" {
 			t.Errorf("invoice = %+v, want INV-1 posted total 100.0000", inv)
 		}
 	})
@@ -283,7 +283,7 @@ func TestReportingQueries(t *testing.T) {
 			t.Fatalf("bill rows = %d, want 1", len(bills))
 		}
 		b := bills[0]
-		if b.ID != billID || b.Number != "BILL-1" || b.Status != "posted" || b.Total != "40.0000" {
+		if b.ID != billID || b.BillNumber != "BILL-1" || b.Status != "posted" || b.Total != "40.0000" {
 			t.Errorf("bill = %+v, want BILL-1 posted total 40.0000", b)
 		}
 	})
@@ -461,7 +461,7 @@ func TestPaymentQueries(t *testing.T) {
 			t.Fatalf("payment rows = %d, want 1", len(ps))
 		}
 		p := ps[0]
-		if p.ID != cpID || p.PartyID != custID || p.Status != "posted" ||
+		if p.ID != cpID || p.CustomerID != custID || p.Status != "posted" ||
 			p.Amount != "130.0000" || p.AmountApplied != "100.0000" || p.Unapplied != "30.0000" {
 			t.Errorf("payment = %+v, want posted 130.0000 with 100.0000 applied", p)
 		}
@@ -483,7 +483,7 @@ func TestPaymentQueries(t *testing.T) {
 		if err != nil {
 			t.Fatalf("supplier payment: %v", err)
 		}
-		if p.PartyID != suppID || p.Amount != "15.0000" || p.AmountApplied != "15.0000" || p.Unapplied != "0.0000" {
+		if p.SupplierID != suppID || p.Amount != "15.0000" || p.AmountApplied != "15.0000" || p.Unapplied != "0.0000" {
 			t.Errorf("payment = %+v, want 15.0000 fully applied", p)
 		}
 	})

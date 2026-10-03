@@ -79,7 +79,7 @@ func TestSalesCreditNoteEndpoints(t *testing.T) {
 	noteURL := srv.URL + "/api/sales-credit-notes/" + strconv.Itoa(noteID)
 	if s, b := get(t, noteURL); s != http.StatusOK ||
 		!strings.Contains(b, `"total":"20.0000"`) || !strings.Contains(b, `"status":"draft"`) ||
-		!strings.Contains(b, `"payment_status":"open"`) {
+		!strings.Contains(b, `"application_status":"open"`) {
 		t.Fatalf("get created credit note: status=%d body=%s", s, b)
 	}
 	if s, b := get(t, noteURL+"/lines"); s != http.StatusOK || !strings.Contains(b, `"line_total":"20.0000"`) {
@@ -97,7 +97,7 @@ func TestSalesCreditNoteEndpoints(t *testing.T) {
 
 	status, body := post(t, noteURL+"/apply")
 	if status != http.StatusOK || !strings.Contains(body, `"document_id":`+strconv.Itoa(invID)) ||
-		!strings.Contains(body, `"amount":"20.0000"`) {
+		!strings.Contains(body, `"amount_applied":"20.0000"`) {
 		t.Fatalf("apply credit note: status=%d body=%s", status, body)
 	}
 
@@ -112,7 +112,7 @@ func TestSalesCreditNoteEndpoints(t *testing.T) {
 		t.Fatalf("invoice after credit: status=%d body=%s", s, b)
 	}
 	if s, b := get(t, noteURL); s != http.StatusOK ||
-		!strings.Contains(b, `"balance":"0.0000"`) || !strings.Contains(b, `"payment_status":"applied"`) {
+		!strings.Contains(b, `"balance":"0.0000"`) || !strings.Contains(b, `"application_status":"applied"`) {
 		t.Fatalf("credit note after apply: status=%d body=%s", s, b)
 	}
 

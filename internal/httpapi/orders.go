@@ -59,7 +59,7 @@ func (s *Server) cancelPurchaseOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 // runOrderAction runs a lifecycle transition on the {id} order in a
-// transaction and writes {"status":"ok"}.
+// transaction and writes 204 No Content.
 func (s *Server) runOrderAction(w http.ResponseWriter, r *http.Request, action func(context.Context, pgx.Tx, int) error) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -72,7 +72,7 @@ func (s *Server) runOrderAction(w http.ResponseWriter, r *http.Request, action f
 		s.writeOrderError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- fulfilment ------------------------------------------------------------

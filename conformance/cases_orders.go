@@ -65,7 +65,7 @@ func testSalesOrder(t *T) {
 
 	// Drafts are editable; the widget line grows to 6.
 	body["lines"].([]J)[1]["quantity"] = "6"
-	t.must(t.admin, 200, "PUT", path("/api/sales-orders/%d", so), body)
+	t.must(t.admin, 204, "PUT", path("/api/sales-orders/%d", so), body)
 	t.eqDec(t.doc("sales-orders", so), "total", "220")
 	lines := t.orderLines("sales-orders", so, "SalesOrderLine")
 	if len(lines) != 2 {
@@ -81,7 +81,7 @@ func testSalesOrder(t *T) {
 	t.status(409, "POST", path("/api/sales-orders/%d/ship", so), J{"warehouse_id": wh})
 	t.status(409, "POST", path("/api/sales-orders/%d/close", so), nil)
 
-	t.must(t.admin, 200, "POST", path("/api/sales-orders/%d/confirm", so), nil)
+	t.must(t.admin, 204, "POST", path("/api/sales-orders/%d/confirm", so), nil)
 	t.eq("confirmed", t.str(t.doc("sales-orders", so), "status"), "open")
 	t.status(409, "POST", path("/api/sales-orders/%d/confirm", so), nil)
 	t.status(409, "PUT", path("/api/sales-orders/%d", so), body)
@@ -95,7 +95,7 @@ func testSalesOrder(t *T) {
 	}))
 	partial := t.int(r, "invoice_id")
 	inv := t.doc("sales-invoices", partial)
-	t.eq("invoice party", t.int(inv, "party_id"), cust)
+	t.eq("invoice customer", t.int(inv, "customer_id"), cust)
 	t.eq("invoice currency", t.str(inv, "currency_code"), "USD")
 	t.eq("invoice reference", t.str(inv, "reference"), number)
 	t.eq("invoice status", t.str(inv, "status"), "draft")
@@ -114,7 +114,7 @@ func testSalesOrder(t *T) {
 
 	// An order-linked invoice cannot be edited, but deleting it returns the quantity.
 	t.status(409, "PUT", path("/api/sales-invoices/%d", partial), J{"invoice_number": t.uniq("INV"), "customer_id": cust, "invoice_date": d("01-11"), "currency_code": "USD"})
-	t.must(t.admin, 200, "DELETE", path("/api/sales-invoices/%d", partial), nil)
+	t.must(t.admin, 204, "DELETE", path("/api/sales-invoices/%d", partial), nil)
 	t.eq("invoiced_status after delete", t.str(t.doc("sales-orders", so), "invoiced_status"), "none")
 
 	// Requested quantities are capped at what remains: the service and 6 widgets.
@@ -136,7 +136,8 @@ func testSalesOrder(t *T) {
 	m := t.doc("stock-movements", ids[0])
 	t.shape(m, "StockMovement")
 	t.eq("movement type", t.str(m, "movement_type"), "issue")
-	t.eq("movement date", t.str(m, "date"), d("01-15"))
+	t.eq("movement date", t.str(m, "movement_date"), d("01-15"))
+	t.eq("movement status", t.str(m, "status"), "draft")
 	t.eq("movement source", t.str(m, "source_type"), "sales_order_line")
 	t.eqDec(m, "quantity", "-6")
 	t.eqDec(m, "unit_cost", "4")
@@ -147,7 +148,7 @@ func testSalesOrder(t *T) {
 
 	// Fulfilment movements cannot be edited, but may be deleted while unposted.
 	t.status(409, "PUT", path("/api/stock-movements/%d", ids[0]), J{"product_id": prod, "warehouse_id": wh, "movement_type": "issue", "quantity": "-1"})
-	t.must(t.admin, 200, "DELETE", path("/api/stock-movements/%d", ids[0]), nil)
+	t.must(t.admin, 204, "DELETE", path("/api/stock-movements/%d", ids[0]), nil)
 	t.eq("shipped_status after delete", t.str(t.doc("sales-orders", so), "shipped_status"), "none")
 	ids = t.ints(t.obj(t.must(t.admin, 201, "POST", path("/api/sales-orders/%d/ship", so), J{"warehouse_id": wh, "movement_date": d("01-16"),
 		"lines": []J{{"order_line_id": widgets, "quantity": "2"}}})), "movement_ids")
@@ -156,22 +157,22 @@ func testSalesOrder(t *T) {
 	t.eqLines("issue entry", t.entry(je), dr(cogs, "8"), cr(inventory, "8"))
 
 	// Close is manual and final.
-	t.must(t.admin, 200, "POST", path("/api/sales-orders/%d/close", so), nil)
+	t.must(t.admin, 204, "POST", path("/api/sales-orders/%d/close", so), nil)
 	t.eq("closed", t.str(t.doc("sales-orders", so), "status"), "closed")
 	t.status(409, "POST", path("/api/sales-orders/%d/close", so), nil)
 	t.status(409, "POST", path("/api/sales-orders/%d/cancel", so), nil)
 	t.status(409, "POST", path("/api/sales-orders/%d/ship", so), J{"warehouse_id": wh})
 
 	// Cancellation: a draft always, an open order while unfulfilled.
-	t.must(t.admin, 200, "POST", path("/api/sales-orders/%d/cancel", empty), nil)
+	t.must(t.admin, 204, "POST", path("/api/sales-orders/%d/cancel", empty), nil)
 	t.eq("cancelled", t.str(t.doc("sales-orders", empty), "status"), "cancelled")
 	t.status(409, "POST", path("/api/sales-orders/%d/confirm", empty), nil)
 	open := t.create("/api/sales-orders", J{"order_number": t.uniq("SO"), "customer_id": cust, "order_date": d("02-01"), "currency_code": "USD",
 		"lines": []J{{"description": "x", "unit_price": "1"}}})
-	t.must(t.admin, 200, "POST", path("/api/sales-orders/%d/confirm", open), nil)
-	t.must(t.admin, 200, "POST", path("/api/sales-orders/%d/cancel", open), nil)
+	t.must(t.admin, 204, "POST", path("/api/sales-orders/%d/confirm", open), nil)
+	t.must(t.admin, 204, "POST", path("/api/sales-orders/%d/cancel", open), nil)
 	draft := t.create("/api/sales-orders", J{"order_number": t.uniq("SO"), "customer_id": cust, "order_date": d("02-02"), "currency_code": "USD"})
-	t.must(t.admin, 200, "DELETE", path("/api/sales-orders/%d", draft), nil)
+	t.must(t.admin, 204, "DELETE", path("/api/sales-orders/%d", draft), nil)
 
 	t.status(404, "POST", "/api/sales-orders/999999/confirm", nil)
 	t.status(404, "POST", "/api/sales-orders/999999/invoice", J{"invoice_number": "x", "invoice_date": d("01-01")})
@@ -206,7 +207,7 @@ func testPurchaseOrder(t *T) {
 	o := t.doc("purchase-orders", po)
 	t.shape(o, "PurchaseOrder")
 	t.eqDec(o, "total", "40")
-	t.must(t.admin, 200, "POST", path("/api/purchase-orders/%d/confirm", po), nil)
+	t.must(t.admin, 204, "POST", path("/api/purchase-orders/%d/confirm", po), nil)
 	line := t.int(t.orderLines("purchase-orders", po, "PurchaseOrderLine")[0], "order_line_id")
 
 	ids := t.ints(t.obj(t.must(t.admin, 201, "POST", path("/api/purchase-orders/%d/receive", po), J{"warehouse_id": wh, "movement_date": d("03-05"),
@@ -239,7 +240,7 @@ func testPurchaseOrder(t *T) {
 	t.eqLines("bill against GRNI", t.entry(t.post("purchase-bills", b)), dr(grni, "40"), cr(l.control, "40"))
 
 	t.eqDec(t.mustFind(t.list(path("/api/accounts/%d/ledger?from=%s&to=%s", inventory, d("01-01"), d("12-31"))), "entry_date", d("03-06")), "debit", "30")
-	t.must(t.admin, 200, "POST", path("/api/purchase-orders/%d/close", po), nil)
+	t.must(t.admin, 204, "POST", path("/api/purchase-orders/%d/close", po), nil)
 	t.eq("closed", t.str(t.doc("purchase-orders", po), "status"), "closed")
 }
 
@@ -274,16 +275,16 @@ func testStockMovements(t *T) {
 	t.create("/api/stock-movements", mv("adjustment", "2", "5"))
 	issue := t.create("/api/stock-movements", mv("issue", "-4", "5"))
 
-	val := t.mustFind(t.list("/api/inventory/valuation"), "product_id", prod)
+	val := t.mustFind(t.list("/api/inventory-valuation"), "product_id", prod)
 	t.shape(val, "ValuationRow")
 	t.eqDec(val, "qty_on_hand", "7")
 	t.eqDec(val, "value_on_hand", "35")
 	t.eqDec(val, "avg_unit_cost", "5")
 
 	// Unposted movements are editable.
-	t.must(t.admin, 200, "PUT", path("/api/stock-movements/%d", receipt), mv("receipt", "12", "5"))
+	t.must(t.admin, 204, "PUT", path("/api/stock-movements/%d", receipt), mv("receipt", "12", "5"))
 	t.eqDec(t.doc("stock-movements", receipt), "total_cost", "60")
-	t.eqDec(t.mustFind(t.list("/api/inventory/valuation"), "product_id", prod), "qty_on_hand", "9")
+	t.eqDec(t.mustFind(t.list("/api/inventory-valuation"), "product_id", prod), "qty_on_hand", "9")
 
 	// Posting: receipts need a postable credit account.
 	t.status(422, "POST", path("/api/stock-movements/%d/post", receipt), nil)
@@ -291,7 +292,9 @@ func testStockMovements(t *T) {
 	t.status(422, "POST", path("/api/stock-movements/%d/post", receipt), J{"credit_account_id": summary})
 	je := t.int(t.obj(t.must(t.admin, 200, "POST", path("/api/stock-movements/%d/post", receipt), J{"credit_account_id": grni})), "journal_entry_id")
 	t.eqLines("receipt entry", t.entry(je), dr(inventory, "60"), cr(grni, "60"))
-	t.eq("posted movement", t.int(t.doc("stock-movements", receipt), "journal_entry_id"), je)
+	m = t.doc("stock-movements", receipt)
+	t.eq("posted movement", t.int(m, "journal_entry_id"), je)
+	t.eq("posted status", t.str(m, "status"), "posted")
 	t.status(409, "POST", path("/api/stock-movements/%d/post", receipt), J{"credit_account_id": grni})
 	t.status(409, "PUT", path("/api/stock-movements/%d", receipt), mv("receipt", "1", "5"))
 	t.status(409, "DELETE", path("/api/stock-movements/%d", receipt), nil)
@@ -316,7 +319,7 @@ func testStockMovements(t *T) {
 	t.isNull(m, "journal_entry_id")
 	t.eqDec(m, "quantity", "12")
 	t.status(409, "POST", path("/api/stock-movements/%d/unpost", receipt), nil)
-	t.must(t.admin, 200, "DELETE", path("/api/stock-movements/%d", receipt), nil)
+	t.must(t.admin, 204, "DELETE", path("/api/stock-movements/%d", receipt), nil)
 	t.status(404, "GET", path("/api/stock-movements/%d", receipt), nil)
 	t.status(404, "POST", "/api/stock-movements/999999/post", nil)
 

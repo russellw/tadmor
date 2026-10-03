@@ -23,8 +23,8 @@ type ExchangeRateInput struct {
 
 func (in ExchangeRateInput) Validate() string {
 	switch {
-	case len(in.CurrencyCode) != 3:
-		return "currency_code must be a 3-letter ISO code"
+	case in.CurrencyCode == "":
+		return "currency_code is required"
 	case in.RateDate == "":
 		return "rate_date is required"
 	case in.Rate == "":
@@ -74,8 +74,8 @@ type Settings struct {
 }
 
 func (in Settings) Validate() string {
-	if len(in.BaseCurrency) != 3 {
-		return "base_currency must be a 3-letter ISO code"
+	if in.BaseCurrency == "" {
+		return "base_currency is required"
 	}
 	return ""
 }

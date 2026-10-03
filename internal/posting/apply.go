@@ -12,7 +12,7 @@ import (
 // an invoice for customer payments, a bill for supplier payments.
 type Application struct {
 	DocumentID int    `json:"document_id"`
-	Amount     string `json:"amount"`
+	Amount     string `json:"amount_applied"`
 }
 
 // fxSpec parameterizes realized-FX posting over the four application kinds.

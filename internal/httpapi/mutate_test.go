@@ -89,7 +89,7 @@ func TestDraftEditAndDeleteOverHTTP(t *testing.T) {
 		"invoice_number":"INV-1-FIXED","customer_id":`+itoa(custID)+`,"invoice_date":"2026-06-16","currency_code":"USD",
 		"lines":[{"description":"Service","quantity":"4","unit_price":"5","revenue_account_id":`+itoa(revAcct)+`},
 		         {"description":"Extra","quantity":"1","unit_price":"30","revenue_account_id":`+itoa(revAcct)+`}]}`)
-	if status != http.StatusOK {
+	if status != http.StatusNoContent {
 		t.Fatalf("edit draft invoice: status %d (body %s)", status, body)
 	}
 	var number, total string
@@ -124,7 +124,7 @@ func TestDraftEditAndDeleteOverHTTP(t *testing.T) {
 		t.Fatalf("create second invoice: status %d (body %s)", status, body)
 	}
 	inv2URL := srv.URL + "/api/sales-invoices/" + itoa(idOf(body))
-	if status, body := del(t, inv2URL); status != http.StatusOK {
+	if status, body := del(t, inv2URL); status != http.StatusNoContent {
 		t.Fatalf("delete draft invoice: status %d (body %s)", status, body)
 	}
 	if status, _ := get(t, inv2URL); status != http.StatusNotFound {
@@ -143,13 +143,13 @@ func TestDraftEditAndDeleteOverHTTP(t *testing.T) {
 	}
 	payURL := srv.URL + "/api/customer-payments/" + itoa(idOf(body))
 	if status, body := putJSON(t, payURL, `{
-		"customer_id":`+itoa(custID)+`,"payment_date":"2026-06-21","currency_code":"USD","amount":"120"}`); status != http.StatusOK {
+		"customer_id":`+itoa(custID)+`,"payment_date":"2026-06-21","currency_code":"USD","amount":"120"}`); status != http.StatusNoContent {
 		t.Fatalf("edit draft payment: status %d (body %s)", status, body)
 	}
 	if status, body := get(t, payURL); status != http.StatusOK || !strings.Contains(body, `"amount":"120.0000"`) {
 		t.Fatalf("payment after edit: status %d body %s", status, body)
 	}
-	if status, body := del(t, payURL); status != http.StatusOK {
+	if status, body := del(t, payURL); status != http.StatusNoContent {
 		t.Fatalf("delete draft payment: status %d (body %s)", status, body)
 	}
 
@@ -165,7 +165,7 @@ func TestDraftEditAndDeleteOverHTTP(t *testing.T) {
 	mvURL := srv.URL + "/api/stock-movements/" + itoa(mvID)
 	if status, body := putJSON(t, mvURL, `{
 		"product_id":`+itoa(prodID)+`,"warehouse_id":`+itoa(whID)+`,"movement_type":"receipt",
-		"movement_date":"2026-06-18","quantity":"12","unit_cost":"7"}`); status != http.StatusOK {
+		"movement_date":"2026-06-18","quantity":"12","unit_cost":"7"}`); status != http.StatusNoContent {
 		t.Fatalf("edit draft movement: status %d (body %s)", status, body)
 	}
 	var qty string
@@ -176,7 +176,7 @@ func TestDraftEditAndDeleteOverHTTP(t *testing.T) {
 	if qty != "12.0000" {
 		t.Errorf("movement quantity after edit = %s, want 12.0000", qty)
 	}
-	if status, body := del(t, mvURL); status != http.StatusOK {
+	if status, body := del(t, mvURL); status != http.StatusNoContent {
 		t.Fatalf("delete draft movement: status %d (body %s)", status, body)
 	}
 }
@@ -232,12 +232,12 @@ func TestOrderLinkedDocumentGuards(t *testing.T) {
 	// Draft orders are editable.
 	if status, body := putJSON(t, soURL, `{
 		"order_number":"SO-1","customer_id":`+itoa(custID)+`,"order_date":"2026-06-10","currency_code":"USD",
-		"lines":[{"description":"Widget","quantity":"8","unit_price":"25"}]}`); status != http.StatusOK {
+		"lines":[{"description":"Widget","quantity":"8","unit_price":"25"}]}`); status != http.StatusNoContent {
 		t.Fatalf("edit draft SO: status %d (body %s)", status, body)
 	}
 
 	// Confirmed orders are not editable or deletable.
-	if status, body := post(t, soURL+"/confirm"); status != http.StatusOK {
+	if status, body := post(t, soURL+"/confirm"); status != http.StatusNoContent {
 		t.Fatalf("confirm SO: status %d (body %s)", status, body)
 	}
 	if status, body := putJSON(t, soURL, `{
@@ -279,7 +279,7 @@ func TestOrderLinkedDocumentGuards(t *testing.T) {
 	}
 
 	// ...but deleting it while draft returns the quantity to the order.
-	if status, body := del(t, invURL); status != http.StatusOK {
+	if status, body := del(t, invURL); status != http.StatusNoContent {
 		t.Fatalf("delete order-linked draft invoice: status %d (body %s)", status, body)
 	}
 	if status, body := get(t, soURL); status != http.StatusOK || !strings.Contains(body, `"invoiced_status":"none"`) {

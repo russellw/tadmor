@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"tadmor/internal/master"
 )
@@ -104,8 +105,9 @@ func (s *Server) createExchangeRate(w http.ResponseWriter, r *http.Request) {
 		s.writeMasterError(w, err)
 		return
 	}
+	// Echo the key as stored: the currency is upper-cased on insert.
 	writeJSON(w, http.StatusCreated, map[string]string{
-		"currency_code": in.CurrencyCode, "rate_date": in.RateDate})
+		"currency_code": strings.ToUpper(in.CurrencyCode), "rate_date": in.RateDate})
 }
 
 func (s *Server) updateExchangeRate(w http.ResponseWriter, r *http.Request) {

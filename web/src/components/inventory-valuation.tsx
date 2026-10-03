@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-// Inventory valuation from GET /api/inventory/valuation: quantity and value on
+// Inventory valuation from GET /api/inventory-valuation: quantity and value on
 // hand per tracked product, with the total stock value in the footer.
 export function InventoryValuation() {
   const [rows, setRows] = useState<StockValuationRow[] | null>(null)

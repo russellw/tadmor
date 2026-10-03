@@ -197,7 +197,7 @@ func testTaxCodesTermsWarehouses(t *T) {
 
 	// Payment terms, keyed by code and listed by due_days then code.
 	term := t.uniq("PT")
-	t.status(400, "POST", "/api/payment-terms", J{"code": term, "name": "Bad", "due_days": -1})
+	t.status(422, "POST", "/api/payment-terms", J{"code": term, "name": "Bad", "due_days": -1})
 	t.status(400, "POST", "/api/payment-terms", J{"code": term, "name": ""})
 	r = t.must(t.admin, 201, "POST", "/api/payment-terms", J{"code": term, "name": "Net 45", "due_days": 45})
 	t.eq("created key", t.str(t.obj(r), "code"), term)
@@ -206,7 +206,7 @@ func testTaxCodesTermsWarehouses(t *T) {
 	pt := t.get("/api/payment-terms/" + term)
 	t.shape(pt, "PaymentTerm")
 	t.eq("name", t.str(pt, "name"), "Net 45 days")
-	t.status(400, "PUT", "/api/payment-terms/"+term, J{"name": "Net 45", "due_days": -5})
+	t.status(422, "PUT", "/api/payment-terms/"+term, J{"name": "Net 45", "due_days": -5})
 	t.status(404, "PUT", "/api/payment-terms/"+t.uniq("NONE"), J{"name": "X", "due_days": 1})
 	var codes []string
 	for _, p := range t.list("/api/payment-terms") {

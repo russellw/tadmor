@@ -229,8 +229,6 @@ func (in PaymentTermInput) Validate() string {
 		return "code is required"
 	case in.Name == "":
 		return "name is required"
-	case in.DueDays < 0:
-		return "due_days must not be negative"
 	}
 	return ""
 }

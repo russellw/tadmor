@@ -27,21 +27,23 @@ func testCustomerPayments(t *T) {
 	// A payment without a deposit account cannot post.
 	noBank := t.create("/api/customer-payments", J{"customer_id": cust, "payment_date": d("04-01"), "currency_code": "USD", "amount": "5"})
 	t.status(422, "POST", path("/api/customer-payments/%d/post", noBank), nil)
-	t.must(t.admin, 200, "DELETE", path("/api/customer-payments/%d", noBank), nil)
+	t.must(t.admin, 204, "DELETE", path("/api/customer-payments/%d", noBank), nil)
 
 	pay := t.create("/api/customer-payments", J{
 		"customer_id": cust, "payment_date": d("04-01"), "currency_code": "USD", "amount": "150",
 		"method": "transfer", "reference": "WIRE-1", "deposit_account_id": bank,
 	})
 	p := t.doc("customer-payments", pay)
-	t.shape(p, "Payment")
+	t.shape(p, "CustomerPayment")
 	t.eq("status", t.str(p, "status"), "draft")
 	t.eqDec(p, "amount", "150")
 	t.eqDec(p, "unapplied", "150")
-	t.eq("account_id", t.int(p, "account_id"), bank)
+	t.eq("deposit_account_id", t.int(p, "deposit_account_id"), bank)
+	t.eq("customer_id", t.int(p, "customer_id"), cust)
+	t.eq("payment_date", t.str(p, "payment_date"), d("04-01"))
 	t.eq("method", t.str(p, "method"), "transfer")
 	t.status(409, "POST", path("/api/customer-payments/%d/apply", pay), nil) // must be posted first
-	t.must(t.admin, 200, "PUT", path("/api/customer-payments/%d", pay), J{
+	t.must(t.admin, 204, "PUT", path("/api/customer-payments/%d", pay), J{
 		"customer_id": cust, "payment_date": d("04-01"), "currency_code": "USD", "amount": "150",
 		"method": "check", "reference": "CHK-9", "deposit_account_id": bank,
 	})
@@ -57,9 +59,9 @@ func testCustomerPayments(t *T) {
 		t.Fatalf("apply created %d applications, want 2: %s", len(apps), brief(r))
 	}
 	t.eq("first application", t.int(apps[0], "document_id"), inv1)
-	t.eqDec(apps[0], "amount", "100")
+	t.eqDec(apps[0], "amount_applied", "100")
 	t.eq("second application", t.int(apps[1], "document_id"), inv2)
-	t.eqDec(apps[1], "amount", "50")
+	t.eqDec(apps[1], "amount_applied", "50")
 
 	i1, i2, i3 := t.doc("sales-invoices", inv1), t.doc("sales-invoices", inv2), t.doc("sales-invoices", inv3)
 	t.eq("inv1 status", t.str(i1, "payment_status"), "paid")
@@ -76,7 +78,7 @@ func testCustomerPayments(t *T) {
 	if len(list) == 2 {
 		t.shape(list[0], "Application")
 		t.eq("application document", t.int(list[0], "document_id"), inv1)
-		t.eq("application number", t.str(list[0], "document_number"), t.str(i1, "number"))
+		t.eq("application number", t.str(list[0], "document_number"), t.str(i1, "invoice_number"))
 		t.eqDec(list[1], "amount_applied", "50")
 	} else {
 		t.Errorf("applications list has %d rows, want 2", len(list))
@@ -98,9 +100,9 @@ func testCustomerPayments(t *T) {
 	apps = t.arrOf(t.obj(t.must(t.admin, 200, "POST", path("/api/customer-payments/%d/apply", pay2), nil)), "applications")
 	if len(apps) == 2 {
 		t.eq("tops up inv2", t.int(apps[0], "document_id"), inv2)
-		t.eqDec(apps[0], "amount", "30")
+		t.eqDec(apps[0], "amount_applied", "30")
 		t.eq("then inv3", t.int(apps[1], "document_id"), inv3)
-		t.eqDec(apps[1], "amount", "50")
+		t.eqDec(apps[1], "amount_applied", "50")
 	} else {
 		t.Errorf("second apply created %d applications, want 2", len(apps))
 	}
@@ -122,12 +124,12 @@ func testCustomerPayments(t *T) {
 
 	// Now inv1 has no applications and may be unposted.
 	t.must(t.admin, 200, "POST", path("/api/sales-invoices/%d/unpost", inv1), nil)
-	t.must(t.admin, 200, "DELETE", path("/api/customer-payments/%d", pay), nil)
+	t.must(t.admin, 204, "DELETE", path("/api/customer-payments/%d", pay), nil)
 	t.status(404, "GET", path("/api/customer-payments/%d", pay), nil)
 
 	var order []int
 	for _, x := range t.list("/api/customer-payments") {
-		t.shape(x, "Payment")
+		t.shape(x, "CustomerPayment")
 		if n := t.int(x, "id"); n == pay2 {
 			order = append(order, n)
 		}
@@ -150,8 +152,8 @@ func testSupplierPayments(t *T) {
 	t.status(400, "POST", "/api/supplier-payments", J{"supplier_id": 0, "payment_date": d("03-01"), "currency_code": "USD", "amount": "1"})
 	pay := t.create("/api/supplier-payments", J{"supplier_id": sup, "payment_date": d("03-01"), "currency_code": "USD", "amount": "90", "payment_account_id": bank})
 	p := t.doc("supplier-payments", pay)
-	t.shape(p, "Payment")
-	t.eq("account_id", t.int(p, "account_id"), bank)
+	t.shape(p, "SupplierPayment")
+	t.eq("payment_account_id", t.int(p, "payment_account_id"), bank)
 	je := t.post("supplier-payments", pay)
 	t.eqLines("supplier payment entry", t.entry(je), dr(l.control, "90"), cr(bank, "90"))
 
@@ -160,8 +162,8 @@ func testSupplierPayments(t *T) {
 		t.Fatalf("apply created %d applications, want 2", len(apps))
 	}
 	t.eq("oldest bill first", t.int(apps[0], "document_id"), b1)
-	t.eqDec(apps[0], "amount", "60")
-	t.eqDec(apps[1], "amount", "30")
+	t.eqDec(apps[0], "amount_applied", "60")
+	t.eqDec(apps[1], "amount_applied", "30")
 	t.eq("b1 paid", t.str(t.doc("purchase-bills", b1), "payment_status"), "paid")
 	t.eq("b2 partial", t.str(t.doc("purchase-bills", b2), "payment_status"), "partial")
 	t.status(409, "POST", path("/api/purchase-bills/%d/unpost", b1), nil)
@@ -193,10 +195,10 @@ func testCreditNotes(t *T) {
 	t.status(409, "POST", "/api/sales-credit-notes", cnBody)
 
 	c := t.doc("sales-credit-notes", cn)
-	t.shape(c, "DocumentBalance")
+	t.shape(c, "SalesCreditNote")
 	t.eqDec(c, "total", "55")
-	t.isNull(c, "due_date")
-	t.eq("application status", t.str(c, "payment_status"), "open")
+	t.eq("credit_note_number", t.str(c, "credit_note_number"), number)
+	t.eq("application status", t.str(c, "application_status"), "open")
 	lines := t.list(path("/api/sales-credit-notes/%d/lines", cn))
 	if len(lines) == 1 {
 		t.shape(lines[0], "InvoiceLine")
@@ -213,9 +215,9 @@ func testCreditNotes(t *T) {
 		t.Fatalf("apply created %d applications, want 1", len(apps))
 	}
 	t.eq("applied to", t.int(apps[0], "document_id"), inv)
-	t.eqDec(apps[0], "amount", "55")
+	t.eqDec(apps[0], "amount_applied", "55")
 	c = t.doc("sales-credit-notes", cn)
-	t.eq("fully applied", t.str(c, "payment_status"), "applied")
+	t.eq("fully applied", t.str(c, "application_status"), "applied")
 	t.eqDec(c, "balance", "0")
 	i := t.doc("sales-invoices", inv)
 	t.eq("invoice partially settled", t.str(i, "payment_status"), "partial")
@@ -232,7 +234,7 @@ func testCreditNotes(t *T) {
 	t.post("customer-payments", pay)
 	apps = t.arrOf(t.obj(t.must(t.admin, 200, "POST", path("/api/customer-payments/%d/apply", pay), nil)), "applications")
 	if len(apps) == 1 {
-		t.eqDec(apps[0], "amount", "165")
+		t.eqDec(apps[0], "amount_applied", "165")
 	} else {
 		t.Errorf("payment apply created %d applications, want 1", len(apps))
 	}
@@ -249,7 +251,7 @@ func testCreditNotes(t *T) {
 	t.post("sales-credit-notes", cn2)
 	rev := t.int(t.obj(t.must(t.admin, 200, "POST", path("/api/sales-credit-notes/%d/unpost", cn2), nil)), "reversal_entry_id")
 	t.eqLines("credit note reversal", t.entry(rev), cr(l.income, "10"), dr(l.control, "10"))
-	t.must(t.admin, 200, "DELETE", path("/api/sales-credit-notes/%d", cn2), nil)
+	t.must(t.admin, 204, "DELETE", path("/api/sales-credit-notes/%d", cn2), nil)
 
 	// Supplier credit: Dr A/P, Cr expense and input tax; applied to a bill.
 	sup, sl := t.supplier()
@@ -271,12 +273,14 @@ func testCreditNotes(t *T) {
 	apps = t.arrOf(t.obj(t.must(t.admin, 200, "POST", path("/api/purchase-credit-notes/%d/apply", scn), nil)), "applications")
 	if len(apps) == 1 {
 		t.eq("applied to bill", t.int(apps[0], "document_id"), b)
-		t.eqDec(apps[0], "amount", "22")
+		t.eqDec(apps[0], "amount_applied", "22")
 	} else {
 		t.Errorf("supplier credit apply created %d applications, want 1", len(apps))
 	}
 	t.eqDec(t.doc("purchase-bills", b), "balance", "88")
-	t.eq("supplier credit applied", t.str(t.doc("purchase-credit-notes", scn), "payment_status"), "applied")
+	scnRead := t.doc("purchase-credit-notes", scn)
+	t.shape(scnRead, "PurchaseCreditNote")
+	t.eq("supplier credit applied", t.str(scnRead, "application_status"), "applied")
 	t.status(409, "POST", path("/api/purchase-credit-notes/%d/unpost", scn), nil)
 	if a := t.list(path("/api/purchase-credit-notes/%d/applications", scn)); len(a) != 1 {
 		t.Errorf("supplier credit applications list has %d rows, want 1", len(a))

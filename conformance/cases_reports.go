@@ -306,10 +306,8 @@ func testRoutingAndIDs(t *T) {
 	for _, p := range []string{"/api/accounts/abc", "/api/accounts/0", "/api/accounts/-3", "/api/sales-invoices/1.5", "/api/customers/9999999999999999999999"} {
 		t.status(400, "GET", p, nil)
 	}
+	// Unknown routes and methods are a JSON 404 like any other error.
 	for _, req := range [][2]string{{"GET", "/api/no-such-endpoint"}, {"DELETE", "/api/accounts"}, {"PATCH", "/api/organizations"}} {
-		r := t.send(t.admin, req[0], req[1], nil)
-		if r.Status != 404 && r.Status != 405 {
-			t.Errorf("%s %s: status %d, want 404 or 405", req[0], req[1], r.Status)
-		}
+		t.status(404, req[0], req[1], nil)
 	}
 }

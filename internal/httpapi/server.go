@@ -185,7 +185,7 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 	api.HandleFunc("GET /journal-entries/{id}", s.getJournalEntry)
 	api.HandleFunc("GET /ar-aging", s.getARaging)
 	api.HandleFunc("GET /ap-aging", s.getAPaging)
-	api.HandleFunc("GET /inventory/valuation", s.getInventoryValuation)
+	api.HandleFunc("GET /inventory-valuation", s.getInventoryValuation)
 	api.HandleFunc("GET /sales-invoices", s.listSalesInvoices)
 	api.HandleFunc("GET /sales-invoices/{id}", s.getSalesInvoice)
 	api.HandleFunc("GET /sales-invoices/{id}/lines", s.getSalesInvoiceLines)
@@ -228,6 +228,12 @@ func (s *Server) Handler(distFS fs.FS) http.Handler {
 
 	// Who am I (the SPA's session probe).
 	api.HandleFunc("GET /auth/me", s.me)
+
+	// Anything else under /api/ is an unknown route (or method): answer in
+	// the API's JSON error shape, not the mux's plain-text 404/405.
+	api.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotFound, "no such endpoint")
+	})
 
 	// Everything above requires a session. Login mints one; logout is public
 	// too so an expired session can still clear its cookie idempotently.

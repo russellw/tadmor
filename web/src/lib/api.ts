@@ -42,8 +42,8 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T
 }
 
-// Send a body-bearing request (POST/PUT). Used for writes; the backend's PUT
-// updates return 204 with no body, so nothing is parsed on success.
+// Send a body-bearing request (POST/PUT) whose success carries no data: the
+// backend answers every update, delete, and state transition with 204.
 async function send(method: string, path: string, body: unknown): Promise<void> {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -53,8 +53,7 @@ async function send(method: string, path: string, body: unknown): Promise<void> 
   if (!res.ok) throw await failure(res)
 }
 
-// DELETE a resource. Draft-document deletes return 200 with { "status": "ok" };
-// nothing is parsed on success.
+// DELETE a resource (204 on success).
 async function del(path: string): Promise<void> {
   const res = await fetch(`${BASE}${path}`, {
     method: "DELETE",
@@ -704,8 +703,61 @@ export function emailDocument(
   })
 }
 
-/** An invoice's or bill's balance view, mirroring reporting.DocumentBalance.
- *  Monetary values are exact decimal strings. */
+// Wire shapes of the four balance-bearing documents, mirroring reporting's
+// *View types: each names its key fields exactly as its create/update input
+// does. Monetary values are exact decimal strings.
+interface DocumentAmounts {
+  currency_code: string
+  status: string
+  total: string
+  amount_applied: string
+  balance: string
+  /** Set while the document is posted. */
+  journal_entry_id: number | null
+  reference: string | null
+  memo: string | null
+}
+
+export interface SalesInvoice extends DocumentAmounts {
+  id: number
+  invoice_number: string
+  customer_id: number
+  invoice_date: string
+  due_date: string | null
+  /** unpaid | partial | paid | void */
+  payment_status: string
+}
+
+export interface PurchaseBill extends DocumentAmounts {
+  id: number
+  bill_number: string
+  supplier_id: number
+  bill_date: string
+  due_date: string | null
+  payment_status: string
+}
+
+export interface SalesCreditNote extends DocumentAmounts {
+  id: number
+  credit_note_number: string
+  customer_id: number
+  credit_note_date: string
+  /** open | partial | applied | void */
+  application_status: string
+}
+
+export interface PurchaseCreditNote extends DocumentAmounts {
+  id: number
+  credit_note_number: string
+  supplier_id: number
+  credit_note_date: string
+  application_status: string
+}
+
+/** The shared document screens' generic view of any of the four documents
+ *  above, so one list/detail component serves them all. payment_status
+ *  carries a credit note's application status; credit notes have no due
+ *  date. Built from the wire shapes by the converters below. */
 export interface DocumentBalance {
   id: number
   number: string
@@ -723,6 +775,59 @@ export interface DocumentBalance {
   reference: string | null
   memo: string | null
 }
+
+function amounts(d: DocumentAmounts): DocumentAmounts {
+  return {
+    currency_code: d.currency_code,
+    status: d.status,
+    total: d.total,
+    amount_applied: d.amount_applied,
+    balance: d.balance,
+    journal_entry_id: d.journal_entry_id,
+    reference: d.reference,
+    memo: d.memo,
+  }
+}
+
+const fromSalesInvoice = (d: SalesInvoice): DocumentBalance => ({
+  ...amounts(d),
+  id: d.id,
+  number: d.invoice_number,
+  party_id: d.customer_id,
+  date: d.invoice_date,
+  due_date: d.due_date,
+  payment_status: d.payment_status,
+})
+
+const fromPurchaseBill = (d: PurchaseBill): DocumentBalance => ({
+  ...amounts(d),
+  id: d.id,
+  number: d.bill_number,
+  party_id: d.supplier_id,
+  date: d.bill_date,
+  due_date: d.due_date,
+  payment_status: d.payment_status,
+})
+
+const fromSalesCreditNote = (d: SalesCreditNote): DocumentBalance => ({
+  ...amounts(d),
+  id: d.id,
+  number: d.credit_note_number,
+  party_id: d.customer_id,
+  date: d.credit_note_date,
+  due_date: null,
+  payment_status: d.application_status,
+})
+
+const fromPurchaseCreditNote = (d: PurchaseCreditNote): DocumentBalance => ({
+  ...amounts(d),
+  id: d.id,
+  number: d.credit_note_number,
+  party_id: d.supplier_id,
+  date: d.credit_note_date,
+  due_date: null,
+  payment_status: d.application_status,
+})
 
 /** One invoice line with its database-computed money, mirroring
  *  reporting.SalesInvoiceLine. */
@@ -767,12 +872,12 @@ export interface SalesInvoiceInput {
   lines: SalesInvoiceLineInput[]
 }
 
-export function listSalesInvoices(): Promise<DocumentBalance[]> {
-  return get<DocumentBalance[]>("/sales-invoices")
+export async function listSalesInvoices(): Promise<DocumentBalance[]> {
+  return (await get<SalesInvoice[]>("/sales-invoices")).map(fromSalesInvoice)
 }
 
-export function getSalesInvoice(id: number): Promise<DocumentBalance> {
-  return get<DocumentBalance>(`/sales-invoices/${id}`)
+export async function getSalesInvoice(id: number): Promise<DocumentBalance> {
+  return fromSalesInvoice(await get<SalesInvoice>(`/sales-invoices/${id}`))
 }
 
 export function getSalesInvoiceLines(id: number): Promise<SalesInvoiceLine[]> {
@@ -853,12 +958,12 @@ export interface PurchaseBillInput {
   lines: PurchaseBillLineInput[]
 }
 
-export function listPurchaseBills(): Promise<DocumentBalance[]> {
-  return get<DocumentBalance[]>("/purchase-bills")
+export async function listPurchaseBills(): Promise<DocumentBalance[]> {
+  return (await get<PurchaseBill[]>("/purchase-bills")).map(fromPurchaseBill)
 }
 
-export function getPurchaseBill(id: number): Promise<DocumentBalance> {
-  return get<DocumentBalance>(`/purchase-bills/${id}`)
+export async function getPurchaseBill(id: number): Promise<DocumentBalance> {
+  return fromPurchaseBill(await get<PurchaseBill>(`/purchase-bills/${id}`))
 }
 
 export function getPurchaseBillLines(id: number): Promise<PurchaseBillLine[]> {
@@ -896,10 +1001,8 @@ export function unpostPurchaseBill(
   return post<{ reversal_entry_id: number }>(`/purchase-bills/${id}/unpost`, {})
 }
 
-// Credit notes reuse the invoice/bill shapes: DocumentBalance for the balance
-// views (due_date is always null — credits do not age — and payment_status
-// carries the application status: open/partial/applied/void), and the
-// invoice/bill line types for lines.
+// Credit notes are read through DocumentBalance like invoices and bills (see
+// the converters above), and reuse the invoice/bill line types for lines.
 
 /** Input for a draft sales credit note, mirroring
  *  documents.SalesCreditNoteInput. Lines reuse the invoice line shape. */
@@ -925,12 +1028,16 @@ export interface PurchaseCreditNoteInput {
   lines: PurchaseBillLineInput[]
 }
 
-export function listSalesCreditNotes(): Promise<DocumentBalance[]> {
-  return get<DocumentBalance[]>("/sales-credit-notes")
+export async function listSalesCreditNotes(): Promise<DocumentBalance[]> {
+  return (await get<SalesCreditNote[]>("/sales-credit-notes")).map(
+    fromSalesCreditNote,
+  )
 }
 
-export function getSalesCreditNote(id: number): Promise<DocumentBalance> {
-  return get<DocumentBalance>(`/sales-credit-notes/${id}`)
+export async function getSalesCreditNote(id: number): Promise<DocumentBalance> {
+  return fromSalesCreditNote(
+    await get<SalesCreditNote>(`/sales-credit-notes/${id}`),
+  )
 }
 
 export function getSalesCreditNoteLines(
@@ -975,7 +1082,7 @@ export function postSalesCreditNote(
 
 export function applySalesCreditNote(
   id: number,
-): Promise<{ applications: { document_id: number; amount: string }[] }> {
+): Promise<{ applications: { document_id: number; amount_applied: string }[] }> {
   return post(`/sales-credit-notes/${id}/apply`, {})
 }
 
@@ -988,12 +1095,18 @@ export function unpostSalesCreditNote(
   )
 }
 
-export function listPurchaseCreditNotes(): Promise<DocumentBalance[]> {
-  return get<DocumentBalance[]>("/purchase-credit-notes")
+export async function listPurchaseCreditNotes(): Promise<DocumentBalance[]> {
+  return (await get<PurchaseCreditNote[]>("/purchase-credit-notes")).map(
+    fromPurchaseCreditNote,
+  )
 }
 
-export function getPurchaseCreditNote(id: number): Promise<DocumentBalance> {
-  return get<DocumentBalance>(`/purchase-credit-notes/${id}`)
+export async function getPurchaseCreditNote(
+  id: number,
+): Promise<DocumentBalance> {
+  return fromPurchaseCreditNote(
+    await get<PurchaseCreditNote>(`/purchase-credit-notes/${id}`),
+  )
 }
 
 export function getPurchaseCreditNoteLines(
@@ -1038,7 +1151,7 @@ export function postPurchaseCreditNote(
 
 export function applyPurchaseCreditNote(
   id: number,
-): Promise<{ applications: { document_id: number; amount: string }[] }> {
+): Promise<{ applications: { document_id: number; amount_applied: string }[] }> {
   return post(`/purchase-credit-notes/${id}/apply`, {})
 }
 
@@ -1051,8 +1164,35 @@ export function unpostPurchaseCreditNote(
   )
 }
 
-/** A customer or supplier payment with its applied/unapplied split, mirroring
- *  reporting.Payment. */
+// Wire shapes of the two payment reads, mirroring reporting's
+// CustomerPaymentView / SupplierPaymentView: named as their inputs.
+interface PaymentAmounts {
+  currency_code: string
+  amount: string
+  method: string | null
+  reference: string | null
+  status: string
+  amount_applied: string
+  unapplied: string
+  journal_entry_id: number | null
+}
+
+export interface CustomerPayment extends PaymentAmounts {
+  id: number
+  customer_id: number
+  payment_date: string
+  deposit_account_id: number | null
+}
+
+export interface SupplierPayment extends PaymentAmounts {
+  id: number
+  supplier_id: number
+  payment_date: string
+  payment_account_id: number | null
+}
+
+/** The shared payment screens' generic view of either payment kind, built
+ *  from the wire shapes by the converters below. */
 export interface Payment {
   id: number
   party_id: number
@@ -1070,6 +1210,35 @@ export interface Payment {
    *  payment_account_id for supplier payments. */
   account_id: number | null
 }
+
+function paymentAmounts(p: PaymentAmounts): PaymentAmounts {
+  return {
+    currency_code: p.currency_code,
+    amount: p.amount,
+    method: p.method,
+    reference: p.reference,
+    status: p.status,
+    amount_applied: p.amount_applied,
+    unapplied: p.unapplied,
+    journal_entry_id: p.journal_entry_id,
+  }
+}
+
+const fromCustomerPayment = (p: CustomerPayment): Payment => ({
+  ...paymentAmounts(p),
+  id: p.id,
+  party_id: p.customer_id,
+  date: p.payment_date,
+  account_id: p.deposit_account_id,
+})
+
+const fromSupplierPayment = (p: SupplierPayment): Payment => ({
+  ...paymentAmounts(p),
+  id: p.id,
+  party_id: p.supplier_id,
+  date: p.payment_date,
+  account_id: p.payment_account_id,
+})
 
 /** One allocation of a payment to an invoice or bill, mirroring
  *  reporting.PaymentApplication. */
@@ -1111,12 +1280,16 @@ export const PAYMENT_METHODS = [
   "other",
 ] as const
 
-export function listCustomerPayments(): Promise<Payment[]> {
-  return get<Payment[]>("/customer-payments")
+export async function listCustomerPayments(): Promise<Payment[]> {
+  return (await get<CustomerPayment[]>("/customer-payments")).map(
+    fromCustomerPayment,
+  )
 }
 
-export function getCustomerPayment(id: number): Promise<Payment> {
-  return get<Payment>(`/customer-payments/${id}`)
+export async function getCustomerPayment(id: number): Promise<Payment> {
+  return fromCustomerPayment(
+    await get<CustomerPayment>(`/customer-payments/${id}`),
+  )
 }
 
 export function getCustomerPaymentApplications(
@@ -1161,16 +1334,20 @@ export function unpostCustomerPayment(
 
 export function applyCustomerPayment(
   id: number,
-): Promise<{ applications: { document_id: number; amount: string }[] }> {
+): Promise<{ applications: { document_id: number; amount_applied: string }[] }> {
   return post(`/customer-payments/${id}/apply`, {})
 }
 
-export function listSupplierPayments(): Promise<Payment[]> {
-  return get<Payment[]>("/supplier-payments")
+export async function listSupplierPayments(): Promise<Payment[]> {
+  return (await get<SupplierPayment[]>("/supplier-payments")).map(
+    fromSupplierPayment,
+  )
 }
 
-export function getSupplierPayment(id: number): Promise<Payment> {
-  return get<Payment>(`/supplier-payments/${id}`)
+export async function getSupplierPayment(id: number): Promise<Payment> {
+  return fromSupplierPayment(
+    await get<SupplierPayment>(`/supplier-payments/${id}`),
+  )
 }
 
 export function getSupplierPaymentApplications(
@@ -1215,19 +1392,20 @@ export function unpostSupplierPayment(
 
 export function applySupplierPayment(
   id: number,
-): Promise<{ applications: { document_id: number; amount: string }[] }> {
+): Promise<{ applications: { document_id: number; amount_applied: string }[] }> {
   return post(`/supplier-payments/${id}/apply`, {})
 }
 
-/** One inventory movement, mirroring reporting.StockMovement. There is no
- *  status column: a movement is posted iff journal_entry_id is set, and only
+/** One inventory movement, mirroring reporting.StockMovement. status is
+ *  derived ("posted" iff journal_entry_id is set, else "draft"); only
  *  receipts and issues ever post. */
 export interface StockMovement {
   id: number
   product_id: number
   warehouse_id: number
-  date: string
+  movement_date: string
   movement_type: string
+  status: string
   quantity: string
   unit_cost: string
   total_cost: string
@@ -1505,7 +1683,7 @@ export interface StockValuationRow {
 }
 
 export function getInventoryValuation(): Promise<StockValuationRow[]> {
-  return get<StockValuationRow[]>("/inventory/valuation")
+  return get<StockValuationRow[]>("/inventory-valuation")
 }
 
 // ---------------------------------------------------------------------------
@@ -1694,25 +1872,25 @@ export function deletePurchaseOrder(id: number): Promise<void> {
   return del(`/purchase-orders/${id}`)
 }
 
-// Lifecycle transitions. Each returns { status: "ok" } and moves the order
-// between draft/open/closed/cancelled; the caller reloads to see the new state.
-export function confirmSalesOrder(id: number): Promise<{ status: string }> {
-  return post<{ status: string }>(`/sales-orders/${id}/confirm`, {})
+// Lifecycle transitions. Each moves the order between draft/open/closed/
+// cancelled and returns 204; the caller reloads to see the new state.
+export function confirmSalesOrder(id: number): Promise<void> {
+  return send("POST", `/sales-orders/${id}/confirm`, {})
 }
-export function closeSalesOrder(id: number): Promise<{ status: string }> {
-  return post<{ status: string }>(`/sales-orders/${id}/close`, {})
+export function closeSalesOrder(id: number): Promise<void> {
+  return send("POST", `/sales-orders/${id}/close`, {})
 }
-export function cancelSalesOrder(id: number): Promise<{ status: string }> {
-  return post<{ status: string }>(`/sales-orders/${id}/cancel`, {})
+export function cancelSalesOrder(id: number): Promise<void> {
+  return send("POST", `/sales-orders/${id}/cancel`, {})
 }
-export function confirmPurchaseOrder(id: number): Promise<{ status: string }> {
-  return post<{ status: string }>(`/purchase-orders/${id}/confirm`, {})
+export function confirmPurchaseOrder(id: number): Promise<void> {
+  return send("POST", `/purchase-orders/${id}/confirm`, {})
 }
-export function closePurchaseOrder(id: number): Promise<{ status: string }> {
-  return post<{ status: string }>(`/purchase-orders/${id}/close`, {})
+export function closePurchaseOrder(id: number): Promise<void> {
+  return send("POST", `/purchase-orders/${id}/close`, {})
 }
-export function cancelPurchaseOrder(id: number): Promise<{ status: string }> {
-  return post<{ status: string }>(`/purchase-orders/${id}/cancel`, {})
+export function cancelPurchaseOrder(id: number): Promise<void> {
+  return send("POST", `/purchase-orders/${id}/cancel`, {})
 }
 
 /** Fulfil one order line partially; omit the array to fulfil all remaining. */

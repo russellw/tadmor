@@ -84,7 +84,7 @@ func TestOrderFlowOverHTTP(t *testing.T) {
 		t.Fatalf("invoice draft SO: status %d, want 409 (body %s)", status, body)
 	}
 
-	if status, body := post(t, srv.URL+"/api/sales-orders/"+strconv.Itoa(soID)+"/confirm"); status != http.StatusOK {
+	if status, body := post(t, srv.URL+"/api/sales-orders/"+strconv.Itoa(soID)+"/confirm"); status != http.StatusNoContent {
 		t.Fatalf("confirm SO: status %d (body %s)", status, body)
 	}
 
@@ -120,7 +120,7 @@ func TestOrderFlowOverHTTP(t *testing.T) {
 	}
 	poID := idOf(body)
 
-	if status, body := post(t, srv.URL+"/api/purchase-orders/"+strconv.Itoa(poID)+"/confirm"); status != http.StatusOK {
+	if status, body := post(t, srv.URL+"/api/purchase-orders/"+strconv.Itoa(poID)+"/confirm"); status != http.StatusNoContent {
 		t.Fatalf("confirm PO: status %d (body %s)", status, body)
 	}
 

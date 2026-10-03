@@ -58,12 +58,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	in.Email = strings.TrimSpace(in.Email)
 	in.FullName = strings.TrimSpace(in.FullName)
-	if msg := validEmailAndName(in.Email, in.FullName); msg != "" {
-		writeError(w, http.StatusBadRequest, msg)
-		return
-	}
-	if len(in.Password) < minPasswordLen {
-		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
+	if !validEmailAndName(w, in.Email, in.FullName) || !validPassword(w, in.Password) {
 		return
 	}
 	hash, err := auth.HashPassword(in.Password)
@@ -92,19 +87,18 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	in.Email = strings.TrimSpace(in.Email)
 	in.FullName = strings.TrimSpace(in.FullName)
-	if msg := validEmailAndName(in.Email, in.FullName); msg != "" {
-		writeError(w, http.StatusBadRequest, msg)
+	if !validEmailAndName(w, in.Email, in.FullName) {
 		return
 	}
 	// Refuse self-deactivation and self-demotion: the guardrails against
 	// locking every administrator out one click at a time.
 	if me, ok := requestUser(r.Context()); ok && me.ID == id {
 		if !in.IsActive {
-			writeError(w, http.StatusBadRequest, "you cannot deactivate your own account")
+			writeError(w, http.StatusUnprocessableEntity, "you cannot deactivate your own account")
 			return
 		}
 		if !in.IsAdmin {
-			writeError(w, http.StatusBadRequest, "you cannot remove your own administrator access")
+			writeError(w, http.StatusUnprocessableEntity, "you cannot remove your own administrator access")
 			return
 		}
 	}
@@ -123,11 +117,7 @@ func (s *Server) setUserPassword(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Password string `json:"password"`
 	}
-	if !decodeJSON(w, r, &in) {
-		return
-	}
-	if len(in.Password) < minPasswordLen {
-		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
+	if !decodeJSON(w, r, &in) || !validPassword(w, in.Password) {
 		return
 	}
 	hash, err := auth.HashPassword(in.Password)
@@ -143,14 +133,32 @@ func (s *Server) setUserPassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func validEmailAndName(email, fullName string) string {
+// validEmailAndName writes the response and reports false when the email or
+// name is unacceptable: a missing field is a 400, a malformed email a 422.
+func validEmailAndName(w http.ResponseWriter, email, fullName string) bool {
 	switch {
 	case email == "":
-		return "email is required"
-	case !strings.Contains(email, "@"):
-		return "email must contain @"
+		writeError(w, http.StatusBadRequest, "email is required")
 	case fullName == "":
-		return "full_name is required"
+		writeError(w, http.StatusBadRequest, "full_name is required")
+	case !strings.Contains(email, "@"):
+		writeError(w, http.StatusUnprocessableEntity, "email must contain @")
+	default:
+		return true
 	}
-	return ""
+	return false
+}
+
+// validPassword writes the response and reports false when the password is
+// missing (400) or too short (422).
+func validPassword(w http.ResponseWriter, password string) bool {
+	switch {
+	case password == "":
+		writeError(w, http.StatusBadRequest, "password is required")
+	case len(password) < minPasswordLen:
+		writeError(w, http.StatusUnprocessableEntity, "password must be at least 8 characters")
+	default:
+		return true
+	}
+	return false
 }

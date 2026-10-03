@@ -184,7 +184,7 @@ export function StockMovementDetail() {
                 <MovementGLBadge movement={movement} />
               </div>
               <p className="text-sm text-muted-foreground">
-                {productName} · {warehouseName} · {movement.date}
+                {productName} · {warehouseName} · {movement.movement_date}
                 {movement.reference !== null && ` · ${movement.reference}`}
                 {movement.journal_entry_id !== null && (
                   <>

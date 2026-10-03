@@ -46,10 +46,10 @@ func testInvoiceLifecycle(t *T) {
 	// Line money (domain §2): 2 × 10.005 = 20.01; 3 × 7.333 = 21.999, tax
 	// round(21.999 × 8.25%, 4) = 1.8149.
 	inv := t.doc("sales-invoices", id)
-	t.shape(inv, "DocumentBalance")
-	t.eq("number", t.str(inv, "number"), number)
-	t.eq("party_id", t.int(inv, "party_id"), cust)
-	t.eq("date", t.str(inv, "date"), date)
+	t.shape(inv, "SalesInvoice")
+	t.eq("invoice_number", t.str(inv, "invoice_number"), number)
+	t.eq("customer_id", t.int(inv, "customer_id"), cust)
+	t.eq("invoice_date", t.str(inv, "invoice_date"), date)
 	t.eq("due_date", t.str(inv, "due_date"), due)
 	t.eq("status", t.str(inv, "status"), "draft")
 	t.eq("payment_status", t.str(inv, "payment_status"), "unpaid")
@@ -83,7 +83,7 @@ func testInvoiceLifecycle(t *T) {
 		{"description": "Licence", "quantity": "1", "unit_price": "100", "revenue_account_id": l.income, "tax_code": tax, "tax_rate": "10"},
 	}
 	body["memo"] = nil
-	t.eq("update", t.str(t.obj(t.must(t.admin, 200, "PUT", path("/api/sales-invoices/%d", id), body)), "status"), "ok")
+	t.must(t.admin, 204, "PUT", path("/api/sales-invoices/%d", id), body)
 	inv = t.doc("sales-invoices", id)
 	t.eqDec(inv, "total", "210")
 	t.isNull(inv, "memo")
@@ -144,7 +144,7 @@ func testInvoiceLifecycle(t *T) {
 	t.status(404, "POST", "/api/sales-invoices/999999/unpost", nil)
 
 	// A draft may be edited again and re-posted under a fresh entry.
-	t.must(t.admin, 200, "PUT", path("/api/sales-invoices/%d", id), body)
+	t.must(t.admin, 204, "PUT", path("/api/sales-invoices/%d", id), body)
 	if je2 := t.post("sales-invoices", id); je2 == je || je2 == rev {
 		t.Errorf("re-posting reused journal entry %d", je2)
 	}
@@ -156,7 +156,7 @@ func testInvoiceLifecycle(t *T) {
 
 	// Drafts can be deleted.
 	draft := t.invoice(cust, fmt.Sprintf("%d-05-01", y), "USD", "1", l.income)
-	t.eq("delete", t.str(t.obj(t.must(t.admin, 200, "DELETE", path("/api/sales-invoices/%d", draft), nil)), "status"), "ok")
+	t.must(t.admin, 204, "DELETE", path("/api/sales-invoices/%d", draft), nil)
 	t.status(404, "GET", path("/api/sales-invoices/%d", draft), nil)
 	t.status(404, "DELETE", path("/api/sales-invoices/%d", draft), nil)
 
@@ -165,7 +165,7 @@ func testInvoiceLifecycle(t *T) {
 	earlier := t.invoice(cust, fmt.Sprintf("%d-01-10", y), "USD", "1", l.income)
 	var order []int
 	for _, d := range t.list("/api/sales-invoices") {
-		t.shape(d, "DocumentBalance")
+		t.shape(d, "SalesInvoice")
 		switch n := t.int(d, "id"); n {
 		case id, later, earlier:
 			order = append(order, n)
@@ -252,7 +252,7 @@ func testBillLifecycle(t *T) {
 	t.create("/api/purchase-bills", other)
 
 	b := t.doc("purchase-bills", id)
-	t.shape(b, "DocumentBalance")
+	t.shape(b, "PurchaseBill")
 	t.eqDec(b, "total", "150") // 100 + 20 tax + 30
 	lines := t.list(path("/api/purchase-bills/%d/lines", id))
 	for _, ln := range lines {
@@ -269,7 +269,7 @@ func testBillLifecycle(t *T) {
 
 	rev := t.int(t.obj(t.must(t.admin, 200, "POST", path("/api/purchase-bills/%d/unpost", id), nil)), "reversal_entry_id")
 	t.eqLines("bill reversal", t.entry(rev), cr(l.income, "100"), cr(inventory, "30"), cr(l.tax, "20"), dr(l.control, "150"))
-	t.must(t.admin, 200, "DELETE", path("/api/purchase-bills/%d", id), nil)
+	t.must(t.admin, 204, "DELETE", path("/api/purchase-bills/%d", id), nil)
 	t.status(404, "GET", path("/api/purchase-bills/%d/lines", id), nil)
 }
 

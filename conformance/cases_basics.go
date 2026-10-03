@@ -85,7 +85,7 @@ func testInitialState(t *T) {
 		"accounting-periods", "exchange-rates", "sales-invoices", "purchase-bills",
 		"sales-credit-notes", "purchase-credit-notes", "customer-payments", "supplier-payments",
 		"sales-orders", "purchase-orders", "stock-movements", "bank-statements",
-		"ar-aging", "ap-aging", "inventory/valuation",
+		"ar-aging", "ap-aging", "inventory-valuation",
 	} {
 		if l := t.list("/api/" + p); len(l) != 0 {
 			t.Errorf("GET /api/%s on a fresh instance has %d rows, want []", p, len(l))
@@ -149,9 +149,10 @@ func testLoginLogout(t *T) {
 // spec/api.md §5.1.
 func testUserAdmin(t *T) {
 	email := strings.ToLower(t.uniq("admin-ui")) + "@conformance.test"
-	t.status(400, "POST", "/api/users", J{"email": "no-at-sign", "full_name": "X", "password": "longenough"})
+	t.status(422, "POST", "/api/users", J{"email": "no-at-sign", "full_name": "X", "password": "longenough"})
 	t.status(400, "POST", "/api/users", J{"email": email, "full_name": "", "password": "longenough"})
-	t.status(400, "POST", "/api/users", J{"email": email, "full_name": "X", "password": "short"})
+	t.status(422, "POST", "/api/users", J{"email": email, "full_name": "X", "password": "short"})
+	t.status(400, "POST", "/api/users", J{"email": email, "full_name": "X", "password": ""})
 	t.status(400, "POST", "/api/users", J{"email": "", "full_name": "X", "password": "longenough"})
 
 	id := t.create("/api/users", J{"email": email, "full_name": "Ann Example", "password": "longenough", "is_admin": false})
@@ -170,13 +171,14 @@ func testUserAdmin(t *T) {
 	t.eq("renamed", t.str(t.get(path("/api/users/%d", id)), "full_name"), "Ann Renamed")
 	t.status(400, "PUT", path("/api/users/%d", id), J{"email": email, "full_name": "", "is_active": true})
 	t.status(404, "PUT", "/api/users/999999", J{"email": "x@y.z", "full_name": "X", "is_active": true})
-	t.status(400, "POST", path("/api/users/%d/password", id), J{"password": "short"})
+	t.status(422, "POST", path("/api/users/%d/password", id), J{"password": "short"})
+	t.status(400, "POST", path("/api/users/%d/password", id), J{})
 	t.status(404, "POST", "/api/users/999999/password", J{"password": "longenough"})
 
 	// Administrators may not lock themselves out.
 	me := t.get(path("/api/users/%d", t.adminID))
-	t.status(400, "PUT", path("/api/users/%d", t.adminID), J{"email": t.str(me, "email"), "full_name": t.str(me, "full_name"), "is_active": false, "is_admin": true})
-	t.status(400, "PUT", path("/api/users/%d", t.adminID), J{"email": t.str(me, "email"), "full_name": t.str(me, "full_name"), "is_active": true, "is_admin": false})
+	t.status(422, "PUT", path("/api/users/%d", t.adminID), J{"email": t.str(me, "email"), "full_name": t.str(me, "full_name"), "is_active": false, "is_admin": true})
+	t.status(422, "PUT", path("/api/users/%d", t.adminID), J{"email": t.str(me, "email"), "full_name": t.str(me, "full_name"), "is_active": true, "is_admin": false})
 	t.eq("admin still admin", t.boolean(t.get(path("/api/users/%d", t.adminID)), "is_admin"), true)
 }
 

@@ -47,8 +47,8 @@ func TestUserAdminEndpoints(t *testing.T) {
 
 	// Guardrails: short password and duplicate email.
 	if status, body := postJSON(t, srv.URL+"/api/users",
-		`{"email":"short@example.com","full_name":"S","password":"short"}`); status != http.StatusBadRequest {
-		t.Fatalf("short password: status = %d, want 400 (body: %s)", status, body)
+		`{"email":"short@example.com","full_name":"S","password":"short"}`); status != http.StatusUnprocessableEntity {
+		t.Fatalf("short password: status = %d, want 422 (body: %s)", status, body)
 	}
 	if status, body := postJSON(t, srv.URL+"/api/users",
 		`{"email":"new@example.com","full_name":"Dup","password":"s3cret-pw"}`); status != http.StatusConflict {
@@ -85,14 +85,14 @@ func TestUserAdminEndpoints(t *testing.T) {
 		t.Fatalf("decode me %q: %v", meBody, err)
 	}
 	if status, body := putJSON(t, srv.URL+"/api/users/"+strconv.Itoa(me.ID),
-		`{"email":"test@example.com","full_name":"Test User","is_active":false,"is_admin":true}`); status != http.StatusBadRequest {
-		t.Fatalf("self-deactivate: status = %d, want 400 (body: %s)", status, body)
+		`{"email":"test@example.com","full_name":"Test User","is_active":false,"is_admin":true}`); status != http.StatusUnprocessableEntity {
+		t.Fatalf("self-deactivate: status = %d, want 422 (body: %s)", status, body)
 	}
 
 	// Self-demotion is refused too, for the same lockout reason.
 	if status, body := putJSON(t, srv.URL+"/api/users/"+strconv.Itoa(me.ID),
-		`{"email":"test@example.com","full_name":"Test User","is_active":true,"is_admin":false}`); status != http.StatusBadRequest {
-		t.Fatalf("self-demote: status = %d, want 400 (body: %s)", status, body)
+		`{"email":"test@example.com","full_name":"Test User","is_active":true,"is_admin":false}`); status != http.StatusUnprocessableEntity {
+		t.Fatalf("self-demote: status = %d, want 422 (body: %s)", status, body)
 	}
 
 	// Password reset: reactivate (and promote, checking the is_admin

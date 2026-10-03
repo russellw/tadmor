@@ -232,7 +232,7 @@ func (s *Server) deleteStockMovement(w http.ResponseWriter, r *http.Request) {
 }
 
 // runMutate validates the request (when validate is non-nil), runs the
-// mutation in a transaction, and writes {"status":"ok"}.
+// mutation in a transaction, and writes 204 No Content.
 func (s *Server) runMutate(w http.ResponseWriter, r *http.Request, validate func() string, mutate func(pgx.Tx) error) {
 	if validate != nil {
 		if msg := validate(); msg != "" {
@@ -247,7 +247,7 @@ func (s *Server) runMutate(w http.ResponseWriter, r *http.Request, validate func
 		s.writeMutateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // writeMutateError maps documents-package sentinels to HTTP codes, falling

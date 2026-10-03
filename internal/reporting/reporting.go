@@ -373,23 +373,91 @@ func JournalEntryByID(ctx context.Context, q Querier, entryID int) (JournalEntry
 	return e, rows.Err()
 }
 
-// DocumentBalance is the outstanding-balance view of an invoice or bill.
-// JournalEntryID is set once the document has been posted.
-type DocumentBalance struct {
-	ID             int     `json:"id"`
-	Number         string  `json:"number"`
-	PartyID        int     `json:"party_id"`
+// Document read models. Each names its key fields exactly as the document's
+// create/update body does (invoice_number, customer_id, invoice_date, ...),
+// so a client can edit what it read and send it back; DocumentAmounts holds
+// the fields they all share. JournalEntryID is set while the document is
+// posted.
+type DocumentAmounts struct {
 	Currency       string  `json:"currency_code"`
-	Date           string  `json:"date"`
-	DueDate        *string `json:"due_date"`
 	Status         string  `json:"status"`
 	Total          string  `json:"total"`
 	AmountApplied  string  `json:"amount_applied"`
 	Balance        string  `json:"balance"`
-	PaymentStatus  string  `json:"payment_status"`
 	JournalEntryID *int    `json:"journal_entry_id"`
 	Reference      *string `json:"reference"`
 	Memo           *string `json:"memo"`
+}
+
+// SalesInvoiceView is an invoice with its outstanding balance. PaymentStatus
+// is unpaid/partial/paid/void.
+type SalesInvoiceView struct {
+	ID            int     `json:"id"`
+	InvoiceNumber string  `json:"invoice_number"`
+	CustomerID    int     `json:"customer_id"`
+	InvoiceDate   string  `json:"invoice_date"`
+	DueDate       *string `json:"due_date"`
+	PaymentStatus string  `json:"payment_status"`
+	DocumentAmounts
+}
+
+// PurchaseBillView is the purchasing mirror of SalesInvoiceView.
+type PurchaseBillView struct {
+	ID            int     `json:"id"`
+	BillNumber    string  `json:"bill_number"`
+	SupplierID    int     `json:"supplier_id"`
+	BillDate      string  `json:"bill_date"`
+	DueDate       *string `json:"due_date"`
+	PaymentStatus string  `json:"payment_status"`
+	DocumentAmounts
+}
+
+// SalesCreditNoteView is a credit note with its unapplied balance.
+// ApplicationStatus is open/partial/applied/void; credit notes do not age, so
+// there is no due date.
+type SalesCreditNoteView struct {
+	ID                int    `json:"id"`
+	CreditNoteNumber  string `json:"credit_note_number"`
+	CustomerID        int    `json:"customer_id"`
+	CreditNoteDate    string `json:"credit_note_date"`
+	ApplicationStatus string `json:"application_status"`
+	DocumentAmounts
+}
+
+// PurchaseCreditNoteView is the purchasing mirror of SalesCreditNoteView.
+type PurchaseCreditNoteView struct {
+	ID                int    `json:"id"`
+	CreditNoteNumber  string `json:"credit_note_number"`
+	SupplierID        int    `json:"supplier_id"`
+	CreditNoteDate    string `json:"credit_note_date"`
+	ApplicationStatus string `json:"application_status"`
+	DocumentAmounts
+}
+
+// documentRow is the common scan target of the four balance queries, which
+// all select the same columns; the exported views are built from it.
+type documentRow struct {
+	id, party    int
+	number, date string
+	dueDate      *string
+	settlement   string // payment_status or application_status
+	DocumentAmounts
+}
+
+func (d documentRow) salesInvoice() SalesInvoiceView {
+	return SalesInvoiceView{d.id, d.number, d.party, d.date, d.dueDate, d.settlement, d.DocumentAmounts}
+}
+
+func (d documentRow) purchaseBill() PurchaseBillView {
+	return PurchaseBillView{d.id, d.number, d.party, d.date, d.dueDate, d.settlement, d.DocumentAmounts}
+}
+
+func (d documentRow) salesCreditNote() SalesCreditNoteView {
+	return SalesCreditNoteView{d.id, d.number, d.party, d.date, d.settlement, d.DocumentAmounts}
+}
+
+func (d documentRow) purchaseCreditNote() PurchaseCreditNoteView {
+	return PurchaseCreditNoteView{d.id, d.number, d.party, d.date, d.settlement, d.DocumentAmounts}
 }
 
 // The balance views predate the GL drill-down and do not expose
@@ -410,8 +478,9 @@ const purchaseBillBalancesSQL = `
 	FROM purchase_bill_balances b JOIN purchase_bills pb ON pb.id = b.bill_id`
 
 // SalesInvoiceBalances returns the balance view of every invoice, newest first.
-func SalesInvoiceBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
-	return documentBalanceRows(ctx, q, salesInvoiceBalancesSQL+` ORDER BY b.invoice_date DESC, b.invoice_id DESC`)
+func SalesInvoiceBalances(ctx context.Context, q Querier) ([]SalesInvoiceView, error) {
+	return documentViews(ctx, q, salesInvoiceBalancesSQL+` ORDER BY b.invoice_date DESC, b.invoice_id DESC`,
+		documentRow.salesInvoice)
 }
 
 // SalesInvoiceLine is one invoice line with its database-computed money.
@@ -470,14 +539,15 @@ func SalesInvoiceLines(ctx context.Context, q Querier, invoiceID int) ([]SalesIn
 }
 
 // SalesInvoiceBalance returns the balance view of a single invoice.
-func SalesInvoiceBalance(ctx context.Context, q Querier, invoiceID int) (DocumentBalance, error) {
-	return scanDocumentBalance(q.QueryRow(ctx,
-		salesInvoiceBalancesSQL+` WHERE b.invoice_id = $1`, invoiceID))
+func SalesInvoiceBalance(ctx context.Context, q Querier, invoiceID int) (SalesInvoiceView, error) {
+	d, err := scanDocumentRow(q.QueryRow(ctx, salesInvoiceBalancesSQL+` WHERE b.invoice_id = $1`, invoiceID))
+	return d.salesInvoice(), err
 }
 
 // PurchaseBillBalances returns the balance view of every bill, newest first.
-func PurchaseBillBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
-	return documentBalanceRows(ctx, q, purchaseBillBalancesSQL+` ORDER BY b.bill_date DESC, b.bill_id DESC`)
+func PurchaseBillBalances(ctx context.Context, q Querier) ([]PurchaseBillView, error) {
+	return documentViews(ctx, q, purchaseBillBalancesSQL+` ORDER BY b.bill_date DESC, b.bill_id DESC`,
+		documentRow.purchaseBill)
 }
 
 // PurchaseBillLine is one bill line with its database-computed money.
@@ -536,35 +606,34 @@ func PurchaseBillLines(ctx context.Context, q Querier, billID int) ([]PurchaseBi
 }
 
 // PurchaseBillBalance returns the balance view of a single bill.
-func PurchaseBillBalance(ctx context.Context, q Querier, billID int) (DocumentBalance, error) {
-	return scanDocumentBalance(q.QueryRow(ctx,
-		purchaseBillBalancesSQL+` WHERE b.bill_id = $1`, billID))
+func PurchaseBillBalance(ctx context.Context, q Querier, billID int) (PurchaseBillView, error) {
+	d, err := scanDocumentRow(q.QueryRow(ctx, purchaseBillBalancesSQL+` WHERE b.bill_id = $1`, billID))
+	return d.purchaseBill(), err
 }
 
-func documentBalanceRows(ctx context.Context, q Querier, sql string) ([]DocumentBalance, error) {
+// documentViews runs a balance query and converts each row with view.
+func documentViews[T any](ctx context.Context, q Querier, sql string, view func(documentRow) T) ([]T, error) {
 	rows, err := q.Query(ctx, sql)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	out := []DocumentBalance{}
+	out := []T{}
 	for rows.Next() {
-		var d DocumentBalance
-		if err := rows.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
-			&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID,
-			&d.Reference, &d.Memo); err != nil {
+		d, err := scanDocumentRow(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, d)
+		out = append(out, view(d))
 	}
 	return out, rows.Err()
 }
 
-func scanDocumentBalance(row pgx.Row) (DocumentBalance, error) {
-	var d DocumentBalance
-	err := row.Scan(&d.ID, &d.Number, &d.PartyID, &d.Currency, &d.Date, &d.DueDate,
-		&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.PaymentStatus, &d.JournalEntryID,
+func scanDocumentRow(row pgx.Row) (documentRow, error) {
+	var d documentRow
+	err := row.Scan(&d.id, &d.number, &d.party, &d.Currency, &d.date, &d.dueDate,
+		&d.Status, &d.Total, &d.AmountApplied, &d.Balance, &d.settlement, &d.JournalEntryID,
 		&d.Reference, &d.Memo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return d, ErrNotFound
@@ -572,10 +641,9 @@ func scanDocumentBalance(row pgx.Row) (DocumentBalance, error) {
 	return d, err
 }
 
-// Credit notes reuse the invoice/bill row shapes: DocumentBalance for the
-// balance views (due_date is always nil — credits do not age — and
-// payment_status carries the application status: open/partial/applied/void),
-// SalesInvoiceLine / PurchaseBillLine for the lines.
+// Credit notes share the balance query shape (with a NULL due date and the
+// application status in the settlement column) and reuse SalesInvoiceLine /
+// PurchaseBillLine for their lines.
 
 const salesCreditNoteBalancesSQL = `
 	SELECT b.credit_note_id, b.credit_note_number, b.customer_id, b.currency_code,
@@ -593,28 +661,30 @@ const purchaseCreditNoteBalancesSQL = `
 
 // SalesCreditNoteBalances returns the balance view of every sales credit
 // note, newest first.
-func SalesCreditNoteBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
-	return documentBalanceRows(ctx, q,
-		salesCreditNoteBalancesSQL+` ORDER BY b.credit_note_date DESC, b.credit_note_id DESC`)
+func SalesCreditNoteBalances(ctx context.Context, q Querier) ([]SalesCreditNoteView, error) {
+	return documentViews(ctx, q,
+		salesCreditNoteBalancesSQL+` ORDER BY b.credit_note_date DESC, b.credit_note_id DESC`,
+		documentRow.salesCreditNote)
 }
 
 // SalesCreditNoteBalance returns the balance view of a single sales credit note.
-func SalesCreditNoteBalance(ctx context.Context, q Querier, noteID int) (DocumentBalance, error) {
-	return scanDocumentBalance(q.QueryRow(ctx,
-		salesCreditNoteBalancesSQL+` WHERE b.credit_note_id = $1`, noteID))
+func SalesCreditNoteBalance(ctx context.Context, q Querier, noteID int) (SalesCreditNoteView, error) {
+	d, err := scanDocumentRow(q.QueryRow(ctx, salesCreditNoteBalancesSQL+` WHERE b.credit_note_id = $1`, noteID))
+	return d.salesCreditNote(), err
 }
 
 // PurchaseCreditNoteBalances returns the balance view of every purchase
 // credit note, newest first.
-func PurchaseCreditNoteBalances(ctx context.Context, q Querier) ([]DocumentBalance, error) {
-	return documentBalanceRows(ctx, q,
-		purchaseCreditNoteBalancesSQL+` ORDER BY b.credit_note_date DESC, b.credit_note_id DESC`)
+func PurchaseCreditNoteBalances(ctx context.Context, q Querier) ([]PurchaseCreditNoteView, error) {
+	return documentViews(ctx, q,
+		purchaseCreditNoteBalancesSQL+` ORDER BY b.credit_note_date DESC, b.credit_note_id DESC`,
+		documentRow.purchaseCreditNote)
 }
 
 // PurchaseCreditNoteBalance returns the balance view of a single purchase credit note.
-func PurchaseCreditNoteBalance(ctx context.Context, q Querier, noteID int) (DocumentBalance, error) {
-	return scanDocumentBalance(q.QueryRow(ctx,
-		purchaseCreditNoteBalancesSQL+` WHERE b.credit_note_id = $1`, noteID))
+func PurchaseCreditNoteBalance(ctx context.Context, q Querier, noteID int) (PurchaseCreditNoteView, error) {
+	d, err := scanDocumentRow(q.QueryRow(ctx, purchaseCreditNoteBalancesSQL+` WHERE b.credit_note_id = $1`, noteID))
+	return d.purchaseCreditNote(), err
 }
 
 // SalesCreditNoteLines returns a sales credit note's lines in order, or
@@ -709,13 +779,11 @@ func PurchaseCreditNoteApplications(ctx context.Context, q Querier, noteID int) 
 		 WHERE ca.credit_note_id = $1 ORDER BY ca.id`)
 }
 
-// Payment is a customer or supplier payment with its applied/unapplied split.
-// There is no payment view in the schema; the split is computed here from the
-// application tables. JournalEntryID is set once the payment has been posted.
-type Payment struct {
-	ID             int     `json:"id"`
-	PartyID        int     `json:"party_id"`
-	Date           string  `json:"date"`
+// PaymentAmounts are the fields customer and supplier payment reads share.
+// There is no payment view in the schema; the applied/unapplied split is
+// computed here from the application tables. JournalEntryID is set while the
+// payment is posted.
+type PaymentAmounts struct {
 	Currency       string  `json:"currency_code"`
 	Amount         string  `json:"amount"`
 	Method         *string `json:"method"`
@@ -724,9 +792,40 @@ type Payment struct {
 	AmountApplied  string  `json:"amount_applied"`
 	Unapplied      string  `json:"unapplied"`
 	JournalEntryID *int    `json:"journal_entry_id"`
-	// The cash-side account: deposit_account_id for customer payments,
-	// payment_account_id for supplier payments.
-	AccountID *int `json:"account_id"`
+}
+
+// CustomerPaymentView is a customer payment, named as its create/update body.
+type CustomerPaymentView struct {
+	ID               int    `json:"id"`
+	CustomerID       int    `json:"customer_id"`
+	PaymentDate      string `json:"payment_date"`
+	DepositAccountID *int   `json:"deposit_account_id"`
+	PaymentAmounts
+}
+
+// SupplierPaymentView is a supplier payment, named as its create/update body.
+type SupplierPaymentView struct {
+	ID               int    `json:"id"`
+	SupplierID       int    `json:"supplier_id"`
+	PaymentDate      string `json:"payment_date"`
+	PaymentAccountID *int   `json:"payment_account_id"`
+	PaymentAmounts
+}
+
+// paymentRow is the common scan target of the two payment queries.
+type paymentRow struct {
+	id, party int
+	date      string
+	account   *int
+	PaymentAmounts
+}
+
+func (p paymentRow) customer() CustomerPaymentView {
+	return CustomerPaymentView{p.id, p.party, p.date, p.account, p.PaymentAmounts}
+}
+
+func (p paymentRow) supplier() SupplierPaymentView {
+	return SupplierPaymentView{p.id, p.party, p.date, p.account, p.PaymentAmounts}
 }
 
 const customerPaymentsSQL = `
@@ -754,50 +853,51 @@ const supplierPaymentsSQL = `
 	) ba ON ba.payment_id = sp.id`
 
 // CustomerPayments returns every customer payment, newest first.
-func CustomerPayments(ctx context.Context, q Querier) ([]Payment, error) {
-	return paymentRows(ctx, q, customerPaymentsSQL+` ORDER BY cp.payment_date DESC, cp.id DESC`)
+func CustomerPayments(ctx context.Context, q Querier) ([]CustomerPaymentView, error) {
+	return paymentViews(ctx, q, customerPaymentsSQL+` ORDER BY cp.payment_date DESC, cp.id DESC`, paymentRow.customer)
 }
 
 // SupplierPayments returns every supplier payment, newest first.
-func SupplierPayments(ctx context.Context, q Querier) ([]Payment, error) {
-	return paymentRows(ctx, q, supplierPaymentsSQL+` ORDER BY sp.payment_date DESC, sp.id DESC`)
+func SupplierPayments(ctx context.Context, q Querier) ([]SupplierPaymentView, error) {
+	return paymentViews(ctx, q, supplierPaymentsSQL+` ORDER BY sp.payment_date DESC, sp.id DESC`, paymentRow.supplier)
 }
 
 // CustomerPayment returns a single customer payment, or ErrNotFound.
-func CustomerPayment(ctx context.Context, q Querier, paymentID int) (Payment, error) {
-	return scanPayment(q.QueryRow(ctx, customerPaymentsSQL+` WHERE cp.id = $1`, paymentID))
+func CustomerPayment(ctx context.Context, q Querier, paymentID int) (CustomerPaymentView, error) {
+	p, err := scanPaymentRow(q.QueryRow(ctx, customerPaymentsSQL+` WHERE cp.id = $1`, paymentID))
+	return p.customer(), err
 }
 
 // SupplierPayment returns a single supplier payment, or ErrNotFound.
-func SupplierPayment(ctx context.Context, q Querier, paymentID int) (Payment, error) {
-	return scanPayment(q.QueryRow(ctx, supplierPaymentsSQL+` WHERE sp.id = $1`, paymentID))
+func SupplierPayment(ctx context.Context, q Querier, paymentID int) (SupplierPaymentView, error) {
+	p, err := scanPaymentRow(q.QueryRow(ctx, supplierPaymentsSQL+` WHERE sp.id = $1`, paymentID))
+	return p.supplier(), err
 }
 
-func paymentRows(ctx context.Context, q Querier, sql string) ([]Payment, error) {
+// paymentViews runs a payment query and converts each row with view.
+func paymentViews[T any](ctx context.Context, q Querier, sql string, view func(paymentRow) T) ([]T, error) {
 	rows, err := q.Query(ctx, sql)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	out := []Payment{}
+	out := []T{}
 	for rows.Next() {
-		var p Payment
-		if err := rows.Scan(&p.ID, &p.PartyID, &p.Date, &p.Currency, &p.Amount,
-			&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied, &p.JournalEntryID,
-			&p.AccountID); err != nil {
+		p, err := scanPaymentRow(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, p)
+		out = append(out, view(p))
 	}
 	return out, rows.Err()
 }
 
-func scanPayment(row pgx.Row) (Payment, error) {
-	var p Payment
-	err := row.Scan(&p.ID, &p.PartyID, &p.Date, &p.Currency, &p.Amount,
+func scanPaymentRow(row pgx.Row) (paymentRow, error) {
+	var p paymentRow
+	err := row.Scan(&p.id, &p.party, &p.date, &p.Currency, &p.Amount,
 		&p.Method, &p.Reference, &p.Status, &p.AmountApplied, &p.Unapplied, &p.JournalEntryID,
-		&p.AccountID)
+		&p.account)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -916,14 +1016,15 @@ func agingRows(ctx context.Context, q Querier, sql string) ([]AgingRow, error) {
 }
 
 // StockMovement is one inventory movement. There is no status column in the
-// schema: a movement is posted iff JournalEntryID is set, and only receipts
-// and issues ever post.
+// schema: Status is derived, "posted" iff JournalEntryID is set, else "draft";
+// only receipts and issues ever post.
 type StockMovement struct {
 	ID             int     `json:"id"`
 	ProductID      int     `json:"product_id"`
 	WarehouseID    int     `json:"warehouse_id"`
-	Date           string  `json:"date"`
+	MovementDate   string  `json:"movement_date"`
 	Type           string  `json:"movement_type"`
+	Status         string  `json:"status"`
 	Quantity       string  `json:"quantity"`
 	UnitCost       string  `json:"unit_cost"`
 	TotalCost      string  `json:"total_cost"`
@@ -937,6 +1038,7 @@ type StockMovement struct {
 
 const stockMovementsSQL = `
 	SELECT id, product_id, warehouse_id, movement_date::text, movement_type,
+	       CASE WHEN journal_entry_id IS NULL THEN 'draft' ELSE 'posted' END,
 	       quantity::numeric(19,4)::text, unit_cost::numeric(19,4)::text, total_cost::numeric(19,4)::text,
 	       reference, notes, journal_entry_id, source_type
 	FROM stock_movements`
@@ -952,7 +1054,7 @@ func StockMovements(ctx context.Context, q Querier) ([]StockMovement, error) {
 	out := []StockMovement{}
 	for rows.Next() {
 		var m StockMovement
-		if err := rows.Scan(&m.ID, &m.ProductID, &m.WarehouseID, &m.Date, &m.Type,
+		if err := rows.Scan(&m.ID, &m.ProductID, &m.WarehouseID, &m.MovementDate, &m.Type, &m.Status,
 			&m.Quantity, &m.UnitCost, &m.TotalCost, &m.Reference, &m.Notes, &m.JournalEntryID,
 			&m.SourceType); err != nil {
 			return nil, err
@@ -966,7 +1068,7 @@ func StockMovements(ctx context.Context, q Querier) ([]StockMovement, error) {
 func StockMovementByID(ctx context.Context, q Querier, movementID int) (StockMovement, error) {
 	var m StockMovement
 	err := q.QueryRow(ctx, stockMovementsSQL+` WHERE id = $1`, movementID).Scan(
-		&m.ID, &m.ProductID, &m.WarehouseID, &m.Date, &m.Type,
+		&m.ID, &m.ProductID, &m.WarehouseID, &m.MovementDate, &m.Type, &m.Status,
 		&m.Quantity, &m.UnitCost, &m.TotalCost, &m.Reference, &m.Notes, &m.JournalEntryID,
 		&m.SourceType)
 	if errors.Is(err, pgx.ErrNoRows) {

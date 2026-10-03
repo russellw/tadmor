@@ -229,7 +229,7 @@ func (s *Server) reopenBankStatement(w http.ResponseWriter, r *http.Request) {
 }
 
 // runBanking validates the request (when validate is non-nil), runs the
-// mutation in a transaction, and writes {"status":"ok"}.
+// mutation in a transaction, and writes 204 No Content.
 func (s *Server) runBanking(w http.ResponseWriter, r *http.Request, validate func() string, mutate func(pgx.Tx) error) {
 	if validate != nil {
 		if msg := validate(); msg != "" {
@@ -244,7 +244,7 @@ func (s *Server) runBanking(w http.ResponseWriter, r *http.Request, validate fun
 		s.writeBankingError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // writeBankingError maps banking-package sentinels to HTTP codes, falling
@@ -254,14 +254,13 @@ func (s *Server) writeBankingError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, banking.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, banking.ErrBadCSV):
-		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, banking.ErrNotOpen),
 		errors.Is(err, banking.ErrNotReconciled),
 		errors.Is(err, banking.ErrAlreadyMatched):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, banking.ErrUnmatchedLines),
-		errors.Is(err, banking.ErrUnbalanced):
+		errors.Is(err, banking.ErrUnbalanced),
+		errors.Is(err, banking.ErrBadCSV):
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 	default:
 		s.writeCreateError(w, err)
