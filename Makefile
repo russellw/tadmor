@@ -12,9 +12,10 @@ export GOPROXY := off
 DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor?sslmode=disable
 TEST_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_test?sslmode=disable
 E2E_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_e2e?sslmode=disable
+CONFORMANCE_DATABASE_URL ?= postgres://tadmor:tadmor@127.0.0.1:5432/tadmor_conformance?sslmode=disable
 
 .DEFAULT_GOAL := help
-.PHONY: help build release image deploy demo-snapshot run seed-iso test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e
+.PHONY: help build release image deploy demo-snapshot run seed-iso test vet fmt fmt-check web-install web-dev web-build web-check e2e-install e2e-test e2e conformance
 
 # Frontend lives in web/ (pnpm, corepack-pinned). Mirrors the Go targets'
 # discipline: the committed pnpm-lock.yaml is the source of truth and CI installs
@@ -66,10 +67,10 @@ vet: ## Run go vet
 	go vet ./...
 
 fmt: ## Format all Go sources
-	gofmt -w cmd internal
+	gofmt -w cmd internal conformance
 
 fmt-check: ## Fail if any Go source is not gofmt-clean
-	@unformatted=$$(gofmt -l cmd internal); \
+	@unformatted=$$(gofmt -l cmd internal conformance); \
 	if [ -n "$$unformatted" ]; then \
 		echo "unformatted files:"; echo "$$unformatted"; exit 1; \
 	fi
@@ -95,3 +96,6 @@ e2e-test: ## Run the Playwright UI tests (stack must already be running; BASE_UR
 
 e2e: ## Build+run the server against the dedicated e2e DB, run the Playwright UI tests, tear it down
 	DATABASE_URL=$(E2E_DATABASE_URL) $(E2E)/run-local.sh
+
+conformance: ## Run the spec conformance suite against a fresh server (wipes the _conformance DB; see spec/)
+	DATABASE_URL=$(CONFORMANCE_DATABASE_URL) conformance/run-local.sh $(ARGS)

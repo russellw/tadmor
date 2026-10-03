@@ -14,6 +14,8 @@ db/migrations/     ordered SQL migrations (see db/README.md)
 db/seed/           reference-data seeds (ISO countries/currencies)
 web/               the TypeScript/React front end (see docs/frontend-stack.md)
 e2e/               browser-driven UI tests (Playwright; see docs/e2e-testing.md)
+spec/              stack-neutral specification of the API and business rules
+conformance/       black-box, stdlib-only test suite for any implementation of spec/
 deploy/            deployment assets for the fixed-price VPS
 docs/              architecture, deployment, and development docs
 vendor/            all third-party Go source, committed and reviewable
@@ -76,6 +78,14 @@ test tooling stays out of the front end's runtime dependency tree. With the stac
 running, `make e2e-test` drives a headless browser against the app. See
 [`docs/e2e-testing.md`](docs/e2e-testing.md) for one-time setup, the supply-chain
 rationale, and the test structure.
+
+### Specification and conformance
+
+[`spec/`](spec/) describes tadmor's API and business rules independently of
+its technology stack, so the same product can be rebuilt on other stacks and
+compared. `make conformance` runs the black-box suite in
+[`conformance/`](conformance/) against a freshly built server on a wiped
+`tadmor_conformance` database; see [`conformance/README.md`](conformance/README.md).
 
 ## Deployment
 

@@ -122,6 +122,21 @@ sections, deferred decisions, and a gap review against the project goal.
   The fiscal-year-rollover residual was resolved by the year-end close
   (2026-07-09), which auto-creates the next fiscal year.
 
+## Counterpart implementations
+
+- **Spec and conformance suite** — done 2026-10-03: [`spec/`](../spec/)
+  pins down the API and business rules independently of the stack, and
+  [`conformance/`](../conformance/) checks any implementation against them
+  over HTTP (`make conformance`; tadmor passes all 31 cases). This is the
+  shared definition of "done" for counterpart projects on other stacks.
+  Writing it surfaced three 500s on client errors (unparseable dates, a
+  posting with no exchange rate) and a 200 for lines of a missing bank
+  statement, all now fixed, plus one **open issue**: a document whose
+  lines net negative on one account (e.g. a discount line on its own
+  revenue account) cannot be posted and answers 500 (`spec/domain.md` §14).
+- **Next:** pick the first counterpart stack and the comparison metrics
+  before building it.
+
 ## Smaller housekeeping
 
 - ~~**README front-matter is stale**~~ — done 2026-07-09 (commit e847809): the
