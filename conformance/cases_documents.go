@@ -272,3 +272,29 @@ func testBillLifecycle(t *T) {
 	t.must(t.admin, 200, "DELETE", path("/api/purchase-bills/%d", id), nil)
 	t.status(404, "GET", path("/api/purchase-bills/%d/lines", id), nil)
 }
+
+// domain §4.3: an account whose lines net negative posts on the opposite side,
+// in base currency too (domain §7.2).
+func testNegativeNetLines(t *T) {
+	y := t.openYear()
+	t.must(t.admin, 201, "POST", "/api/exchange-rates", J{"currency_code": "GBP", "rate_date": fmt.Sprintf("%d-01-01", y), "rate": "1.123456"})
+	cust, l := t.customer()
+	discount := t.account("revenue")
+	inv := t.create("/api/sales-invoices", J{"invoice_number": t.uniq("INV"), "customer_id": cust, "invoice_date": fmt.Sprintf("%d-03-01", y), "currency_code": "GBP",
+		"lines": []J{
+			{"description": "Goods", "unit_price": "100", "revenue_account_id": l.income},
+			{"description": "Discount", "unit_price": "-10", "revenue_account_id": discount},
+		}})
+	// 100 × 1.123456 = 112.3456 and 10 × 1.123456 = 11.2346; A/R takes their net.
+	t.eqLines("discounted invoice", t.entry(t.post("sales-invoices", inv)),
+		dr(l.control, "90").base("101.111"), cr(l.income, "100").base("112.3456"), dr(discount, "10").base("11.2346"))
+
+	sup, sl := t.supplier()
+	rebate := t.account("expense")
+	b := t.create("/api/purchase-bills", J{"bill_number": t.uniq("BILL"), "supplier_id": sup, "bill_date": fmt.Sprintf("%d-03-02", y), "currency_code": "USD",
+		"lines": []J{
+			{"description": "Materials", "unit_cost": "50", "expense_account_id": sl.income},
+			{"description": "Rebate", "unit_cost": "-5", "expense_account_id": rebate},
+		}})
+	t.eqLines("bill with rebate", t.entry(t.post("purchase-bills", b)), dr(sl.income, "50"), cr(rebate, "5"), cr(sl.control, "45"))
+}

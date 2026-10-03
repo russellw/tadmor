@@ -196,7 +196,8 @@ func PostSalesInvoice(ctx context.Context, tx pgx.Tx, invoiceID int) (int, error
 	}
 
 	// Cr revenue per account, then Cr sales tax per account, converted to
-	// base at the entry's rate.
+	// base at the entry's rate. An account whose lines net negative (e.g. a
+	// discount line on its own account) is debited instead.
 	if _, err := tx.Exec(ctx,
 		`WITH rev AS (
 		     SELECT COALESCE(l.revenue_account_id, p.revenue_account_id) AS account_id,
@@ -213,17 +214,17 @@ func PostSalesInvoice(ctx context.Context, tx pgx.Tx, invoiceID int) (int, error
 		     SELECT 1 AS ord, account_id, amount, 'Sales tax'::text FROM tax
 		 )
 		 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
-		 SELECT $1, 1 + row_number() OVER (ORDER BY ord, account_id), account_id, 0, amount, memo,
-		        0, round(amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4)
-		 FROM credits`, je, invoiceID); err != nil {
+		 SELECT $1, 1 + row_number() OVER (ORDER BY ord, account_id), account_id,
+		        greatest(-amount, 0), greatest(amount, 0), memo, greatest(-base, 0), greatest(base, 0)
+		 FROM (SELECT *, round(amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4) AS base FROM credits) c`, je, invoiceID); err != nil {
 		return 0, err
 	}
-	// Dr accounts receivable for the gross total; its base amount is the sum
-	// of the converted credits, so the entry balances in base exactly.
+	// Dr accounts receivable for the gross total; its base amount is the net
+	// of the converted detail lines, so the entry balances in base exactly.
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
 		 SELECT $1, 1, c.ar_account_id, si.total, 0, 'Accounts receivable',
-		        (SELECT COALESCE(sum(base_credit), 0) FROM journal_lines WHERE journal_entry_id = $1), 0
+		        (SELECT COALESCE(sum(base_credit - base_debit), 0) FROM journal_lines WHERE journal_entry_id = $1), 0
 		 FROM sales_invoices si JOIN customers c ON c.id = si.customer_id
 		 WHERE si.id = $2`, je, invoiceID); err != nil {
 		return 0, err
@@ -295,7 +296,8 @@ func PostPurchaseBill(ctx context.Context, tx pgx.Tx, billID int) (int, error) {
 	}
 
 	// Dr expense/inventory per account, then Dr input tax per account,
-	// converted to base at the entry's rate.
+	// converted to base at the entry's rate. An account whose lines net
+	// negative is credited instead.
 	if _, err := tx.Exec(ctx,
 		`WITH exp AS (
 		     SELECT COALESCE(l.expense_account_id, p.inventory_account_id) AS account_id,
@@ -312,19 +314,19 @@ func PostPurchaseBill(ctx context.Context, tx pgx.Tx, billID int) (int, error) {
 		     SELECT 1 AS ord, account_id, amount, 'Input tax'::text FROM tax
 		 )
 		 INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
-		 SELECT $1, row_number() OVER (ORDER BY ord, account_id), account_id, amount, 0, memo,
-		        round(amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4), 0
-		 FROM debits`, je, billID); err != nil {
+		 SELECT $1, row_number() OVER (ORDER BY ord, account_id), account_id,
+		        greatest(amount, 0), greatest(-amount, 0), memo, greatest(base, 0), greatest(-base, 0)
+		 FROM (SELECT *, round(amount * (SELECT exchange_rate FROM journal_entries WHERE id = $1), 4) AS base FROM debits) d`, je, billID); err != nil {
 		return 0, err
 	}
 	// Cr accounts payable for the gross total (numbered after the debit
-	// lines); its base amount is the sum of the converted debits.
+	// lines); its base amount is the net of the converted detail lines.
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO journal_lines (journal_entry_id, line_no, account_id, debit, credit, memo, base_debit, base_credit)
 		 SELECT $1,
 		        (SELECT COALESCE(max(line_no), 0) FROM journal_lines WHERE journal_entry_id = $1) + 1,
 		        s.ap_account_id, 0, pb.total, 'Accounts payable',
-		        0, (SELECT COALESCE(sum(base_debit), 0) FROM journal_lines WHERE journal_entry_id = $1)
+		        0, (SELECT COALESCE(sum(base_debit - base_credit), 0) FROM journal_lines WHERE journal_entry_id = $1)
 		 FROM purchase_bills pb JOIN suppliers s ON s.id = pb.supplier_id
 		 WHERE pb.id = $2`, je, billID); err != nil {
 		return 0, err

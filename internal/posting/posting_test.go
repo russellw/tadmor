@@ -290,3 +290,143 @@ func TestInventoryReceiptClearsAgainstBill(t *testing.T) {
 		}
 	}
 }
+
+// TestNegativeNetAccountPostsOnOppositeSide posts documents whose lines net
+// negative on one account (a discount or rebate line on its own account): that
+// account is posted on the opposite side, and the control line carries the
+// document total, in base as well as transaction currency.
+func TestNegativeNetAccountPostsOnOppositeSide(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+
+	dbtest.Reset(ctx, t, pool)
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := tx.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("setup exec: %v\nsql: %s", err, sql)
+		}
+	}
+	queryID := func(sql string, args ...any) int {
+		t.Helper()
+		var id int
+		if err := tx.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
+			t.Fatalf("setup query: %v\nsql: %s", err, sql)
+		}
+		return id
+	}
+
+	exec(`INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY2026','2026-01-01','2026-12-31')`)
+	exec(`INSERT INTO exchange_rates (currency_code, rate_date, rate) VALUES ('EUR','2026-01-01',1.123456)`)
+	exec(`INSERT INTO accounts (code, name, account_type, is_postable) VALUES
+	      ('4100','Discounts','revenue',true), ('6100','Rebates','expense',true)`)
+	custID := queryID(`WITH o AS (INSERT INTO organizations (name) VALUES ('Acme') RETURNING id)
+	      INSERT INTO customers (organization_id, ar_account_id)
+	      SELECT o.id, (SELECT id FROM accounts WHERE code='1100') FROM o RETURNING id`)
+	supID := queryID(`WITH o AS (INSERT INTO organizations (name) VALUES ('Beta') RETURNING id)
+	      INSERT INTO suppliers (organization_id, ap_account_id)
+	      SELECT o.id, (SELECT id FROM accounts WHERE code='2000') FROM o RETURNING id`)
+
+	type line struct{ code, debit, credit, baseDebit, baseCredit string }
+	check := func(name string, je int, want []line) {
+		t.Helper()
+		rows, err := tx.Query(ctx,
+			`SELECT a.code, jl.debit::text, jl.credit::text, jl.base_debit::text, jl.base_credit::text
+			 FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+			 WHERE jl.journal_entry_id = $1 ORDER BY a.code`, je)
+		if err != nil {
+			t.Fatalf("%s: lines: %v", name, err)
+		}
+		defer rows.Close()
+		var got []line
+		for rows.Next() {
+			var l line
+			if err := rows.Scan(&l.code, &l.debit, &l.credit, &l.baseDebit, &l.baseCredit); err != nil {
+				t.Fatalf("%s: scan: %v", name, err)
+			}
+			got = append(got, l)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("%s: lines = %+v, want %+v", name, got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("%s: line %d = %+v, want %+v", name, i, got[i], want[i])
+			}
+		}
+	}
+
+	// EUR invoice: 100 goods (4000) less a 10 discount (4100) = 90 at 1.123456.
+	// Revenue base 112.3456, discount base 11.2346, A/R base their net 101.1110.
+	invID := queryID(`INSERT INTO sales_invoices (invoice_number, customer_id, invoice_date, currency_code)
+	      VALUES ('INV-NEG',$1,'2026-03-01','EUR') RETURNING id`, custID)
+	exec(`INSERT INTO sales_invoice_lines (invoice_id, line_no, description, unit_price, revenue_account_id) VALUES
+	      ($1,1,'Goods',100,(SELECT id FROM accounts WHERE code='4000')),
+	      ($1,2,'Discount',-10,(SELECT id FROM accounts WHERE code='4100'))`, invID)
+	je, err := posting.PostSalesInvoice(ctx, tx, invID)
+	if err != nil {
+		t.Fatalf("post invoice: %v", err)
+	}
+	check("invoice", je, []line{
+		{"1100", "90.0000", "0.0000", "101.1110", "0.0000"},
+		{"4000", "0.0000", "100.0000", "0.0000", "112.3456"},
+		{"4100", "10.0000", "0.0000", "11.2346", "0.0000"},
+	})
+
+	// Bill: 50 materials (6000) less a 5 rebate (6100) = 45.
+	billID := queryID(`INSERT INTO purchase_bills (bill_number, supplier_id, bill_date, currency_code)
+	      VALUES ('BILL-NEG',$1,'2026-03-01','USD') RETURNING id`, supID)
+	exec(`INSERT INTO purchase_bill_lines (bill_id, line_no, description, unit_cost, expense_account_id) VALUES
+	      ($1,1,'Materials',50,(SELECT id FROM accounts WHERE code='6000')),
+	      ($1,2,'Rebate',-5,(SELECT id FROM accounts WHERE code='6100'))`, billID)
+	if je, err = posting.PostPurchaseBill(ctx, tx, billID); err != nil {
+		t.Fatalf("post bill: %v", err)
+	}
+	check("bill", je, []line{
+		{"2000", "0.0000", "45.0000", "0.0000", "45.0000"},
+		{"6000", "50.0000", "0.0000", "50.0000", "0.0000"},
+		{"6100", "0.0000", "5.0000", "0.0000", "5.0000"},
+	})
+
+	// Sales credit note: credit 30 revenue (4000), claw back 4 discount (4100).
+	cnID := queryID(`INSERT INTO sales_credit_notes (credit_note_number, customer_id, credit_note_date, currency_code)
+	      VALUES ('CN-NEG',$1,'2026-03-02','USD') RETURNING id`, custID)
+	exec(`INSERT INTO sales_credit_note_lines (credit_note_id, line_no, description, unit_price, revenue_account_id) VALUES
+	      ($1,1,'Return',30,(SELECT id FROM accounts WHERE code='4000')),
+	      ($1,2,'Discount reversed',-4,(SELECT id FROM accounts WHERE code='4100'))`, cnID)
+	if je, err = posting.PostSalesCreditNote(ctx, tx, cnID); err != nil {
+		t.Fatalf("post sales credit note: %v", err)
+	}
+	check("sales credit note", je, []line{
+		{"1100", "0.0000", "26.0000", "0.0000", "26.0000"},
+		{"4000", "30.0000", "0.0000", "30.0000", "0.0000"},
+		{"4100", "0.0000", "4.0000", "0.0000", "4.0000"},
+	})
+
+	// Purchase credit note: 20 materials credited (6000), 3 rebate reversed (6100).
+	pcnID := queryID(`INSERT INTO purchase_credit_notes (credit_note_number, supplier_id, credit_note_date, currency_code)
+	      VALUES ('SCN-NEG',$1,'2026-03-02','USD') RETURNING id`, supID)
+	exec(`INSERT INTO purchase_credit_note_lines (credit_note_id, line_no, description, unit_cost, expense_account_id) VALUES
+	      ($1,1,'Returned',20,(SELECT id FROM accounts WHERE code='6000')),
+	      ($1,2,'Rebate reversed',-3,(SELECT id FROM accounts WHERE code='6100'))`, pcnID)
+	if je, err = posting.PostPurchaseCreditNote(ctx, tx, pcnID); err != nil {
+		t.Fatalf("post purchase credit note: %v", err)
+	}
+	check("purchase credit note", je, []line{
+		{"2000", "17.0000", "0.0000", "17.0000", "0.0000"},
+		{"6000", "0.0000", "20.0000", "0.0000", "20.0000"},
+		{"6100", "3.0000", "0.0000", "3.0000", "0.0000"},
+	})
+
+	// Committing runs the deferred balance checks.
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+}

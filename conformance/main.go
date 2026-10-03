@@ -101,6 +101,7 @@ func allCases() []caseDef {
 		{"settings/ledger-settings", testLedgerSettings},
 		{"sales/invoice-lifecycle", testInvoiceLifecycle},
 		{"sales/posting-refusals", testPostingRefusals},
+		{"sales/negative-net-lines", testNegativeNetLines},
 		{"purchases/bill-lifecycle", testBillLifecycle},
 		{"settlement/customer-payments", testCustomerPayments},
 		{"settlement/supplier-payments", testSupplierPayments},

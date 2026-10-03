@@ -124,7 +124,12 @@ document records the entry's id.
 | Stock issue | Product COGS: abs(total_cost) | Product inventory: abs(total_cost) |
 | Stock receipt | Product inventory: total_cost | `credit_account_id`: total_cost |
 
-Accounts whose summed amount nets to zero get no line. Line memos and
+Lines are summed per account (and tax per tax account). An account whose
+sum nets to zero gets no line. An account whose sum nets **negative**,
+such as a discount line on its own revenue account or a rebate on its own
+expense account, is posted on the **opposite** side: an invoice debits
+the discount account. The control line always carries the document total.
+Its base amount is the net of the detail lines' base amounts. Line memos and
 line ordering are not contract. The suite compares an entry's lines as a
 multiset of (account, debit, credit, base_debit, base_credit).
 
@@ -300,9 +305,10 @@ Every journal line carries `debit`/`credit` in the entry's currency and
 `base_debit`/`base_credit` in the base currency. Every report sums base
 amounts. A posted entry must balance in **both**.
 
-- Detail lines (revenue, expense, tax): `base = round(amount × rate, 4)`.
+- Detail lines (revenue, expense, tax): `base = round(amount × rate, 4)`,
+  on the same side as the amount (§4.3).
 - The gross control line (A/R or A/P on invoices, bills, and credit notes)
-  takes as its base amount the **sum of the detail lines' base amounts**,
+  takes as its base amount the **net of the detail lines' base amounts**,
   so the entry balances in base exactly.
 - Payment lines both use `round(amount × rate, 4)`.
 - Stock postings, closing entries, and FX entries are in the base
@@ -575,8 +581,3 @@ them, and the suite does not test them.
   movement at the order's unit cost unconverted, although stock is valued
   in the base currency.
 - Payment terms are informational. Due dates are supplied by the client.
-- **Open issue.** A document whose lines net negative on one account, such
-  as a discount line booked to its own revenue account, cannot be posted:
-  tadmor answers 500. The intended behavior is to post that account's net
-  on the opposite side (for example Dr discounts 10). Until that is
-  decided and fixed, counterparts may refuse such a posting with 422.
