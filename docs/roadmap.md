@@ -140,8 +140,16 @@ sections, deferred decisions, and a gap review against the project goal.
   tadmor owns the spec, and copies are re-exported, never edited in place.
   `conformance/` is its own dependency-free Go module so the copy runs
   anywhere (`spec/README.md`).
-- **Next:** pick the first counterpart stack and the comparison metrics
-  before building it.
+- **Comparison metrics** — decided 2026-10-03: primary are distinct
+  maintainers trusted, dependency count, and how hard a hermetic build is;
+  third-party size, own lines, effort, and runtime performance are nice to
+  have. Definitions, procedures, and tadmor's baseline are in
+  [`docs/counterpart-metrics.md`](counterpart-metrics.md), measured by
+  `tools/measure.py`. Headline: the Go backend is 6 dependencies and 2
+  maintainers and builds hermetically (level 4); the front end and its
+  toolchain carry nearly all of the surface (173 npm packages, 179
+  maintainers across runtime and build; level 1).
+- **Next:** pick the first counterpart stack.
 
 ## Smaller housekeeping
 

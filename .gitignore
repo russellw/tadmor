@@ -38,3 +38,6 @@ go.work.sum
 # .vscode/
 
 *.log
+
+# Python bytecode (tools/, db/seed/)
+__pycache__/
