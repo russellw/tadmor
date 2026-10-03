@@ -189,6 +189,12 @@ sections, deferred decisions, and a gap review against the project goal.
   first, count maintainers, measure, pin and isolate, conversation before
   adding, decisions recorded), with the specific choices made per stack
   in the light of its ecosystem's trade-offs (`spec/README.md`).
+- **Counterpart repository names** — decided 2026-10-03:
+  `tadmor-<platform>`, named for the language or runtime rather than the
+  framework (which each project decides, and may decline). A second
+  counterpart on a platform adds a distinguishing qualifier, never a
+  number. Repos sit beside tadmor locally and at
+  `russellw/tadmor-<platform>` on GitHub (`spec/README.md`).
 - **Next:** pick the first counterpart stack.
 
 ## Smaller housekeeping

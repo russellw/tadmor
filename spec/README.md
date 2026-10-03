@@ -156,12 +156,21 @@ wrapper. See [`conformance/README.md`](../conformance/README.md).
 
 ## Counterparts and versioning
 
-Each counterpart lives in **its own repository** and carries a **copy** of
-`spec/`, `conformance/`, and the migration files of `db/migrations/`,
-taken at a specific tadmor commit:
+Each counterpart lives in **its own repository**, named
+`tadmor-<platform>` after the language or runtime that distinguishes its
+stack: `tadmor-python`, `tadmor-rust`, `tadmor-dotnet`. The name is the
+platform, not the framework, because under the dependency policy the
+framework is decided inside the project, and may be none. A second
+counterpart on the same platform adds a qualifier for what separates it
+(`tadmor-python-htmx`), never a number; the first keeps the bare name.
+tadmor itself, the reference, keeps its name. Counterpart repositories sit
+beside tadmor's checkout and on GitHub as `russellw/tadmor-<platform>`.
+
+Each one carries a **copy** of `spec/`, `conformance/`, and the migration
+files of `db/migrations/`, taken at a specific tadmor commit:
 
 ```sh
-spec/export.sh ../tadmor-counterpart     # from the tadmor repo
+spec/export.sh ../tadmor-python     # from the tadmor repo
 ```
 
 The export script replaces all three directories in the destination

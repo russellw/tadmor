@@ -33,7 +33,7 @@ so the metrics are ranked:
   pointed at each counterpart's checkout:
 
   ```sh
-  tools/measure.py ../tadmor-counterpart [--test-dir e2e] [--copied path]
+  tools/measure.py ../tadmor-python [--test-dir e2e] [--copied path]
   ```
 
   Performance (§7) is measured on one machine, against the same Postgres

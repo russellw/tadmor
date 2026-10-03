@@ -2,7 +2,7 @@
 # Copy the spec, the conformance suite, and the shared schema into a
 # counterpart repository.
 #
-#   spec/export.sh ../counterpart-repo
+#   spec/export.sh ../tadmor-<platform>     (e.g. ../tadmor-python)
 #
 # Counterparts are separate repositories that carry their own copy of spec/,
 # conformance/, and db/migrations/, taken at a known tadmor commit
