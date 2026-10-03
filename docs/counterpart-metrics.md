@@ -63,6 +63,7 @@ be compromised (the threat model in `docs/frontend-stack.md` §3).
 | --------- | -------- | ------ |
 | npm | each npm account in a package version's `maintainers` | registry metadata (`registry.npmjs.org/<name>/<version>`); no package code is fetched |
 | Go modules | the repository owner (user or organization); `golang.org/x/*` counts as one identity, the Go project | module path |
+| PyPI | each account with a role (Owner or Maintainer) on the project; a project published through a PyPI organization lists none, and counts as one identity, the organization | PyPI's XML-RPC `package_roles` (the web pages that show roles refuse scripted clients) |
 | Others | the registry's owner list where one exists (crates.io owners, NuGet owners); otherwise the repository owner | add to `tools/measure.py` when needed |
 
 The counts are not perfectly fair across ecosystems:
@@ -72,6 +73,9 @@ The counts are not perfectly fair across ecosystems:
   20 Apache committer accounts.
 - Go publishes by pushing a tag to a repository and exposes no account
   list, so a Go organization counts once.
+- PyPI hides the members of an organization's teams, so a project such as
+  Django, published through the `django` organization, counts once, as a Go
+  organization does. Roles are per project, not per version.
 
 Go is therefore *under*-counted relative to npm. Read the gap between, say,
 2 and 58 as large but approximate.
@@ -92,6 +96,11 @@ so on) are never installed, so they are excluded.
 
 - Go: modules in `vendor/modules.txt` that contribute at least one package
   to the build.
+- PyPI: the wheels listed in `vendor/lock.txt` (tadmor-python's format:
+  name, version, wheel filename, sha256). They are unpacked into
+  `vendor/site/` and imported, so all count as runtime. The lock lists every
+  wheel imported, transitive ones included, because `tools/vendor.py`
+  resolves nothing by itself.
 - npm (pnpm): the closure of a lockfile importer's `dependencies` (runtime)
   or `devDependencies` (build), following the lockfile's own resolution.
 - A lockfile under a test directory (`--test-dir`, default `e2e`) counts

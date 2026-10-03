@@ -14,14 +14,17 @@ Reports, per category (runtime / build / test):
 plus third-party source size (bytes; lines where the source is on disk), own
 source lines, and git-history effort proxies.
 
-Ecosystems understood so far: Go modules (vendor/modules.txt) and pnpm
-(pnpm-lock.yaml v9). Add a parser here when a counterpart needs another
-(Cargo.lock, packages.lock.json, ...). Maintainer lookups for npm read public
-registry metadata (no package code is fetched); --offline skips them.
+Ecosystems understood so far: Go modules (vendor/modules.txt), pnpm
+(pnpm-lock.yaml v9), and PyPI wheels vendored with a vendor/lock.txt (the
+format tadmor-python's tools/vendor.py writes). Add a parser here when a
+counterpart needs another (Cargo.lock, packages.lock.json, ...). Maintainer
+lookups read public registry metadata (no package code is fetched);
+--offline skips them.
 """
 
 import argparse
 import concurrent.futures
+import xmlrpc.client
 import json
 import os
 import re
@@ -35,7 +38,9 @@ from pathlib import Path
 # platforms (fsevents, other esbuild binaries) are never installed there.
 PLATFORM_OS, PLATFORM_CPU = "linux", "x64"
 
-CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "tadmor-metrics" / "npm-metadata.json"
+CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "tadmor-metrics"
+CACHE = CACHE_DIR / "npm-metadata.json"
+PYPI_CACHE = CACHE_DIR / "pypi-roles.json"
 
 SOURCE_EXTS = {
     ".go": "Go", ".ts": "TypeScript", ".tsx": "TypeScript", ".js": "JavaScript",
@@ -231,6 +236,43 @@ def npm_package_lines(lock_dir, keys):
 
 
 # ---------------------------------------------------------------------------
+# PyPI wheels vendored with vendor/lock.txt
+# ---------------------------------------------------------------------------
+
+def pypi_lock(repo):
+    """(name, version) per wheel in vendor/lock.txt, whose lines read
+    `<name> <version> <wheel filename> sha256:<hex>`. Every wheel there is
+    on the runtime path: it is unpacked into vendor/site and imported."""
+    path = Path(repo, "vendor", "lock.txt")
+    if not path.exists():
+        return []
+    out = []
+    for line in path.read_text().splitlines():
+        parts = line.split()
+        if len(parts) == 4 and not line.lstrip().startswith("#") and parts[3].startswith("sha256:"):
+            out.append((parts[0], parts[1]))
+    return out
+
+
+def pypi_identities(names, offline):
+    """Map project -> its publishing identities: the accounts PyPI lists in a
+    role (Owner or Maintainer) on the project, from the XML-RPC
+    package_roles call. A project published through a PyPI organization
+    lists no individual roles; it counts as one identity, the organization,
+    as a Go organization does. Cached across runs; None where unknown."""
+    cache = json.loads(PYPI_CACHE.read_text()) if PYPI_CACHE.exists() else {}
+    missing = [n for n in names if n.lower() not in cache]
+    if missing and not offline:
+        rpc = xmlrpc.client.ServerProxy("https://pypi.org/pypi")
+        for name in missing:
+            roles = rpc.package_roles(name)
+            cache[name.lower()] = sorted({f"pypi:{user}" for _role, user in roles}) or [f"pypi-org:{name.lower()}"]
+        PYPI_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        PYPI_CACHE.write_text(json.dumps(cache, indent=0, sort_keys=True))
+    return {n: cache.get(n.lower()) for n in names}
+
+
+# ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
 
@@ -250,7 +292,24 @@ def measure(repo, test_dirs, copied, offline):
             "lines": sum(count_lines(p) for p in vendored if p.suffix == ".go"),
         }
 
+    wheels = pypi_lock(repo)
+    if wheels:
+        ids = pypi_identities([n for n, _ in wheels], offline)
+        for name, ver in wheels:
+            cats["runtime"]["deps"].add(f"pypi:{name.lower()}=={ver}")
+            if ids[name] is None:
+                cats["runtime"]["unknown"] += 1
+            else:
+                cats["runtime"]["owners"].update(ids[name])
+        site = [Path(repo, f) for f in files if f.startswith("vendor/site/")]
+        third_party["PyPI vendor/site (runtime)"] = {
+            "bytes": sum(p.stat().st_size for p in site),
+            "lines": sum(count_lines(p) for p in site if p.suffix == ".py"),
+        }
+
     toolchains = set()
+    if wheels:
+        toolchains.add("CPython (Python Software Foundation)")
     if Path(repo, "go.mod").exists():
         toolchains.add("Go project (toolchain)")
     for lock in [f for f in files if f.endswith("pnpm-lock.yaml") and "node_modules/" not in f]:
@@ -332,7 +391,7 @@ def main():
                     help="directory whose lockfile is test-only tooling (default: e2e)")
     ap.add_argument("--copied", action="append", default=[],
                     help="third-party source copied into the repo, counted as third-party lines")
-    ap.add_argument("--offline", action="store_true", help="skip npm registry maintainer lookups")
+    ap.add_argument("--offline", action="store_true", help="skip registry maintainer lookups (npm, PyPI)")
     ap.add_argument("--json", action="store_true", help="print the full report as JSON")
     args = ap.parse_args()
     r = measure(args.repo, args.test_dir or ["e2e"], args.copied, args.offline)
