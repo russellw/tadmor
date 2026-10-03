@@ -41,14 +41,21 @@ not):
 - Code structure, package layout, error *message* wording, logging, the
   migration mechanism, the build system, and the deployment shape.
 
+**Required, but not checked by the suite:**
+
+- **A user interface of the counterpart's own.** The comparison is
+  between whole products, and in tadmor the front end carries nearly all
+  of the supply-chain surface, so a counterpart without one, or one that
+  reuses tadmor's `web/`, would not be comparable. The counterpart builds
+  its UI in its own stack and its own code: an SPA, server-rendered pages,
+  or anything else. It must cover the screens and actions listed in
+  `domain.md` §13. The JSON API stays mandatory alongside it, whatever the
+  UI is, because it is the integration surface and the only thing the
+  conformance suite can test across stacks.
+
 **Out of scope for conformance** (described here only so a counterpart can
 offer an equivalent product):
 
-- The user interface. tadmor ships a React SPA; its screens are listed in
-  `domain.md` §13 as a guide, but nothing checks them. The JSON API is
-  mandatory even for a counterpart whose UI is server-rendered: it is the
-  integration surface and the only thing the conformance suite can test
-  across stacks.
 - PDF layout. The PDF endpoints must return a valid PDF with the specified
   headers. What goes on the page is described, but not checked byte for
   byte.

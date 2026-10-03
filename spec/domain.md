@@ -549,10 +549,11 @@ contract.
 
 ---
 
-## 13. User interface (guidance, not checked)
+## 13. User interface (required, not checked by the suite)
 
-tadmor's SPA has a sidebar with these groups. A counterpart offering an
-equivalent product should cover the same ground.
+Every implementation ships its own user interface covering these screens
+and actions (`README.md`). tadmor's SPA groups them in a sidebar as below;
+the grouping, layout, and technology are free, the coverage is not.
 
 - **Home**: dashboard.
 - **Sales**: Sales Orders, Invoices, Credit Notes, Customer Payments,

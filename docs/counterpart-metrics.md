@@ -22,10 +22,13 @@ so the metrics are ranked:
 
 ## Ground rules
 
-- **Measure at a conformance pass.** A counterpart is measured at a commit
-  where `conformance/` passes completely, and the report names the spec
-  commit from `spec/UPSTREAM`. A partial implementation's numbers are not
-  comparable.
+- **Measure a complete implementation.** A counterpart is measured at a
+  commit where `conformance/` passes completely **and** its own UI covers
+  every screen and action in `spec/domain.md` §13, checked by walking
+  through that list. The report names the spec commit from
+  `spec/UPSTREAM`. A partial implementation's numbers are not comparable,
+  and a backend-only one leaves out the part that dominates tadmor's
+  figures.
 - **Same tool, same machine.** `tools/measure.py` lives in tadmor and is
   pointed at each counterpart's checkout:
 
@@ -174,7 +177,8 @@ This is the hardest metric to measure honestly, so it gets two numbers:
 
 - **Git proxy** (`tools/measure.py`): commits and distinct commit days up
   to the measured commit. For a counterpart, take these at the **first
-  commit where the conformance suite fully passes**.
+  complete commit** (suite passes and UI covers §13, as in the ground
+  rules).
 - **Manual note**: rough working sessions or hours, and anything unusual
   (a stack learned from scratch, a port done mostly by an agent).
 

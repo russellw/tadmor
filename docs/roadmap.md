@@ -166,6 +166,12 @@ sections, deferred decisions, and a gap review against the project goal.
   base at the movement date's rate (it was unconverted), with no rate a
   422. The remaining FX difference between receipt and bill stays in GRNI
   (domain §14).
+- **Counterparts build their own UI** — decided 2026-10-03: a counterpart
+  is a whole product, with a UI in its own stack and its own code covering
+  `spec/domain.md` §13 (not tadmor's `web/`), because the front end
+  carries nearly all of tadmor's supply-chain surface. A counterpart is
+  measured only once the suite passes and the UI covers §13
+  (`docs/counterpart-metrics.md`).
 - **Next:** pick the first counterpart stack.
 
 ## Smaller housekeeping
