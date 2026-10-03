@@ -17,6 +17,7 @@ which and fix it.
 | [`api.md`](api.md) | The HTTP/JSON contract: conventions, authentication, every endpoint, request and response shapes, status codes. |
 | [`domain.md`](domain.md) | The business rules behind the API: entities, lifecycles, money arithmetic, posting rules, multi-currency, orders, inventory, banking, year-end, reports. |
 | [`../conformance/`](../conformance/) | A black-box test suite that drives any implementation over HTTP and checks it against the two documents above. |
+| [`../db/migrations/`](../db/migrations/) | The shared Postgres schema and seed data, which every implementation uses (below). |
 
 ## What is contract and what is free
 
@@ -29,17 +30,12 @@ which and fix it.
   and which operations are refused.
 - Exact decimal arithmetic. Money never passes through binary floating
   point anywhere in the pipeline.
+- The shared schema (next section).
 
-**Reference, not contract** (copy it if it suits the stack, replace it if
-not):
+**Free** (whatever suits the stack):
 
-- The Postgres schema in `db/migrations/`. Much of tadmor's integrity lives
-  in the database (generated columns, constraint triggers, views), and a
-  counterpart that reuses the schema inherits those rules for free. A
-  counterpart that prefers an ORM, a different database, or application-level
-  enforcement may do so, provided the observable behavior matches.
 - Code structure, package layout, error *message* wording, logging, the
-  migration mechanism, the build system, and the deployment shape.
+  migration *runner*, the build system, and the deployment shape.
 
 **Required, but not checked by the suite:**
 
@@ -64,12 +60,48 @@ offer an equivalent product):
 - Operational concerns: the deployment model, TLS termination, backups,
   and the out-of-band bootstrap of the first administrator.
 
+## The shared schema
+
+Every implementation runs on **Postgres 17 or later** with the schema in
+`db/migrations/`, taken at the same commit as the spec. Much of the
+domain lives there (generated line amounts, constraint triggers that
+guard posting and settlement, the reporting views), so a counterpart
+inherits those rules rather than reimplementing them, and the comparison
+is between stacks rather than between database designs.
+
+- **Apply every `*.up.sql` in lexical order**, each in its own
+  transaction, recording which have run so none runs twice. Any runner
+  will do: the files follow the golang-migrate naming, and tadmor's own
+  runner records versions in a `schema_migrations` table. The `.down.sql`
+  files are for rolling back by hand and are never needed in normal
+  running. The seed data of `api.md` §4 is part of the migrations, so a
+  fresh database with them applied, plus one administrator, is a fresh
+  instance.
+- **The role must be able to create the `citext` extension.** It is a
+  trusted extension, so any role with `CREATE` on the database can.
+- **Run every database session in UTC** (`SET TIME ZONE 'UTC'`, or the
+  `timezone` connection parameter). The aging views and the default
+  movement date use `current_date`, which follows the session's timezone,
+  and "today" is the UTC date (`api.md` §1.2).
+- **Business data lives in the shared tables**, read and written through
+  them. A counterpart should use the views and generated columns rather
+  than recompute what they provide.
+- **Never alter the shared objects.** Do not edit, drop, or change
+  any table, column, constraint, trigger, function, or view the
+  migrations create. A counterpart may **add** objects of its own (for
+  example a framework's bookkeeping tables, or its own session storage),
+  in migrations kept outside `db/migrations/` and applied after the
+  shared ones. Those count as its own code.
+- **Interchangeability is not required.** A counterpart need not be able
+  to serve a database that tadmor populated, or the reverse. Password
+  hashes, for example, are not contract (`domain.md` §12).
+
 ## Conformance
 
 The suite in `conformance/` is a single stdlib-only Go program. It runs
 against **a freshly initialized instance**, meaning the schema and seed
 data are present, exactly one administrator login exists, and there is
-nothing else. Several rules involve global state (fiscal-year ordering,
+nothing else (see "The shared schema" above). Several rules involve global state (fiscal-year ordering,
 non-overlapping periods, the frozen base currency), so a used database
 gives meaningless results.
 
@@ -86,19 +118,20 @@ wrapper. See [`conformance/README.md`](../conformance/README.md).
 ## Counterparts and versioning
 
 Each counterpart lives in **its own repository** and carries a **copy** of
-`spec/` and `conformance/` taken at a specific tadmor commit:
+`spec/`, `conformance/`, and the migration files of `db/migrations/`,
+taken at a specific tadmor commit:
 
 ```sh
 spec/export.sh ../tadmor-counterpart     # from the tadmor repo
 ```
 
-The export script replaces both directories in the destination wholesale,
-leaves out tadmor-only files (`conformance/run-local.sh`, the script
-itself), and writes `spec/UPSTREAM` naming the source commit. It refuses
-to export uncommitted changes.
+The export script replaces all three directories in the destination
+wholesale, leaves out tadmor-only files (`conformance/run-local.sh`,
+`db/migrations/embed.go`, the script itself), and writes `spec/UPSTREAM`
+naming the source commit. It refuses to export uncommitted changes.
 
-- **tadmor owns the spec.** The copies are never edited in place. A change
-  to the spec or the suite is made in tadmor, in the same commit as any
+- **tadmor owns the spec and the schema.** The copies are never edited in
+  place. A change to the spec, the suite, or the schema is made in tadmor, in the same commit as any
   behavior change, and re-exported. tadmor must keep passing the suite.
 - **A counterpart targets one spec commit.** It records which commit in
   `spec/UPSTREAM` and upgrades by re-exporting, deliberately, when it is

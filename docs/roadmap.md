@@ -177,6 +177,13 @@ sections, deferred decisions, and a gap review against the project goal.
   orders, inventory, reports, accounting), written from what tadmor's SPA
   actually does, so "covers §13" is the same judgment for every
   counterpart.
+- **Counterparts reuse the schema** — decided 2026-10-03: every
+  implementation runs on Postgres 17 with tadmor's `db/migrations/`,
+  exported with the spec and never altered (a counterpart may only add
+  objects of its own, in its own migrations). Sessions run in UTC because
+  views use `current_date`. The shared schema is excluded from every
+  implementation's own lines, so tadmor's baseline is 33,815
+  (`spec/README.md`, `docs/counterpart-metrics.md`).
 - **Next:** pick the first counterpart stack.
 
 ## Smaller housekeeping

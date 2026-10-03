@@ -26,8 +26,10 @@ make conformance ARGS='-run banking'
 
 ## Running it against another implementation
 
-1. Start the implementation against a **fresh** database: schema and seed
-   data per `spec/api.md` §4, plus exactly one administrator login.
+1. Start the implementation against a **fresh** database: the shared
+   migrations applied (`spec/README.md`, "The shared schema"), which
+   carry the seed data of `spec/api.md` §4, plus exactly one
+   administrator login.
 2. Disable outbound email, so the email endpoints answer 501.
 3. Run the suite from the `conformance/` directory:
 

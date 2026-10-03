@@ -1,9 +1,10 @@
 # Domain rules
 
 The business behavior behind [`api.md`](api.md). Every rule here is
-observable through the API. Where tadmor enforces a rule in the database,
-that is noted in passing as a hint for counterparts that reuse the
-schema, not as a requirement.
+observable through the API. Every implementation runs on the shared
+schema (`README.md`), and where it enforces a rule in the database, that
+is noted in passing, so a counterpart knows the rule comes with the
+schema.
 
 ---
 

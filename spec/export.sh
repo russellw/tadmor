@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# Copy the spec and the conformance suite into a counterpart repository.
+# Copy the spec, the conformance suite, and the shared schema into a
+# counterpart repository.
 #
 #   spec/export.sh ../counterpart-repo
 #
-# Counterparts are separate repositories that carry their own copy of spec/
-# and conformance/, taken at a known tadmor commit (spec/README.md). This
-# replaces both directories in the destination wholesale and records that
-# commit in spec/UPSTREAM, so the copy is never hand-edited. It refuses to
+# Counterparts are separate repositories that carry their own copy of spec/,
+# conformance/, and db/migrations/, taken at a known tadmor commit
+# (spec/README.md). This replaces all three directories in the destination
+# wholesale and records that commit in spec/UPSTREAM, so the copy is never
+# hand-edited. It refuses to
 # export uncommitted changes, since UPSTREAM could not name them.
 #
 # conformance/run-local.sh is left out: it drives tadmor itself. Each
-# counterpart writes its own equivalent wrapper.
+# counterpart writes its own equivalent wrapper. db/migrations/embed.go is
+# left out too: it is how tadmor's Go binary carries the migrations.
 set -euo pipefail
 
 if [ $# -ne 1 ] || [ ! -d "$1" ]; then
@@ -25,23 +28,23 @@ if [ "$dest" = "$repo_root" ]; then
 fi
 
 cd "$repo_root"
-if [ -n "$(git status --porcelain -- spec conformance)" ]; then
-	echo "spec/ or conformance/ has uncommitted changes; commit them first" >&2
+if [ -n "$(git status --porcelain -- spec conformance db/migrations)" ]; then
+	echo "spec/, conformance/, or db/migrations/ has uncommitted changes; commit them first" >&2
 	exit 1
 fi
 commit="$(git rev-parse HEAD)"
 
-rm -rf "$dest/spec" "$dest/conformance"
-mkdir -p "$dest/spec" "$dest/conformance"
-git archive HEAD spec conformance | tar -x -C "$dest"
-rm -f "$dest/conformance/run-local.sh" "$dest/spec/export.sh"
+rm -rf "$dest/spec" "$dest/conformance" "$dest/db/migrations"
+mkdir -p "$dest/spec" "$dest/conformance" "$dest/db/migrations"
+git archive HEAD spec conformance db/migrations | tar -x -C "$dest"
+rm -f "$dest/conformance/run-local.sh" "$dest/spec/export.sh" "$dest/db/migrations/embed.go"
 
 cat >"$dest/spec/UPSTREAM" <<UPSTREAM
-Copied from tadmor by spec/export.sh. Do not edit spec/ or conformance/
-here; change them in tadmor and re-export.
+Copied from tadmor by spec/export.sh. Do not edit spec/, conformance/, or
+db/migrations/ here; change them in tadmor and re-export.
 
 commit: $commit
 date:   $(git show -s --format=%cs "$commit")
 UPSTREAM
 
-echo "exported spec/ and conformance/ at tadmor $commit to $dest"
+echo "exported spec/, conformance/, and db/migrations/ at tadmor $commit to $dest"
