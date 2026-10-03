@@ -184,6 +184,11 @@ sections, deferred decisions, and a gap review against the project goal.
   views use `current_date`. The shared schema is excluded from every
   implementation's own lines, so tadmor's baseline is 33,815
   (`spec/README.md`, `docs/counterpart-metrics.md`).
+- **Counterpart dependency policy** — decided 2026-10-03: each counterpart
+  minimizes its transitive dependency set the way tadmor does (stdlib
+  first, count maintainers, measure, pin and isolate, conversation before
+  adding, decisions recorded), with the specific choices made per stack
+  in the light of its ecosystem's trade-offs (`spec/README.md`).
 - **Next:** pick the first counterpart stack.
 
 ## Smaller housekeeping

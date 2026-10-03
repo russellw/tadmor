@@ -96,6 +96,45 @@ is between stacks rather than between database designs.
   to serve a database that tadmor populated, or the reverse. Password
   hashes, for example, are not contract (`domain.md` §12).
 
+## Dependency policy
+
+The counterparts exist to compare supply-chain exposure, so each one
+**minimizes its transitive dependency set the way tadmor does**: as few
+third-party packages as it can, from as few distinct maintainers, across
+everything that runs (runtime, build, and test). These are the primary
+metrics of `docs/counterpart-metrics.md` in tadmor. What that means in
+practice depends on the ecosystem, so the specific choices are made per
+stack, in the light of the trade-offs that ecosystem offers. The
+principles are fixed:
+
+- **Standard library first.** Use what the language and its platform ship
+  before reaching for a package. No framework is adopted by default; one
+  is taken on when it does a job that could not otherwise be done in
+  reasonable code, and its whole transitive tree is weighed, not just its
+  name.
+- **Count maintainers, not lines.** A large package from one vendor can be
+  a better choice than a few small ones from many authors.
+- **Measure, don't guess.** Before adopting or rejecting a package, list
+  its actual transitive tree and the maintainers behind it, and compare
+  the realistic alternatives, including writing the code.
+- **Hand-written code wins only when it truly does the same job** in a
+  modest amount of code. Where the need is certain and hand-rolling would
+  be a stopgap (routing was tadmor's example), take the standard package
+  from the start.
+- **Build, test, and development tools count**, because they run with
+  full access on developer and CI machines.
+- **Pin, verify, and isolate what remains**, as far as the ecosystem
+  allows: exact versions with integrity hashes, vendored source where
+  that is practical, a hermetic build, install-time scripts blocked, and
+  a cooldown before adopting newly published versions.
+- **New dependencies need a conversation first**, as in tadmor.
+- **Record each decision** in the counterpart's own docs: what was
+  needed, the alternatives considered with their measured trees, what was
+  chosen, and what would make it worth revisiting. tadmor's
+  `docs/frontend-stack.md` and `docs/new-project-conventions.md` are
+  worked examples; their Go and npm specifics apply only where a
+  counterpart uses those ecosystems.
+
 ## Conformance
 
 The suite in `conformance/` is a single stdlib-only Go program. It runs
