@@ -165,10 +165,10 @@ func (t *T) cashFlowIdentities(cf J) {
 	}
 }
 
-// domain §10 aging. Due dates sit mid-bucket relative to today, so a
-// timezone difference between this client and the server cannot move them.
+// domain §10 aging. Due dates sit mid-bucket relative to today (the UTC
+// date), so a request that straddles midnight cannot move them.
 func testAging(t *T) {
-	today := time.Now()
+	today := time.Now().UTC()
 	day := func(offset int) string { return today.AddDate(0, 0, offset).Format("2006-01-02") }
 	t.create("/api/fiscal-years", J{"name": t.uniq("FY-aging"), "start_date": day(-200), "end_date": day(60)})
 

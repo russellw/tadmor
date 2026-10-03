@@ -30,13 +30,26 @@ ought to match but that nothing checks.
 | ---- | ------------------- |
 | Identifier | Positive integer. Most entities use synthetic, auto-incrementing ids. Tax codes and payment terms use their `code`. Exchange rates use `(currency_code, rate_date)`. |
 | Decimal (money, quantity, rate) | **String**, e.g. `"1234.5000"`. Requests accept any plain decimal string (`"12"`, `"12.5"`, `"-3.25"`). Responses must be compared **by value**, not textually. tadmor renders money and quantities at scale 4 (`"9.9900"`) and exchange rates with trailing zeros trimmed (`"1.125"`). Never a JSON number. |
-| Date | String `YYYY-MM-DD`. |
+| Date | String `YYYY-MM-DD`. Wherever the spec says **today** (a default date, aging), it means the current date in **UTC**, whatever the server's or database's timezone. |
 | Currency | ISO 4217 alphabetic code, e.g. `"USD"`. |
 | Country | ISO 3166-1 alpha-2 code, e.g. `"US"`. |
 | Optional value | `null` in responses. In requests, either `null` or omitted. |
 
 Every documented response field must be present, even when it is `null`.
 Responses may carry extra fields.
+
+**Decimal scale and range.** Each decimal is stored at a fixed scale, and a
+request value with more fractional digits is rounded to it, half away from
+zero, **before** it is checked or used. So a quantity of `"1.00005"` is
+`1.0001`, its line arithmetic uses `1.0001`, and a quantity of `"0.00004"`
+is zero and refused as zero. A value whose magnitude reaches the limit,
+directly or as a computed amount such as a line subtotal, is a 422.
+
+| Kind | Scale | Magnitude below |
+| ---- | ----- | --------------- |
+| Money, quantity, unit price or cost | 4 | 10^15 |
+| Tax rate (percent) | 4 | 1000 |
+| Exchange rate | 8 | 10^11 |
 
 ### 1.3 Read and write semantics
 
@@ -116,7 +129,8 @@ and digits, case-folded.
 ## 3. Authentication and sessions
 
 Sessions are cookie-based. The cookie's name and token format are up to
-the implementation. It must be `HttpOnly` and `SameSite=Lax`, should be
+the implementation. It must be `HttpOnly` and `SameSite=Lax` (other
+cookies may be set alongside it), should be
 `Secure` when the request arrived over HTTPS (directly or per
 `X-Forwarded-Proto`), and should be stored server-side only as a hash.
 
@@ -461,7 +475,7 @@ with `qty_billed`, `qty_received`, `qty_to_bill`, and `qty_to_receive`.
 | `POST /sales-orders/{id}/invoice` | `{"invoice_number", "invoice_date", "due_date", "lines": [{"order_line_id", "quantity"}]}` | 201 `{"invoice_id"}`, a draft invoice. 400 without a number or date. 404. 409 if the order is not open. 422 if there is nothing left to invoice. 409 for a duplicate invoice number. |
 | `POST /purchase-orders/{id}/bill` | `{"bill_number", "bill_date", "due_date", "lines"}` | 201 `{"bill_id"}`, the mirror of the above. |
 | `POST /sales-orders/{id}/ship` | `{"warehouse_id", "movement_date", "reference", "lines"}` | 201 `{"movement_ids": [...]}`, draft issue movements. 400 without a warehouse. 404, 409, 422 as above. |
-| `POST /purchase-orders/{id}/receive` | same | 201 `{"movement_ids": [...]}`, draft receipt movements. |
+| `POST /purchase-orders/{id}/receive` | same | 201 `{"movement_ids": [...]}`, draft receipt movements, valued in the base currency (domain §6.3). 422 also when the order is in a foreign currency with no exchange rate on or before the movement date. |
 
 An empty or absent `lines` array means "the full remaining quantity of
 every eligible line". Requested quantities are capped at what remains. See

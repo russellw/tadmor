@@ -196,7 +196,8 @@ func (s *Server) writeOrderError(w http.ResponseWriter, err error) {
 		errors.Is(err, orders.ErrFulfilled):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, orders.ErrNoLines),
-		errors.Is(err, orders.ErrNothingToFulfil):
+		errors.Is(err, orders.ErrNothingToFulfil),
+		errors.Is(err, orders.ErrNoExchangeRate):
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 	default:
 		s.writeCreateError(w, err)

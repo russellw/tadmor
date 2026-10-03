@@ -127,7 +127,7 @@ sections, deferred decisions, and a gap review against the project goal.
 - **Spec and conformance suite** — done 2026-10-03: [`spec/`](../spec/)
   pins down the API and business rules independently of the stack, and
   [`conformance/`](../conformance/) checks any implementation against them
-  over HTTP (`make conformance`; tadmor passes all 32 cases). This is the
+  over HTTP (`make conformance`; tadmor passes all 35 cases). This is the
   shared definition of "done" for counterpart projects on other stacks.
   Writing it surfaced three 500s on client errors (unparseable dates, a
   posting with no exchange rate) and a 200 for lines of a missing bank
@@ -156,6 +156,16 @@ sections, deferred decisions, and a gap review against the project goal.
   value rules are 422; stock movements gained a derived `status`; the
   valuation report moved to `/inventory-valuation`; unknown API routes
   answer a JSON 404 (`spec/api.md` §1).
+- **Spec gaps closed** — done 2026-10-03, before the first export:
+  "today" is the UTC date (tadmor pins its database sessions to UTC);
+  request decimals round half away from zero to their stored scale before
+  any check, with stated ranges (422 beyond them); every rounded quotient
+  is exact (migration 000020: Postgres division could round tax and
+  average cost twice on extreme values); the session cookie flags are now
+  checked; and receiving a foreign-currency purchase order values stock in
+  base at the movement date's rate (it was unconverted), with no rate a
+  422. The remaining FX difference between receipt and bill stays in GRNI
+  (domain §14).
 - **Next:** pick the first counterpart stack.
 
 ## Smaller housekeeping

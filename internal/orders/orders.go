@@ -25,6 +25,7 @@ var (
 	ErrNoLines         = errors.New("order has no lines")
 	ErrFulfilled       = errors.New("order has been partially fulfilled")
 	ErrNothingToFulfil = errors.New("order has nothing left to fulfil")
+	ErrNoExchangeRate  = errors.New("no exchange rate on or before the movement date")
 )
 
 // side names the two order flavours so the shared lifecycle helper can build

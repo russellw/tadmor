@@ -52,7 +52,10 @@ include `master/`, `orders/`, and `banking/`.
   own calendar year from 2101 onwards, because accounting periods may not
   overlap anywhere. The year-end case uses 2001–2003, because closing a
   year requires every earlier year to be closed. The aging case uses
-  dates around today.
+  dates around today (UTC).
+- **Exchange rates are global.** No case may create an AUD rate (one case
+  relies on AUD having none), and JPY rates appear only in the
+  foreign-receipt case, which first checks that it has none.
 - **Ledger-wide checks are identities, not totals.** For example, the
   trial balance balances, the balance sheet satisfies assets = liabilities
   + equity + current earnings, and the cash flow ties to cash.

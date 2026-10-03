@@ -270,3 +270,43 @@ func testBankReconciliation(t *T) {
 	}
 	t.eq("statement listed", order, []int{st})
 }
+
+// domain §6.3: receiving a foreign-currency purchase order values the stock
+// in the base currency, at the rate for the movement date.
+func testForeignPurchaseReceipt(t *T) {
+	y := t.openYear()
+	d := func(md string) string { return fmt.Sprintf("%d-%s", y, md) }
+	sup, _ := t.supplier()
+	prod, inventory, _ := t.stockedProduct()
+	wh := t.warehouse()
+	grni := t.grni()
+
+	po := t.create("/api/purchase-orders", J{"order_number": t.uniq("PO"), "supplier_id": sup, "order_date": d("01-05"),
+		"currency_code": "JPY", "lines": []J{
+			{"description": "Widgets", "product_id": prod, "quantity": "2", "unit_cost": "1234.5", "expense_account_id": grni},
+		}})
+	t.must(t.admin, 204, "POST", path("/api/purchase-orders/%d/confirm", po), nil)
+
+	// No JPY rate exists on or before the date, so nothing can be valued.
+	t.status(422, "POST", path("/api/purchase-orders/%d/receive", po), J{"warehouse_id": wh, "movement_date": d("01-10")})
+	for _, m := range t.list("/api/stock-movements") {
+		if t.int(m, "product_id") == prod {
+			t.Errorf("a refused receipt created movement %d", t.int(m, "id"))
+		}
+	}
+
+	t.must(t.admin, 201, "POST", "/api/exchange-rates", J{"currency_code": "JPY", "rate_date": d("01-01"), "rate": "0.006712"})
+	t.must(t.admin, 201, "POST", "/api/exchange-rates", J{"currency_code": "JPY", "rate_date": d("03-01"), "rate": "0.0069"})
+	// 1234.5 × 0.006712 = 8.285964, so 8.2860 in base.
+	ids := t.ints(t.obj(t.must(t.admin, 201, "POST", path("/api/purchase-orders/%d/receive", po), J{"warehouse_id": wh, "movement_date": d("02-15")})), "movement_ids")
+	if len(ids) != 1 {
+		t.Fatalf("receiving created %d movements, want 1", len(ids))
+	}
+	m := t.doc("stock-movements", ids[0])
+	t.eqDec(m, "unit_cost", "8.286")
+	t.eqDec(m, "total_cost", "16.572")
+	je := t.int(t.obj(t.must(t.admin, 200, "POST", path("/api/stock-movements/%d/post", ids[0]), J{"credit_account_id": grni})), "journal_entry_id")
+	e := t.entry(je)
+	t.eq("receipt entry currency", t.str(e, "currency_code"), "USD")
+	t.eqLines("receipt entry", e, dr(inventory, "16.572"), cr(grni, "16.572"))
+}

@@ -29,7 +29,14 @@ schema, not as a requirement.
 ## 2. Rounding and line arithmetic
 
 All rounding is to **4 decimal places, half away from zero** (Postgres
-`round(numeric, 4)`).
+`round(numeric, 4)`). What is rounded is the **exact** result. A quotient
+in particular is rounded once, from its exact value: computing it to some
+finite precision first and then rounding to 4 places can round twice and
+give a different answer (`920907399.1189 / 123456789.0123` is
+`7.45934999999999995…`, which is `7.4593`). Postgres `numeric` division
+is not exact in this sense; tadmor multiplies by `0.01` for tax and uses
+an integer-division helper for average costs. Inputs are first rounded to
+their stored scale (`api.md` §1.2).
 
 For every invoice, bill, credit-note, and order line:
 
@@ -136,7 +143,8 @@ multiset of (account, debit, credit, base_debit, base_credit).
 
 A receipt's credit account is typically the seeded **Goods Received Not
 Invoiced** account (2150). The matching bill line then debits 2150, so
-GRNI nets to zero once the goods are billed.
+GRNI nets to zero once the goods are billed (in base, only if the bill's
+exchange rate equals the receipt's; see §14).
 
 ### 4.4 Unposting
 
@@ -269,8 +277,12 @@ outstanding on it; `partial` otherwise.
   `round(Σ total_cost / Σ quantity, 4)` over all of the pair's movements,
   or 0 when there are none.
 - **Receive** a purchase order creates **draft receipt** movements in the
-  same way, at the order line's `unit_cost`, with `source_type =
-  "purchase_order_line"`.
+  same way, with `source_type = "purchase_order_line"`. Stock is valued in
+  the base currency, so each movement's `unit_cost` is
+  `round(order line unit_cost × rate, 4)`, where the rate is 1 for a
+  base-currency order and otherwise the order currency's latest rate on or
+  before the movement date (§7.1). With no such rate, nothing is created
+  (422).
 
 Linked invoice and bill lines are only valid while the order is open,
 belongs to the same party and currency, and is not over-invoiced (or
@@ -484,7 +496,8 @@ All reports cover **posted** entries and **base** amounts.
 - **Account ledger**: an account's posted lines in range, with both
   amount pairs and the line's memo, falling back to the entry's.
 - **A/R and A/P aging**: per party, the posted invoices (or bills) with a
-  balance > 0, bucketed by `due_date` against **today**:
+  balance > 0, bucketed by `due_date` against **today** (the UTC date,
+  `api.md` §1.2):
   - `not_yet_due` when there is no due date or it is today or later;
   - `days_1_30` when it falls in [today − 30, today);
   - `days_31_60`, `days_61_90`, and `days_over_90` likewise.
@@ -578,7 +591,8 @@ them, and the suite does not test them.
 - Addresses, contacts, and reorder levels have no API. They exist in the
   reference schema, and addresses feed the PDFs.
 - Transfers and adjustments never post to the GL.
-- Receiving against a foreign-currency purchase order records the
-  movement at the order's unit cost unconverted, although stock is valued
-  in the base currency.
+- Receiving against a foreign-currency purchase order converts at the
+  movement date's rate, and the bill converts at the bill date's. When the
+  two rates differ, the base difference stays in GRNI: no FX entry clears
+  it.
 - Payment terms are informational. Due dates are supplied by the client.

@@ -76,7 +76,7 @@ func CreateInvoiceFromSalesOrder(ctx context.Context, tx pgx.Tx, orderID int, in
 	ids, qtys := split(in.Lines)
 	tag, err := tx.Exec(ctx, `
 WITH req AS (
-    SELECT order_line_id, qty FROM unnest($2::int[], $3::numeric[]) AS r(order_line_id, qty)
+    SELECT order_line_id, qty FROM unnest($2::int[], $3::numeric(19,4)[]) AS r(order_line_id, qty)
 ),
 picked AS (
     SELECT sol.id AS order_line_id, sol.product_id, sol.description, sol.unit_price,
@@ -151,7 +151,7 @@ func CreateBillFromPurchaseOrder(ctx context.Context, tx pgx.Tx, orderID int, in
 	ids, qtys := split(in.Lines)
 	tag, err := tx.Exec(ctx, `
 WITH req AS (
-    SELECT order_line_id, qty FROM unnest($2::int[], $3::numeric[]) AS r(order_line_id, qty)
+    SELECT order_line_id, qty FROM unnest($2::int[], $3::numeric(19,4)[]) AS r(order_line_id, qty)
 ),
 picked AS (
     SELECT pol.id AS order_line_id, pol.product_id, pol.description, pol.unit_cost,
@@ -197,11 +197,13 @@ func (in ReceiveInput) Validate() string {
 }
 
 // ReceivePurchaseOrder creates draft receipt stock movements for the
-// inventory-tracked lines of an open purchase order, at the order's unit cost,
-// linked back to their order lines. Non-stock lines (services) are skipped:
-// they are billed, not received. It returns the ids of the movements created,
-// which the caller posts to the GL (Dr inventory / Cr GRNI) as usual, or
-// ErrNothingToFulfil when there is nothing left to receive.
+// inventory-tracked lines of an open purchase order, at the order's unit cost
+// converted to the base currency, linked back to their order lines. Non-stock
+// lines (services) are skipped: they are billed, not received. It returns the
+// ids of the movements created, which the caller posts to the GL (Dr inventory
+// / Cr GRNI) as usual, ErrNoExchangeRate when a foreign-currency order has no
+// rate on or before the movement date, or ErrNothingToFulfil when there is
+// nothing left to receive.
 func ReceivePurchaseOrder(ctx context.Context, tx pgx.Tx, orderID int, in ReceiveInput) ([]int, error) {
 	var status string
 	err := tx.QueryRow(ctx, `SELECT status FROM purchase_orders WHERE id = $1`, orderID).Scan(&status)
@@ -215,13 +217,30 @@ func ReceivePurchaseOrder(ctx context.Context, tx pgx.Tx, orderID int, in Receiv
 		return nil, fmt.Errorf("orders: %s %d: %w", purchaseSide.noun, orderID, ErrNotOpen)
 	}
 
+	// Stock is valued in the base currency, so a foreign order's cost converts
+	// at the latest rate on or before the movement date, as posting would.
+	var rate *string
+	err = tx.QueryRow(ctx, `
+SELECT CASE WHEN po.currency_code = (SELECT base_currency FROM gl_settings) THEN 1::numeric
+            ELSE (SELECT rate FROM exchange_rates
+                  WHERE currency_code = po.currency_code AND rate_date <= COALESCE($2::date, current_date)
+                  ORDER BY rate_date DESC LIMIT 1)
+       END::text
+FROM purchase_orders po WHERE po.id = $1`, orderID, in.MovementDate).Scan(&rate)
+	if err != nil {
+		return nil, err
+	}
+	if rate == nil {
+		return nil, fmt.Errorf("orders: %s %d: %w", purchaseSide.noun, orderID, ErrNoExchangeRate)
+	}
+
 	ids, qtys := split(in.Lines)
 	rows, err := tx.Query(ctx, `
 WITH req AS (
-    SELECT order_line_id, qty FROM unnest($1::int[], $2::numeric[]) AS r(order_line_id, qty)
+    SELECT order_line_id, qty FROM unnest($1::int[], $2::numeric(19,4)[]) AS r(order_line_id, qty)
 ),
 picked AS (
-    SELECT pol.id AS order_line_id, pol.product_id, pol.unit_cost,
+    SELECT pol.id AS order_line_id, pol.product_id, round(pol.unit_cost * $7::numeric, 4) AS unit_cost,
            CASE WHEN (SELECT count(*) FROM req) = 0 THEN f.qty_to_receive
                 ELSE LEAST(f.qty_to_receive, COALESCE(r.qty, 0)) END AS qty
     FROM purchase_order_lines pol
@@ -236,7 +255,7 @@ SELECT product_id, $3, 'receipt', COALESCE($5::date, current_date), qty, unit_co
        'purchase_order_line', order_line_id, $6
 FROM picked WHERE qty > 0
 RETURNING id`,
-		ids, qtys, in.WarehouseID, orderID, in.MovementDate, in.Reference)
+		ids, qtys, in.WarehouseID, orderID, in.MovementDate, in.Reference, *rate)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +314,7 @@ func ShipSalesOrder(ctx context.Context, tx pgx.Tx, orderID int, in ShipInput) (
 	ids, qtys := split(in.Lines)
 	rows, err := tx.Query(ctx, `
 WITH req AS (
-    SELECT order_line_id, qty FROM unnest($1::int[], $2::numeric[]) AS r(order_line_id, qty)
+    SELECT order_line_id, qty FROM unnest($1::int[], $2::numeric(19,4)[]) AS r(order_line_id, qty)
 ),
 picked AS (
     SELECT sol.id AS order_line_id, sol.product_id,

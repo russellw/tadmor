@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"strings"
 )
 
@@ -135,6 +136,15 @@ func testLoginLogout(t *T) {
 	t.shape(u, "User")
 	t.eq("login email", strings.ToLower(t.str(u, "email")), email)
 	t.eq("login is_admin", t.boolean(u, "is_admin"), false)
+	// The session cookie is HttpOnly and SameSite=Lax (§3). Its name is free,
+	// and other cookies may be set alongside it, so one such cookie suffices.
+	session := false
+	for _, ck := range (&http.Response{Header: r.Header}).Cookies() {
+		session = session || ck.HttpOnly && ck.SameSite == http.SameSiteLaxMode
+	}
+	if !session {
+		t.Errorf("login set no HttpOnly, SameSite=Lax cookie: %q", r.Header.Values("Set-Cookie"))
+	}
 
 	me := t.obj(t.must(c, 200, "GET", "/api/auth/me", nil))
 	t.shape(me, "User")

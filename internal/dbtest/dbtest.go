@@ -27,7 +27,7 @@ func Acquire(ctx context.Context, t *testing.T) (*pgxpool.Pool, func()) {
 	if url == "" {
 		t.Skip("TEST_DATABASE_URL not set; skipping database integration test")
 	}
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := db.Connect(ctx, url)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
