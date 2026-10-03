@@ -556,3 +556,54 @@ func do(t *testing.T, method, url, body string) (int, string) {
 	b, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, string(b)
 }
+
+// TestClientErrorsAreNot500 covers inputs that once surfaced as 500 "internal
+// error" though the client caused them; the spec (spec/api.md §1.4) requires
+// a 4xx for each.
+func TestClientErrorsAreNot500(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := dbtest.Acquire(ctx, t)
+	defer cleanup()
+	resetAuthed(ctx, t, pool)
+
+	srv := httptest.NewServer(httpapi.NewServer(pool, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler(nil))
+	defer srv.Close()
+
+	// A date Postgres cannot parse is a data exception: 422.
+	for _, date := range []string{"2026-13-45", "someday"} {
+		body := `{"name":"FY-bad","start_date":"` + date + `","end_date":"2026-12-31"}`
+		if s, b := postJSON(t, srv.URL+"/api/fiscal-years", body); s != http.StatusUnprocessableEntity {
+			t.Errorf("fiscal year starting %q: status = %d, want 422 (body: %s)", date, s, b)
+		}
+	}
+
+	// Lines of a statement that does not exist: 404, like every other /lines.
+	if s, b := get(t, srv.URL+"/api/bank-statements/999999/lines"); s != http.StatusNotFound {
+		t.Errorf("lines of a missing statement: status = %d, want 404 (body: %s)", s, b)
+	}
+
+	// Posting a foreign-currency document with no rate on or before its
+	// date: 422.
+	var custID int
+	if err := pool.QueryRow(ctx,
+		`WITH o AS (INSERT INTO organizations (name) VALUES ('Acme') RETURNING id)
+		 INSERT INTO customers (organization_id, ar_account_id)
+		 SELECT id, (SELECT id FROM accounts WHERE code='1100') FROM o RETURNING id`).Scan(&custID); err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO fiscal_years (name, start_date, end_date) VALUES ('FY2026','2026-01-01','2026-12-31')`); err != nil {
+		t.Fatalf("create fiscal year: %v", err)
+	}
+	var invID int
+	if err := pool.QueryRow(ctx,
+		`WITH i AS (INSERT INTO sales_invoices (invoice_number, customer_id, invoice_date, currency_code)
+		            VALUES ('INV-GBP', $1, '2026-06-15', 'GBP') RETURNING id)
+		 INSERT INTO sales_invoice_lines (invoice_id, line_no, description, unit_price, revenue_account_id)
+		 SELECT id, 1, 'Service', 10, (SELECT id FROM accounts WHERE code='4000') FROM i RETURNING invoice_id`,
+		custID).Scan(&invID); err != nil {
+		t.Fatalf("create invoice: %v", err)
+	}
+	if s, b := post(t, srv.URL+"/api/sales-invoices/"+itoa(invID)+"/post"); s != http.StatusUnprocessableEntity {
+		t.Errorf("post without an exchange rate: status = %d, want 422 (body: %s)", s, b)
+	}
+}

@@ -739,20 +739,35 @@ func (s *Server) runCreate(w http.ResponseWriter, r *http.Request, validate func
 
 // writeCreateError maps database constraint violations to client errors.
 func (s *Server) writeCreateError(w http.ResponseWriter, err error) {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505": // unique_violation
-			writeError(w, http.StatusConflict, pgErr.Message)
-			return
-		case "23503", "23514", "23502", "22P02", "23P01", "P0001":
-			// foreign key, check, not-null, invalid text, exclusion, raised
-			writeError(w, http.StatusUnprocessableEntity, pgErr.Message)
-			return
-		}
+	if writeClientDBError(w, err) {
+		return
 	}
 	s.log.Error("create failed", "err", err)
 	writeError(w, http.StatusInternalServerError, "internal error")
+}
+
+// writeClientDBError writes the response for a database error the client
+// caused, reporting whether err was one: a duplicate key is a 409, and a
+// broken constraint or a value Postgres could not accept is a 422.
+func writeClientDBError(w http.ResponseWriter, err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	switch {
+	case pgErr.Code == "23505": // unique_violation
+		writeError(w, http.StatusConflict, pgErr.Message)
+	case pgErr.Code == "23503", pgErr.Code == "23514", pgErr.Code == "23502",
+		pgErr.Code == "23P01", pgErr.Code == "P0001",
+		// Class 22, data exception: malformed or out-of-range input such as
+		// an invalid date or decimal.
+		strings.HasPrefix(pgErr.Code, "22"):
+		// foreign key, check, not-null, exclusion, raised, data exception
+		writeError(w, http.StatusUnprocessableEntity, pgErr.Message)
+	default:
+		return false
+	}
+	return true
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
@@ -1029,7 +1044,8 @@ func postingStatus(err error) int {
 		errors.Is(err, posting.ErrMissingAccount),
 		errors.Is(err, posting.ErrNothingToPost),
 		errors.Is(err, posting.ErrPriorYearOpen),
-		errors.Is(err, posting.ErrLaterYearClosed):
+		errors.Is(err, posting.ErrLaterYearClosed),
+		errors.Is(err, posting.ErrNoExchangeRate):
 		return http.StatusUnprocessableEntity
 	default:
 		return http.StatusInternalServerError

@@ -4,8 +4,6 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"tadmor/internal/master"
 )
 
@@ -188,16 +186,8 @@ func (s *Server) writeMasterError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505": // unique_violation
-			writeError(w, http.StatusConflict, pgErr.Message)
-			return
-		case "23503", "23514", "23502", "22P02", "23P01", "P0001":
-			writeError(w, http.StatusUnprocessableEntity, pgErr.Message)
-			return
-		}
+	if writeClientDBError(w, err) {
+		return
 	}
 	s.log.Error("master data operation failed", "err", err)
 	writeError(w, http.StatusInternalServerError, "internal error")

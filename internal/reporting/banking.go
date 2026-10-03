@@ -97,8 +97,17 @@ type BankStatementLine struct {
 	EntryMemo      *string `json:"entry_memo"`
 }
 
-// BankStatementLines returns a statement's lines in statement order.
+// BankStatementLines returns a statement's lines in statement order, or
+// ErrNotFound when the statement itself does not exist.
 func BankStatementLines(ctx context.Context, q Querier, statementID int) ([]BankStatementLine, error) {
+	var exists bool
+	if err := q.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM bank_statements WHERE id = $1)`, statementID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
 	rows, err := q.Query(ctx,
 		`SELECT l.id, l.line_no, l.txn_date::text, l.description, l.reference,
 		        l.amount::text, l.journal_line_id, je.id, je.entry_date::text,
