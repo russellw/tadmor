@@ -172,6 +172,11 @@ sections, deferred decisions, and a gap review against the project goal.
   carries nearly all of tadmor's supply-chain surface. A counterpart is
   measured only once the suite passes and the UI covers §13
   (`docs/counterpart-metrics.md`).
+- **UI checklist** — done 2026-10-03: `spec/domain.md` §13 is now a
+  numbered checklist (general, home, master data, documents, payments,
+  orders, inventory, reports, accounting), written from what tadmor's SPA
+  actually does, so "covers §13" is the same judgment for every
+  counterpart.
 - **Next:** pick the first counterpart stack.
 
 ## Smaller housekeeping

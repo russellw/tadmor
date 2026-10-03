@@ -24,8 +24,8 @@ so the metrics are ranked:
 
 - **Measure a complete implementation.** A counterpart is measured at a
   commit where `conformance/` passes completely **and** its own UI covers
-  every screen and action in `spec/domain.md` §13, checked by walking
-  through that list. The report names the spec commit from
+  every item of the checklist in `spec/domain.md` §13 (G1 to A5), checked
+  by walking through it and recorded item by item in the report. The report names the spec commit from
   `spec/UPSTREAM`. A partial implementation's numbers are not comparable,
   and a backend-only one leaves out the part that dominates tadmor's
   figures.

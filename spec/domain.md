@@ -551,30 +551,203 @@ contract.
 
 ## 13. User interface (required, not checked by the suite)
 
-Every implementation ships its own user interface covering these screens
-and actions (`README.md`). tadmor's SPA groups them in a sidebar as below;
-the grouping, layout, and technology are free, the coverage is not.
+Every implementation ships its own user interface (`README.md`). This
+section is the checklist it must satisfy. Each item is a capability, not a
+layout: grouping, navigation style, wording, and technology are free.
+Items are numbered so that a coverage report can cite them, and a
+counterpart is complete only when a walk-through ticks every one
+(`docs/counterpart-metrics.md`). tadmor's SPA is the reference for each
+item.
 
-- **Home**: dashboard.
-- **Sales**: Sales Orders, Invoices, Credit Notes, Customer Payments,
-  Customers.
-- **Purchases**: Purchase Orders, Bills, Supplier Credits, Supplier
-  Payments, Suppliers.
-- **Inventory**: Products, Stock Movements, Warehouses.
-- **Reports**: Profit & Loss, Balance Sheet, Cash Flow, Trial Balance
-  (drilling into account ledgers and journal entries), AR Aging, AP Aging,
-  Inventory Valuation.
-- **Accounting**: Chart of Accounts, Bank Reconciliation, Exchange Rates,
-  Periods (including fiscal years and year-end close).
-- **Setup**: Organizations, Tax Codes, Payment Terms, Settings, and Users
-  (administrators only).
+Where an item says "a form", the form edits every writable field of the
+corresponding request body in `api.md`, with a picker over active records
+for each reference (accounts, parties, products, tax codes, payment terms,
+warehouses, organizations). Where it says "a list", the list shows the
+records in the API's order, each one opening its edit form or detail
+screen, with a way to create a new one.
 
-Each list screen links to create and edit forms. Each document detail
-screen offers the lifecycle actions (post, unpost, apply, confirm,
-fulfil), a PDF download, and the Email panel. The login screen is the
-only page shown without a session.
+### 13.1 General
 
----
+- **G1** A login screen is the only page shown without a session. Failed
+  logins show an error. A request that returns 401 brings the login
+  screen back.
+- **G2** The signed-in user's name is shown, with a way to sign out.
+- **G3** Every screen in this section is reachable by navigation from
+  every other, without typing a URL.
+- **G4** Administrator-only actions (§12) are hidden or disabled for other
+  users, including the Users screen. The server still enforces them.
+- **G5** A refused action shows the server's error message next to it.
+  Nothing fails silently.
+- **G6** Deleting a document, payment, order, stock movement, bank
+  statement, or exchange rate asks for confirmation first.
+- **G7** Amounts are shown as exact decimals. Wherever a document is in a
+  foreign currency, its currency is shown with its amounts.
+- **G8** An unknown address shows a not-found message.
+
+### 13.2 Home
+
+- **H1** Receivables and payables outstanding (posted documents with a
+  positive balance), totaled per currency, each with its overdue portion.
+- **H2** Counts of open sales and purchase orders, and of draft invoices
+  and bills.
+- **H3** The most overdue invoices, oldest due date first, each linking to
+  the invoice, with a link to the AR aging report.
+- **H4** Bills due within the next 14 days, each linking to the bill,
+  with a link to the AP aging report.
+- **H5** One-step starts for a new invoice, customer payment, bill,
+  supplier payment, sales order, and purchase order.
+
+### 13.3 Master data
+
+- **M1** Organizations: a list (name, legal name, tax id, country,
+  currency) and a form.
+- **M2** Customers and suppliers: a list each (organization name, number,
+  currency, tax code, terms, credit limit for customers, active status)
+  and a form. The organization is chosen on create and read-only on edit.
+- **M3** Products: a list (sku, name, unit price, currency, tax code,
+  whether inventory is tracked, active status) and a form with the
+  revenue, inventory, and COGS accounts.
+- **M4** Chart of accounts: a list (code, name, type, currency, postable,
+  active status) and a form. A parent picker never offers the account
+  itself.
+- **M5** Tax codes (code, name, rate, active status), payment terms (code,
+  name, due days), and warehouses (code, name, active status): a list and
+  a form each.
+- **M6** Every record with `is_active` shows its active status in its list
+  and is deactivated through its form. Master data has no delete.
+- **M7** Users (administrators only): a list (email, name, role, active
+  status), a create form with a password, an edit form, and a separate
+  password reset. Deactivating or demoting oneself is refused visibly.
+- **M8** Settings: base currency and FX gain/loss account. Read-only for
+  non-administrators.
+
+### 13.4 Invoices, bills, and credit notes
+
+These items apply to each of the four collections: sales invoices,
+purchase bills, sales credit notes, and supplier credits.
+
+- **D1** A list: number, party name, date, due date (invoices and bills),
+  total, balance or unapplied amount, and status. Newest first.
+- **D2** A form with header fields and any number of lines, which can be
+  added and removed. Picking a product fills the line's description and
+  tax code from it, and on the sales side its price and revenue account
+  too. Picking a tax code fills
+  the line's tax rate from it. Everything stays editable. Line totals and
+  document totals are previewed as the user types, computed as in §2.
+- **D3** A detail screen with the header, every line (quantity, price,
+  tax rate, tax amount, line total), the totals, the status and payment
+  or application status, and, when posted, a link to the journal entry
+  (R6).
+- **D4** Actions offered by state. A draft can be posted, edited (unless
+  produced from an order, §6.4), and deleted. A posted document can be
+  unposted by an administrator. A posted credit note with something
+  unapplied can be applied.
+- **D5** A credit note's detail lists the documents it is applied to,
+  each with its amount and a link.
+- **D6** A PDF action that opens the document's PDF.
+- **D7** An email action: optional recipients, blank meaning the
+  counterparty's email on file. It shows the address the server used, or
+  the error (including 501 when sending is disabled).
+
+### 13.5 Payments
+
+These items apply to customer payments and supplier payments.
+
+- **P1** A list: party, date, method, amount, applied, unapplied, and
+  status. Newest first.
+- **P2** A form: party, date, currency, amount, method, reference, and
+  the deposit or payment account.
+- **P3** A detail screen with the payment's facts and, when posted, a
+  link to the journal entry. A draft can be posted, edited, and deleted.
+  A posted payment with something unapplied can be applied. A posted
+  payment can be unposted by an administrator.
+- **P4** The detail lists the documents the payment is applied to, each
+  with its amount and a link.
+
+### 13.6 Orders
+
+These items apply to sales orders and purchase orders.
+
+- **O1** A list: number, party, date, total, status, and both fulfilment
+  statuses. Newest first.
+- **O2** A form like D2. Drafts only.
+- **O3** A detail screen with the header and statuses, and per line the
+  ordered quantity, the quantities invoiced (or billed) and shipped (or
+  received), and what remains on each axis.
+- **O4** A draft can be confirmed, edited, deleted, and cancelled. An open
+  order can be closed, and cancelled while nothing has been fulfilled.
+- **O5** On an open order, an invoice (or bill) action asks for the
+  number, date, and due date, and offers each outstanding line with its
+  remaining quantity filled in. The quantities can be lowered for a
+  partial invoice. On success it goes to the new draft document.
+- **O6** On an open order, a ship (or receive) action asks for the
+  warehouse and date, offers only the stocked outstanding lines, with
+  remaining quantities filled in and lowerable, and links to the
+  movements it created.
+- **O7** PDF and email actions, as D6 and D7.
+
+### 13.7 Inventory
+
+- **S1** Stock movements: a list (date, product, warehouse, type,
+  quantity, unit cost, total cost, and whether it is posted). Newest
+  first.
+- **S2** A form where the quantity is entered as a magnitude and signed by
+  the type (an adjustment takes its sign as typed).
+- **S3** A detail screen with the movement's facts and, when posted, a
+  link to the journal entry. An
+  unposted receipt or issue can be posted, a receipt asking for the
+  account to credit. An unposted movement can be deleted, and edited
+  unless it came from an order. A posted one can be unposted by an
+  administrator.
+
+### 13.8 Reports
+
+Every date bound is optional, and a blank one is unbounded.
+
+- **R1** Profit and loss for a date range: revenue and expense accounts
+  with totals per section, and net income.
+- **R2** Balance sheet as of a date: assets, liabilities, and equity with
+  totals per section, plus current earnings, so that the identity of
+  §10 is visible.
+- **R3** Cash flow for a date range: operating (starting from net
+  income), investing, and financing sections with subtotals, then
+  opening cash, net cash flow, and closing cash.
+- **R4** Trial balance: every account with debit, credit, and balance,
+  and totals. Each account links to its ledger.
+- **R5** Account ledger for a date range: each line with its date, a link
+  to its journal entry, memo, debit and credit, and a running balance.
+  Where lines are in a foreign currency, it shows the currency and the
+  base amounts too.
+- **R6** Journal entry: date, currency, exchange rate, reference, memo,
+  status, and every line with its account (linking to the ledger), memo,
+  debit, credit, and base amounts, with totals.
+- **R7** AR and AP aging: one row per party with the five buckets and the
+  total, plus a total row.
+- **R8** Inventory valuation: sku, product, quantity on hand, average
+  unit cost, and value on hand, plus a total value.
+
+### 13.9 Accounting
+
+- **A1** Periods: fiscal years, each with its periods. Forms for a fiscal
+  year and a period. The new-period form proposes the month after the
+  latest existing period. Each period can be closed or reopened in one
+  step from the list.
+- **A2** Year-end (administrators): closing a year asks for the retained
+  earnings account, proposing the seeded Retained Earnings, and states
+  what will happen before doing it. Reopening the latest closed year is
+  offered too.
+- **A3** Exchange rates: a list (currency, date, rate), a form to create
+  and change a rate, and delete.
+- **A4** Bank statements: a list (account, date, reference, closing
+  balance, lines matched of total, difference, status) and a form, which
+  offers only cash accounts.
+- **A5** A statement's detail: opening, closing, and difference; its
+  lines, each with its match. While open: lines can be added by hand,
+  imported by pasting CSV (§8.2), and deleted; auto-match can be run;
+  each unmatched line offers the candidates of its amount, with a way to
+  see all candidates, and matches one; a matched line can be unmatched;
+  and the statement can be reconciled, edited, or deleted. A reconciled
+  statement can be reopened by an administrator.
 
 ## 14. Known gaps (deliberately unspecified)
 
