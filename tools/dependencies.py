@@ -9,11 +9,6 @@ tadmor's ecosystems are Go modules (vendor/modules.txt) and pnpm
 (pnpm-lock.yaml v9), so this reads those. Each counterpart writes its own
 manifest with its own tooling; tools/measure.py reads only manifests.
 
-The PyPI reader below (wheels vendored with a vendor/lock.txt, the format
-tadmor-python's tools/vendor.py writes) is transitional: it lets
-tadmor-python be measured until its own tooling writes its manifest, and
-goes away then.
-
 Identity lookups read public registry metadata (no package code is
 fetched) and are cached across runs; --offline uses the cache only.
 --check reports, without writing, whether the committed manifest is current.
@@ -28,7 +23,6 @@ import subprocess
 import sys
 import urllib.parse
 import urllib.request
-import xmlrpc.client
 from pathlib import Path
 
 FORMAT = "tadmor-dependencies/1"
@@ -39,7 +33,6 @@ PLATFORM_OS, PLATFORM_CPU = "linux", "x64"
 
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "tadmor-metrics"
 CACHE = CACHE_DIR / "npm-metadata.json"
-PYPI_CACHE = CACHE_DIR / "pypi-roles.json"
 
 
 def git_files(repo):
@@ -223,43 +216,6 @@ def npm_package_lines(lock_dir, keys):
 
 
 # ---------------------------------------------------------------------------
-# PyPI wheels vendored with vendor/lock.txt
-# ---------------------------------------------------------------------------
-
-def pypi_lock(repo):
-    """(name, version) per wheel in vendor/lock.txt, whose lines read
-    `<name> <version> <wheel filename> sha256:<hex>`. Every wheel there is
-    on the runtime path: it is unpacked into vendor/site and imported."""
-    path = Path(repo, "vendor", "lock.txt")
-    if not path.exists():
-        return []
-    out = []
-    for line in path.read_text().splitlines():
-        parts = line.split()
-        if len(parts) == 4 and not line.lstrip().startswith("#") and parts[3].startswith("sha256:"):
-            out.append((parts[0], parts[1]))
-    return out
-
-
-def pypi_identities(names, offline):
-    """Map project -> its publishing identities: the accounts PyPI lists in a
-    role (Owner or Maintainer) on the project, from the XML-RPC
-    package_roles call. A project published through a PyPI organization
-    lists no individual roles; it counts as one identity, the organization,
-    as a Go organization does. Cached across runs; None where unknown."""
-    cache = json.loads(PYPI_CACHE.read_text()) if PYPI_CACHE.exists() else {}
-    missing = [n for n in names if n.lower() not in cache]
-    if missing and not offline:
-        rpc = xmlrpc.client.ServerProxy("https://pypi.org/pypi")
-        for name in missing:
-            roles = rpc.package_roles(name)
-            cache[name.lower()] = sorted({f"pypi:{user}" for _role, user in roles}) or [f"pypi-org:{name.lower()}"]
-        PYPI_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        PYPI_CACHE.write_text(json.dumps(cache, indent=0, sort_keys=True))
-    return {n: cache.get(n.lower()) for n in names}
-
-
-# ---------------------------------------------------------------------------
 # The manifest
 # ---------------------------------------------------------------------------
 
@@ -280,17 +236,6 @@ def manifest(repo, test_dirs, offline):
         vendored = [Path(repo, f) for f in files if f.startswith("vendor/")]
         sources.append({"label": "Go vendor/ (runtime)", "bytes": sum(p.stat().st_size for p in vendored),
                         "lines": sum(count_lines(p) for p in vendored if p.suffix == ".go")})
-
-    wheels = pypi_lock(repo)
-    if wheels:
-        toolchains.add("CPython (Python Software Foundation)")
-        ids = pypi_identities([n for n, _ in wheels], offline)
-        for name, ver in wheels:
-            packages.append(package("pypi", name.lower(), ver, "runtime", ids[name],
-                                    f"PyPI XML-RPC package_roles({name})"))
-        site = [Path(repo, f) for f in files if f.startswith("vendor/site/")]
-        sources.append({"label": "PyPI vendor/site (runtime)", "bytes": sum(p.stat().st_size for p in site),
-                        "lines": sum(count_lines(p) for p in site if p.suffix == ".py")})
 
     for lock in [f for f in files if f.endswith("pnpm-lock.yaml") and "node_modules/" not in f]:
         lock_dir = str(Path(repo, lock).parent)

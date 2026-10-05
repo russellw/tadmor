@@ -62,8 +62,8 @@ so the metrics are ranked:
 Each implementation commits `dependencies.json` at its repository root.
 It lists every third-party package the build resolves on linux/x64, with
 the publishing identities behind each. It is written by the project's own
-tooling (tadmor's is `tools/dependencies.py`) and kept current with the
-lockfile: regenerate it whenever dependencies change, and commit both
+tooling (tadmor's is `tools/dependencies.py`; each counterpart's is its
+vendoring script) and kept current with the lockfile: regenerate it whenever dependencies change, and commit both
 together. Because it is committed, measuring needs no network, a change is
 reviewable in a diff, and the figures can be checked against the evidence
 the manifest cites.
@@ -113,7 +113,9 @@ be compromised (the threat model in `docs/frontend-stack.md` §3).
 | Go modules | the repository owner (user or organization); `golang.org/x/*` counts as one identity, the Go project | module path |
 | PyPI | each account with a role (Owner or Maintainer) on the project; a project published through a PyPI organization lists none, and counts as one identity, the organization | PyPI's XML-RPC `package_roles` (the web pages that show roles refuse scripted clients) |
 | NuGet | each account in the package's owner list (owners are per package, not per version) | the NuGet search API's `owners` field |
-| Others | the registry's owner list where one exists (crates.io owners, Packagist maintainers); otherwise the repository owner | the project's own manifest tooling |
+| Packagist | each account in the package's maintainers list (per package) | `packagist.org/packages/<name>.json` |
+| Maven Central | the verified Central namespace that can publish the groupId: a reversed domain (`org.apache`), a code host's user namespace (`io.github.user`), or, for a groupId without a domain, its first part (`jakarta`); old domainless groupIds count under their owner's namespace (`commons-io` as `org.apache`). Central publishes no account list | the groupId |
+| Others | the registry's owner list where one exists (crates.io owners); otherwise the repository owner | |
 
 The counts are not perfectly fair across ecosystems:
 
@@ -125,6 +127,9 @@ The counts are not perfectly fair across ecosystems:
 - PyPI hides the members of an organization's teams, so a project such as
   Django, published through the `django` organization, counts once, as a Go
   organization does. Roles are per project, not per version.
+- Maven Central, like Go, exposes no accounts, so a namespace counts once,
+  but an organization holding several namespaces (Eclipse's `jakarta` and
+  `org.eclipse`) counts once for each.
 - NuGet lists organizations as owner accounts, and one company may own a
   package through several (Microsoft publishes as `Microsoft`, `aspnet`,
   `dotnetframework`, and others), so a large publisher counts several
@@ -283,7 +288,7 @@ Measured 2026-10-03 at commit `73e4a16` (spec at the same commit), on
 linux/x64 with Postgres 17. Re-measured on 2026-10-05 through the
 dependency manifest, once `tools/measure.py` stopped parsing lockfiles
 itself: the dependency, maintainer, and source-size figures were
-identical. The manifest tooling, 291 non-blank lines of Python in
+identical. The manifest tooling, 243 non-blank lines of Python in
 `tools/dependencies.py`, now counts as tadmor's own code.
 
 **Primary**
