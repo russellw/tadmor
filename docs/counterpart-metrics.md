@@ -115,6 +115,7 @@ be compromised (the threat model in `docs/frontend-stack.md` §3).
 | NuGet | each account in the package's owner list (owners are per package, not per version) | the NuGet search API's `owners` field |
 | Packagist | each account in the package's maintainers list (per package) | `packagist.org/packages/<name>.json` |
 | Maven Central | the verified Central namespace that can publish the groupId: a reversed domain (`org.apache`), a code host's user namespace (`io.github.user`), or, for a groupId without a domain, its first part (`jakarta`); old domainless groupIds count under their owner's namespace (`commons-io` as `org.apache`). Central publishes no account list | the groupId |
+| RubyGems | each account in the gem's owner list (owners are per gem, not per version) | the RubyGems API, `rubygems.org/api/v1/gems/<name>/owners.json` |
 | Others | the registry's owner list where one exists (crates.io owners); otherwise the repository owner | |
 
 The counts are not perfectly fair across ecosystems:
@@ -134,6 +135,10 @@ The counts are not perfectly fair across ecosystems:
   package through several (Microsoft publishes as `Microsoft`, `aspnet`,
   `dotnetframework`, and others), so a large publisher counts several
   times, as on npm.
+- RubyGems, like npm, lists individual accounts, and a team that publishes
+  together owns each of its gems jointly. Every Rails gem lists the same 12
+  Rails core team accounts, and the gems that ship with Ruby list members of
+  the Ruby core team, so these two teams account for 32 of tadmor-ruby's 72.
 
 Go is therefore *under*-counted relative to npm. Read the gap between, say,
 2 and 58 as large but approximate.
