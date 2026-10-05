@@ -16,7 +16,7 @@ web/               the TypeScript/React front end (see docs/frontend-stack.md)
 e2e/               browser-driven UI tests (Playwright; see docs/e2e-testing.md)
 spec/              stack-neutral specification of the API and business rules
 conformance/       black-box, stdlib-only test suite for any implementation of spec/
-tools/             measure.py: supply-chain and size metrics (docs/counterpart-metrics.md)
+tools/             dependencies.py writes dependencies.json; measure.py reports metrics from it (docs/counterpart-metrics.md)
 deploy/            deployment assets for the fixed-price VPS
 docs/              architecture, deployment, and development docs
 vendor/            all third-party Go source, committed and reviewable

@@ -12,10 +12,10 @@ so the metrics are ranked:
 
 | Priority | Metric | How it is measured |
 | -------- | ------ | ------------------ |
-| Primary | 1. Distinct maintainers trusted | `tools/measure.py` |
-| Primary | 2. Dependency count | `tools/measure.py` |
+| Primary | 1. Distinct maintainers trusted | `tools/measure.py`, from the dependency manifest |
+| Primary | 2. Dependency count | `tools/measure.py`, from the dependency manifest |
 | Primary | 3. How hard a hermetic build is | manual procedure, §3 |
-| Nice to have | 4. Third-party source size | `tools/measure.py` |
+| Nice to have | 4. Third-party source size | `tools/measure.py`, from the dependency manifest |
 | Nice to have | 5. Own lines of code | `tools/measure.py` |
 | Nice to have | 6. Effort | `tools/measure.py` (git proxy) plus a manual note |
 | Nice to have | 7. Runtime performance | manual procedure, §7 |
@@ -29,11 +29,16 @@ so the metrics are ranked:
   `spec/UPSTREAM`. A partial implementation's numbers are not comparable,
   and a backend-only one leaves out the part that dominates tadmor's
   figures.
-- **Same tool, same machine.** `tools/measure.py` lives in tadmor and is
-  pointed at each counterpart's checkout:
+- **Same definitions, each project's own tooling.** Every implementation
+  commits a **dependency manifest**, `dependencies.json` (next section),
+  written by its own tooling, which is the only code that knows its
+  package manager. `tools/measure.py` lives in tadmor, knows no package
+  manager, and applies the definitions below to any checkout's manifest.
+  It also counts own lines and effort from git, which need no knowledge
+  of the stack:
 
   ```sh
-  tools/measure.py ../tadmor-python [--test-dir e2e] [--copied path]
+  tools/measure.py ../tadmor-dotnet [--copied path]
   ```
 
   Performance (§7) is measured on one machine, against the same Postgres
@@ -52,6 +57,49 @@ so the metrics are ranked:
   packages, Postgres itself and the shared schema (every implementation
   runs on both; `spec/README.md`), the browser, and git.
 
+## The dependency manifest
+
+Each implementation commits `dependencies.json` at its repository root.
+It lists every third-party package the build resolves on linux/x64, with
+the publishing identities behind each. It is written by the project's own
+tooling (tadmor's is `tools/dependencies.py`) and kept current with the
+lockfile: regenerate it whenever dependencies change, and commit both
+together. Because it is committed, measuring needs no network, a change is
+reviewable in a diff, and the figures can be checked against the evidence
+the manifest cites.
+
+```json
+{
+  "format": "tadmor-dependencies/1",
+  "generator": "tools/vendor.py (tadmor-dotnet)",
+  "platform": "linux/x64",
+  "toolchains": ["Microsoft .NET SDK 10.0 (Ubuntu's build)"],
+  "packages": [
+    {"ecosystem": "nuget", "name": "Npgsql", "version": "10.0.3", "category": "runtime",
+     "identities": ["nuget:Npgsql", "nuget:roji", "nuget:brar", "nuget:ninofloris"],
+     "evidence": "https://azuresearch-usnc.nuget.org/query?q=packageid:Npgsql"}
+  ],
+  "sources": [{"label": "NuGet packages (runtime, unpacked)", "bytes": 27280035, "lines": null}]
+}
+```
+
+- **`packages`**: one entry per package version and category, using the
+  definitions of §1 and §2. `identities` is the list of publishing
+  identities (§1), or `null` where they could not be determined, which
+  the report flags. Each identity string names its namespace, so that
+  accounts on different registries never merge: the registry
+  (`npm:alice`, `pypi:bob`, `nuget:Npgsql`), or, where publishing is by
+  repository, the repository host and owner (`github.com/jackc`).
+  `evidence` says where the identities were read: a registry URL, an API
+  call, or the rule applied.
+- **`toolchains`**: the toolchain publishers (§1), by name.
+- **`sources`**: third-party source size (§4), as labeled rows of bytes
+  and lines, `null` where unknown.
+
+`tools/measure.py` checks the format and the fields, then counts. It does
+not repeat the lookups. A reviewer who doubts a figure follows the
+evidence.
+
 ## 1. Distinct maintainers trusted
 
 **Definition:** the number of distinct **publishing identities** that can
@@ -64,7 +112,8 @@ be compromised (the threat model in `docs/frontend-stack.md` §3).
 | npm | each npm account in a package version's `maintainers` | registry metadata (`registry.npmjs.org/<name>/<version>`); no package code is fetched |
 | Go modules | the repository owner (user or organization); `golang.org/x/*` counts as one identity, the Go project | module path |
 | PyPI | each account with a role (Owner or Maintainer) on the project; a project published through a PyPI organization lists none, and counts as one identity, the organization | PyPI's XML-RPC `package_roles` (the web pages that show roles refuse scripted clients) |
-| Others | the registry's owner list where one exists (crates.io owners, NuGet owners); otherwise the repository owner | add to `tools/measure.py` when needed |
+| NuGet | each account in the package's owner list (owners are per package, not per version) | the NuGet search API's `owners` field |
+| Others | the registry's owner list where one exists (crates.io owners, Packagist maintainers); otherwise the repository owner | the project's own manifest tooling |
 
 The counts are not perfectly fair across ecosystems:
 
@@ -76,6 +125,10 @@ The counts are not perfectly fair across ecosystems:
 - PyPI hides the members of an organization's teams, so a project such as
   Django, published through the `django` organization, counts once, as a Go
   organization does. Roles are per project, not per version.
+- NuGet lists organizations as owner accounts, and one company may own a
+  package through several (Microsoft publishes as `Microsoft`, `aspnet`,
+  `dotnetframework`, and others), so a large publisher counts several
+  times, as on npm.
 
 Go is therefore *under*-counted relative to npm. Read the gap between, say,
 2 and 58 as large but approximate.
@@ -90,7 +143,9 @@ qualitative.
 ## 2. Dependency count
 
 **Definition:** distinct third-party package versions resolved for each
-category, transitively, **as installed on linux/x64**. Optional packages
+category, transitively, **as installed on linux/x64**. The manifest lists
+them; how each ecosystem's are found is the manifest tooling's business,
+and tadmor's own are found as follows. Optional packages
 for other platforms (esbuild and rollup binaries for darwin, windows, and
 so on) are never installed, so they are excluded.
 
@@ -103,7 +158,8 @@ so on) are never installed, so they are excluded.
   resolves nothing by itself.
 - npm (pnpm): the closure of a lockfile importer's `dependencies` (runtime)
   or `devDependencies` (build), following the lockfile's own resolution.
-- A lockfile under a test directory (`--test-dir`, default `e2e`) counts
+- A lockfile under a test directory (`tools/dependencies.py --test-dir`,
+  default `e2e`) counts
   as test.
 - Type-only packages (`@types/*`) are counted where the resolver puts
   them. They hold no executable code, but they are still published by
@@ -152,6 +208,8 @@ amount of building in the working tree would have shown.
 **Definition:** the size of third-party source the build consumes, per
 category.
 
+Each manifest reports these as its `sources` rows. tadmor's are:
+
 - **Bytes** as published:
   - Go: the files in `vendor/`;
   - npm: each package version's `dist.unpackedSize` from registry metadata;
@@ -162,7 +220,8 @@ category.
 
 npm sizes are as published, so they include multiple builds, source maps,
 and typings. They measure what you must trust, not what ships to the
-browser.
+browser. Where an ecosystem ships compiled packages, as NuGet does, bytes
+are the unpacked package contents and lines are `null`.
 
 ## 5. Own lines of code
 
@@ -177,6 +236,9 @@ browser.
 - generated files, meaning any with a "Code generated … DO NOT EDIT",
   "@generated", or "generated by" marker in its first five lines;
 - copied third-party source (`--copied`);
+- `tools/measure.py`, the shared measuring tool. A project's own manifest
+  tooling (tadmor's `tools/dependencies.py`, a counterpart's vendoring
+  script) counts, like any code it maintains;
 - docs and config (Markdown, JSON, YAML).
 
 Tests count: they are code the project wrote and maintains.
@@ -218,7 +280,11 @@ first.
 ## tadmor baseline
 
 Measured 2026-10-03 at commit `73e4a16` (spec at the same commit), on
-linux/x64 with Postgres 17.
+linux/x64 with Postgres 17. Re-measured on 2026-10-05 through the
+dependency manifest, once `tools/measure.py` stopped parsing lockfiles
+itself: the dependency, maintainer, and source-size figures were
+identical. The manifest tooling, 291 non-blank lines of Python in
+`tools/dependencies.py`, now counts as tadmor's own code.
 
 **Primary**
 
