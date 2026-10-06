@@ -289,6 +289,9 @@ first.
 
 ## tadmor baseline
 
+The comparison with every counterpart, measured together on 2026-10-06,
+is in `docs/counterpart-comparison.md`.
+
 Measured 2026-10-03 at commit `73e4a16` (spec at the same commit), on
 linux/x64 with Postgres 17. Re-measured on 2026-10-05 through the
 dependency manifest, once `tools/measure.py` stopped parsing lockfiles
@@ -330,4 +333,4 @@ identical. The manifest tooling, 243 non-blank lines of Python in
 | Idle memory | 13.9 MB RSS |
 | After a conformance run | 20.1 MB RSS (peak 20.1 MB) |
 | Conformance suite time | 6.5 s (32 cases) |
-| Deployable size | 17.0 MB server binary, measured **without** the SPA embedded (`web/dist` was not built on the measuring machine); re-measure after `make release` |
+| Deployable size | 17.7 MB server binary with the SPA embedded (`make release`, 2026-10-06); 17.0 MB without it |
